@@ -717,7 +717,17 @@ function loadCategoryCreates({ args, audit, walk, snapshot, versionRootToken, re
       const collision = walk.nodes.find((node) => node.type === 'folder'
         && node.name === name && node.parentFolderToken === folder.parentFolderToken);
       if (collision) {
-        reject('CATEGORY_CREATE_ALREADY_PRESENT', `${name}: the walk already holds folder ${collision.token} named ${name} under ${folder.parentFolderToken} — the plan says it must be created`);
+        // Adoption (2026-10-23, python-v30 Database): the folder may be this
+        // campaign's own earlier attempt's product — created, then the batch
+        // failed before its documents landed. With adoptExisting the entry
+        // targets that live folder instead of refusing: the executor's
+        // replay-after-partial folder resolution adopts the same-named
+        // folder (no duplicate create), and the VirtualNode repoint still
+        // lands, reflecting the folder in Bitable.
+        if (categoryEntry.adoptExisting !== true) {
+          reject('CATEGORY_CREATE_ALREADY_PRESENT', `${name}: the walk already holds folder ${collision.token} named ${name} under ${folder.parentFolderToken} — the plan says it must be created`);
+        }
+        notes.push(`${name}: adopting existing folder ${collision.token} (adoptExisting; the executor resolves it instead of creating)`);
       }
     }
     const folderResource = {

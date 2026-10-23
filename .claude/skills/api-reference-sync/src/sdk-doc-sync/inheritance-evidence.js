@@ -194,6 +194,17 @@ function validateInheritanceEvidence(evidence, {
   }
   if (target && evidence.target) {
     for (const key of ['version', 'folderToken', 'folderRef', 'versionRootToken']) {
+      if (key === 'folderToken'
+        && nonEmptyString(target.folderRef)
+        && target.folderRef === evidence.target.folderRef) {
+        // WITH_CATEGORY_CREATE resolution shape (2026-10-23, py-v30
+        // EmbeddingList): the evidence binds the target by folderRef — the
+        // folder does not exist at evidence time — and the executor resolves
+        // that ref to a live folder token at execution. The token difference
+        // is the ref's runtime resolution, not an evidence drift; the ref
+        // equality above IS the target identity comparison.
+        continue;
+      }
       if (nonEmptyString(target[key]) && evidence.target[key] !== target[key]) {
         errors.push({ code: 'INHERITANCE_EVIDENCE_TARGET_MISMATCH', path: `$.target.${key}` });
       }

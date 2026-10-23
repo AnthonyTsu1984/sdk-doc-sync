@@ -192,3 +192,30 @@ test('cloned-base reference multisets keep duplicate recordIds and validate as s
     (error) => error.code === 'SHARED_TOKEN_EVIDENCE_REFERENCES_INCONSISTENT',
   ));
 });
+
+test('folderRef-bound targets tolerate the runtime token resolution (WITH_CATEGORY_CREATE, 2026-10-23)', () => {
+    // The evidence binds a to-be-created folder by folderRef (folderToken
+    // null at evidence time); the executor resolves the ref to a live token.
+    // The resolved-token vs evidence-null difference is the resolution, not
+    // a drift — the ref equality is the identity comparison. A genuinely
+    // different ref or version still mismatches.
+    const value = evidence({
+        target: {
+            version: 'v3.0.x', folderToken: null, folderRef: 'res:folder-EmbeddingList',
+            versionRootToken: 'root-v30', ancestryVerified: true,
+        },
+    });
+    const refBound = value;
+    const resolved = { ...refBound.target, folderToken: 'folder-live-token' };
+    const check = (target) => validateInheritanceEvidence(refBound, {
+        stableId: 'cpp:Collections:LoadPartitions',
+        current: refBound.current,
+        target,
+    });
+    assert.equal(check(resolved).valid, true,
+        'the resolved token does not mismatch a folderRef-bound evidence');
+    assert.equal(check({ ...resolved, folderRef: 'res:folder-Other' }).valid, false,
+        'a different folderRef still mismatches');
+    assert.equal(check({ ...resolved, version: 'v2.5.x' }).valid, false,
+        'the version comparison stays bound');
+});

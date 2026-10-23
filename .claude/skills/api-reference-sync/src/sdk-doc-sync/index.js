@@ -858,7 +858,22 @@ class SdkDocSync {
                     currentRecords: typeIndex,
                 });
                 for (const unitId of resumed.acceptedReviewUnitIds) verifiedAcceptedReviewUnitIds.add(unitId);
-                for (const unitId of resumed.pendingReviewUnitIds || []) pendingExecutionReviewUnitIds.add(unitId);
+                // A pending row whose journal carries a FAILED entry is a
+                // failed execution awaiting replay, not a reviewable one —
+                // "accept or roll back" has no review to accept (2026-10-23
+                // EmbeddingList:add wall: the row walled its own replay
+                // behind ACTIVE_DOCUMENT_REVIEW_REQUIRED forever). The replay
+                // replaces the row on recording; acceptance stays gated on a
+                // verified journal.
+                const failedPendingUnitIds = new Set([
+                    ...((this.reviewSession?.pendingExecutions || (this.reviewSession?.activeExecution ? [this.reviewSession.activeExecution] : [])) || [])
+                        .filter((row) => journalCarriesFailedEntry(row?.executionJournalPath))
+                        .map((row) => row.reviewUnitId)
+                        .filter(Boolean),
+                ]);
+                for (const unitId of resumed.pendingReviewUnitIds || []) {
+                    if (!failedPendingUnitIds.has(unitId)) pendingExecutionReviewUnitIds.add(unitId);
+                }
                 activeExecutionReviewUnitId = resumed.activeReviewUnitId;
                 result.reviewSession = {
                     sessionId: this.reviewSession.sessionId,

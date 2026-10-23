@@ -406,6 +406,27 @@ function cmdSync(config, { only, yes }) {
   ensureSession(config);
   const state = loadState(config);
   const done = new Set(state.doneUnits || []);
+  // 会话是验收权威：session 里已 accepted 的单元（例如操作员在会话内用
+  // 修复仪式收敛的 REBUILD 页）不是 runner 的目标，也不该再被 dry-run 的
+  // 单元清单带回来（accepted 单元不可再选，只会以 REVIEW_UNIT_NOT_FOUND
+  // 收场）。记入 doneUnits 让台账与会话一致。
+  let session;
+  try {
+    session = JSON.parse(fs.readFileSync(sessionPathFor(config), 'utf8'));
+  } catch {
+    session = null;
+  }
+  const acceptedUnitIds = new Set((session?.acceptedReviewUnits || [])
+    .map((row) => row?.reviewUnitId)
+    .filter(Boolean));
+  for (const unitId of acceptedUnitIds) {
+    if (!done.has(unitId)) {
+      done.add(unitId);
+      log(`session-accepted ${unitId} — marking the runner ledger done`);
+    }
+  }
+  state.doneUnits = [...done];
+  saveState(config, state);
   let targets = units.filter((unit) => !done.has(unit.reviewUnitId));
   if (only && only.length > 0) {
     const wanted = new Set(only);

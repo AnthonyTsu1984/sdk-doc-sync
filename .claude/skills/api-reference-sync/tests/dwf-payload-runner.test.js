@@ -73,6 +73,66 @@ test('extract-units validates digest shape and sorts previews', () => {
   assert.match(badDigest.stderr, /UNIT_DIGEST_INVALID/);
 });
 
+test('extract-units with target id extracts the single unit digest from full previews (c10 stale rematerialize)', () => {
+  // c10 seam (2026-10-23): 单元级重 dry-run（--review-unit-id,--batch-continue）仍返回
+  // 全量 reviewUnitPreviews（64 单元）。stale 自愈路径需要目标单元的 fresh digest ——
+  // 修复前 extract-units 读全量 → digest null → STALE_REMATERIALIZE_FAILED。
+  // fresh digest 在 previews 的目标条目里（与 exec 时重生成的批 digest 一致）。
+  const targetDigest = 'sha256:' + 'f'.repeat(64);
+  const dry = tempFile('dry-unit.json', JSON.stringify({
+    reviewUnitPreviews: [
+      { reviewUnitId: 'review:python:Database:use_database', batchDigest: targetDigest },
+      { reviewUnitId: 'review:python:Authentication:create_role', batchDigest: 'sha256:' + 'a'.repeat(64) },
+    ],
+    proposedExecutionBatch: { batchDigest: targetDigest, actions: [] },
+  }));
+  const out = path.join(os.tmpdir(), 'previews-unit-' + Date.now() + '.json');
+  const result = run('extract-units', [dry, out, 'review:python:Database:use_database']);
+  assert.equal(result.status, 0, result.stderr);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.units, 1);
+  assert.equal(parsed.digest, targetDigest);
+  const written = JSON.parse(fs.readFileSync(out, 'utf8')).units;
+  assert.equal(written.length, 1);
+  assert.equal(written[0].reviewUnitId, 'review:python:Database:use_database');
+  assert.equal(written[0].batchDigest, targetDigest);
+});
+
+test('extract-units with target id falls back to proposedExecutionBatch when target absent', () => {
+  const batchDigest = 'sha256:' + 'c'.repeat(64);
+  const dry = tempFile('dry-no-target.json', JSON.stringify({
+    reviewUnitPreviews: [{ reviewUnitId: 'other', batchDigest: 'sha256:' + 'b'.repeat(64) }],
+    proposedExecutionBatch: { batchDigest, actions: [] },
+  }));
+  const out = path.join(os.tmpdir(), 'previews-fallback-' + Date.now() + '.json');
+  const result = run('extract-units', [dry, out, 'review:python:Database:use_database']);
+  assert.equal(result.status, 0, result.stderr);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.digest, batchDigest);
+  assert.equal(parsed.units, 1);
+  const written = JSON.parse(fs.readFileSync(out, 'utf8')).units;
+  assert.equal(written[0].reviewUnitId, 'review:python:Database:use_database');
+});
+
+test('extract-units without target id keeps full extraction (initial dry-run)', () => {
+  const dry = tempFile('dry-initial.json', JSON.stringify({
+    reviewUnitPreviews: [
+      { reviewUnitId: 'b', batchDigest: 'sha256:' + 'b'.repeat(64) },
+      { reviewUnitId: 'a', batchDigest: 'sha256:' + 'a'.repeat(64) },
+    ],
+    proposedExecutionBatch: { batchDigest: 'sha256:' + 'c'.repeat(64), actions: [] },
+  }));
+  const out = path.join(os.tmpdir(), 'previews-initial-' + Date.now() + '.json');
+  const result = run('extract-units', [dry, out]);
+  assert.equal(result.status, 0, result.stderr);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.units, 2);
+  assert.equal(parsed.digest, null);
+  const written = JSON.parse(fs.readFileSync(out, 'utf8')).units;
+  assert.deepEqual(written.map((u) => u.reviewUnitId), ['a', 'b']);
+});
+
 test('self-check rejects a drifted template pin (TEMPLATE_DRIFTED)', () => {
   const plan = tempFile('plan.json', JSON.stringify({
     kind: 'release-sync',

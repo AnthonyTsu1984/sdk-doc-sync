@@ -91,9 +91,21 @@ function selfCheck(argv) {
 // ---- extract-units: dry-run → {units:[{reviewUnitId,batchDigest}]} sorted ----
 function extractUnits(argv) {
   const dry = readJson(argv[0], 'dry-run output');
+  const targetId = typeof argv[2] === 'string' && argv[2] !== '' ? argv[2] : null;
   let units = Array.isArray(dry.reviewUnitPreviews) ? dry.reviewUnitPreviews.map((u) => ({ reviewUnitId: String(u.reviewUnitId), batchDigest: String(u.batchDigest) })) : [];
-  if (units.length === 0 && dry.proposedExecutionBatch && typeof dry.proposedExecutionBatch.batchDigest === 'string') {
-    units = [{ reviewUnitId: String(argv[2] || 'batch'), batchDigest: dry.proposedExecutionBatch.batchDigest }];
+  // c10 seam（2026-10-23）:单元级重 dry-run（--review-unit-id,--batch-continue）仍返回
+  // 全量 reviewUnitPreviews;目标单元的 fresh digest 在 previews 里按 reviewUnitId 过滤得到,
+  // 兜底取 proposedExecutionBatch.batchDigest（exec 时重生成的批 digest,gauntlet 实证路径）。
+  // 只在传入目标单元 id 时过滤;初始 dry-run（argv[2] 空）保持全量提取,digest 语义不变。
+  if (targetId !== null) {
+    const target = units.filter((u) => u.reviewUnitId === targetId);
+    if (target.length > 0) {
+      units = target;
+    } else if (dry.proposedExecutionBatch && typeof dry.proposedExecutionBatch.batchDigest === 'string') {
+      units = [{ reviewUnitId: targetId, batchDigest: dry.proposedExecutionBatch.batchDigest }];
+    }
+  } else if (units.length === 0 && dry.proposedExecutionBatch && typeof dry.proposedExecutionBatch.batchDigest === 'string') {
+    units = [{ reviewUnitId: 'batch', batchDigest: dry.proposedExecutionBatch.batchDigest }];
   }
   if (units.length === 0) fail('NO_UNIT_PREVIEWS', 'no reviewUnitPreviews/proposedExecutionBatch in ' + argv[0]);
   for (const u of units) { if (!/^sha256:[0-9a-f]{64}$/.test(u.batchDigest)) fail('UNIT_DIGEST_INVALID', u.reviewUnitId + ':' + u.batchDigest.slice(0, 40)); }

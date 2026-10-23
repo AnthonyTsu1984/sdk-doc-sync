@@ -42,7 +42,7 @@ const {
 } = require('./versioned-tree-policy');
 const { deriveFolderAncestry, deriveFolderChainNames, copyChainsMirror } = require('./tree-delta-reconciliation');
 const { buildAcceptanceManifest, buildReviewUnitManifest } = require('./review-units');
-const { settledResourceIdentity } = require('./settled-resources');
+const { settledResourceIdentity, journalCarriesFailedEntry } = require('./settled-resources');
 const {
     validateResumeSession,
     executedUnitIdsOf,
@@ -106,7 +106,17 @@ function normalizedDependency(dependency, knownActionIds) {
 // category-create attestation's required resource DAG must be present and
 // wired in the same batch — folder without an embedded repoint, repoint as a
 // distinct downstream action depending on folder and document.
-function assertBatchInvariantCoverage(plannedActions, planIds) {
+// settledResourceActionIds (2026-10-23 replay-after-partial amendment): a
+// resource whose journal-verified resolution already exists (settled pad) is
+// an identity reference, NOT an executable claim — review-units.js keeps it
+// out of the unit's batch for exactly that reason, so the coverage demand
+// must accept its absence on replay instead of wedging every still-actionable
+// consumer behind a resource the executor can never re-drive. The executing
+// documents resolve the settled resource through the pre-seeded resolutions
+// map, and the tree-delta post-write observation re-derives the placement
+// live — the approval-binding property degrades to the durable journal
+// evidence, not to silence.
+function assertBatchInvariantCoverage(plannedActions, planIds, settledResourceActionIds = new Set()) {
     const byPlanId = new Map(plannedActions.map(({ plan }) => [plan.stableId, plan]));
     for (const { plan } of plannedActions) {
         if (!WRITE_PLAN_ACTIONS.has(plan.action)) continue;
@@ -134,7 +144,14 @@ function assertBatchInvariantCoverage(plannedActions, planIds) {
             }
             if (node.action === 'VERIFY_TREE_DELTA') continue;
             const resourcePlan = byPlanId.get(node.stableId);
-            if (!resourcePlan || resourcePlan.action !== node.action) {
+            if (!resourcePlan) {
+                if (settledResourceActionIds.has(node.stableId)) continue;
+                const error = new Error(`TREE_DELTA_DAG_VIOLATION: required resource ${node.stableId} (${node.action}) is missing from the batch for ${plan.stableId}`);
+                error.code = 'TREE_DELTA_DAG_VIOLATION';
+                error.details = { actionId: plan.stableId, node: node.stableId, action: node.action };
+                throw error;
+            }
+            if (resourcePlan.action !== node.action) {
                 const error = new Error(`TREE_DELTA_DAG_VIOLATION: required resource ${node.stableId} (${node.action}) is missing from the batch for ${plan.stableId}`);
                 error.code = 'TREE_DELTA_DAG_VIOLATION';
                 error.details = { actionId: plan.stableId, node: node.stableId, action: node.action };
@@ -173,8 +190,8 @@ function assertBatchInvariantCoverage(plannedActions, planIds) {
     }
 }
 
-function buildExecutionBatch(plannedActions, knownActionIds = new Set(plannedActions.map(({ plan }) => plan.stableId))) {
-    assertBatchInvariantCoverage(plannedActions, knownActionIds);
+function buildExecutionBatch(plannedActions, knownActionIds = new Set(plannedActions.map(({ plan }) => plan.stableId)), settledResourceActionIds = new Set()) {
+    assertBatchInvariantCoverage(plannedActions, knownActionIds, settledResourceActionIds);
     return createActionBatch({
         skill: 'api-reference-sync',
         operation: 'execute',
@@ -547,6 +564,12 @@ class SdkDocSync {
             planningErrors: [],
             approved: [],
             results: [],
+            // Journal-verified resource settlements (2026-10-23 replay-after-
+            // partial): settled pad stableIds excuse the DAG coverage demand,
+            // and the ref→resolution map pre-seeds the executor so downstream
+            // documents resolve a resource that no longer rides the batch.
+            settledResourceActionIds: new Set(),
+            settledResourceResolutions: new Map(),
         };
 
         // Phase 1: SCAN
@@ -633,6 +656,12 @@ class SdkDocSync {
                     })
                     : null;
                 if (resourceSettlement) {
+                    result.settledResourceActionIds.add(plan.stableId);
+                    result.settledResourceResolutions.set(resourceSettlement.ref, {
+                        ref: resourceSettlement.ref,
+                        kind: resourceSettlement.kind,
+                        value: resourceSettlement.value,
+                    });
                     const settledPlan = Object.freeze({
                         schemaVersion: 1,
                         action: 'NOOP',
@@ -712,8 +741,15 @@ class SdkDocSync {
                         ...(this.reviewSession?.acceptedReviewUnits || [])
                             .filter((unit) => (unit.touchedRecords || []).some((row) => nonEmptyString(row?.recordId)))
                             .map((unit) => `accepted:${unit.reviewUnitId}`),
+                        // A pending row pads ONLY when its journal carries no
+                        // failed entry: a journal with an ok:false invariant or
+                        // an observed failure is a FAILED execution awaiting
+                        // replay, not a settled unit — padding it would wall
+                        // the replay behind SETTLED_UNIT_NOOP while the unit
+                        // never verified (2026-10-23 EmbeddingList:add wall).
                         ...((this.reviewSession?.pendingExecutions || (this.reviewSession?.activeExecution ? [this.reviewSession.activeExecution] : [])) || [])
-                            .filter((unit) => nonEmptyString(unit?.executionJournalDigest))
+                            .filter((unit) => nonEmptyString(unit?.executionJournalDigest)
+                                && !journalCarriesFailedEntry(unit.executionJournalPath))
                             .map((unit) => `pending:${unit.reviewUnitId}`),
                     ]);
                     const unitRowIds = new Set(
@@ -797,10 +833,11 @@ class SdkDocSync {
 
         const fullActionablePlanned = plannedEntries.filter(({ plan }) => plan.action !== 'NOOP');
         const fullActionablePlanIds = new Set(fullActionablePlanned.map(({ plan }) => plan.stableId));
-        result.proposedReleaseBatch = buildExecutionBatch(fullActionablePlanned, fullActionablePlanIds);
+        const batchBuilder = (entries, ids) => buildExecutionBatch(entries, ids, result.settledResourceActionIds);
+        result.proposedReleaseBatch = batchBuilder(fullActionablePlanned, fullActionablePlanIds);
         const reviewUnits = buildReviewUnitManifest(
             this.reviewSession ? plannedEntries : fullActionablePlanned,
-            buildExecutionBatch,
+            batchBuilder,
             {
                 documentStableIds: this.reviewSession
                     ? this.reviewSession.reviewUnitManifest.units.map((unit) => unit.documentStableId)
@@ -930,7 +967,7 @@ class SdkDocSync {
             }
         }
         result.proposedExecutionBatch = actionablePlanned.length > 0
-            ? buildExecutionBatch(actionablePlanned, actionablePlanIds)
+            ? batchBuilder(actionablePlanned, actionablePlanIds)
             : fullActionablePlanned.length === 0
                 ? result.proposedReleaseBatch
                 : null;
@@ -1174,6 +1211,12 @@ class SdkDocSync {
         const approvedById = new Map(approvedPlans.map(entry => [entry.plan.stableId, entry]));
         const executionStatus = new Map();
         const resourceResolutions = new Map();
+        // Settled resources no longer ride the batch (their pads are not
+        // executable), so their journal-verified resolutions seed the map —
+        // downstream documents resolve a folderRef the batch never mints.
+        for (const [settledRef, settledResolution] of result.settledResourceResolutions) {
+            resourceResolutions.set(settledRef, settledResolution);
+        }
         // DAG order: plannedEntries are built resources-first, but a
         // category-create batch's downstream repoint DEPENDS on its document
         // actions — dependencies must execute before their dependents

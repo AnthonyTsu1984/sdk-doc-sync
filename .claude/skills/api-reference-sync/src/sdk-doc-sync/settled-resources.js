@@ -80,4 +80,31 @@ function settledResourceIdentity({ reviewSession, actionStableId, resourceRef = 
     return null;
 }
 
-module.exports = { settledResourceIdentity, executedResourceRowsOf, settlementFromEntry };
+// Whether one execution journal carries a FAILED entry — an invariant that
+// reported ok:false (e.g. the tree-delta postcondition) or an observed action
+// failure. A pending session row pointing at such a journal is a FAILED
+// execution awaiting replay, not a settled unit: the two-gate pad condition
+// (executed row + journal digest) alone would wall the replay behind a
+// SETTLED_UNIT_NOOP pad while the unit never verified (2026-10-23
+// EmbeddingList:add replay wall). Best-effort: an unreadable journal
+// contributes no failure signal.
+function journalCarriesFailedEntry(journalPath) {
+    if (!nonEmptyString(journalPath)) return false;
+    let entries;
+    try {
+        entries = readJournalEntries(journalPath);
+    } catch {
+        return false;
+    }
+    return (Array.isArray(entries) ? entries : []).some((entry) => (
+        entry?.ok === false
+        || (entry?.type === 'observed' && entry?.status === 'failure')
+    ));
+}
+
+module.exports = {
+    settledResourceIdentity,
+    executedResourceRowsOf,
+    settlementFromEntry,
+    journalCarriesFailedEntry,
+};

@@ -913,6 +913,38 @@ test('buildExecutionBatch enforces the category-create resource DAG', () => {
         stableId,
         'resource:repoint:cpp:v30:Partitions',
     ]);
+
+    // Replay-after-partial (2026-10-23): a journal-settled folder resource
+    // stays out of the unit's batch (its NOOP pad is not executable), and the
+    // coverage demand accepts its absence when the settled set names it. The
+    //EmbeddingList shape (repoint:null) isolates the folder node.
+    const nodelessDocumentPlan = {
+        ...documentPlan,
+    };
+    nodelessDocumentPlan.invariantAttestations = [{
+        ...documentPlan.invariantAttestations[0],
+        requiredResourceDag: [
+            { action: 'CREATE_FOLDER', stableId: 'resource:folder:cpp:v30:Partitions' },
+            { action: 'COPY_PATCH_AND_REPOINT', stableId },
+            { action: 'VERIFY_TREE_DELTA', stableId: `tree-delta:${stableId}` },
+        ],
+    }];
+    assert.doesNotThrow(
+        () => SdkDocSync.buildExecutionBatch(
+            [{ plan: nodelessDocumentPlan }],
+            new Set([stableId]),
+            new Set(['resource:folder:cpp:v30:Partitions']),
+        ),
+    );
+    // An absent resource NOT named settled still refuses.
+    assert.throws(
+        () => SdkDocSync.buildExecutionBatch(
+            [{ plan: nodelessDocumentPlan }],
+            new Set([stableId]),
+            new Set(),
+        ),
+        /TREE_DELTA_DAG_VIOLATION/,
+    );
 });
 
 test('review-unit manifest pulls the downstream repoint resource into the document unit', () => {

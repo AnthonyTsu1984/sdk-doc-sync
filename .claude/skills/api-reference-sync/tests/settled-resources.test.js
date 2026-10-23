@@ -10,6 +10,7 @@ const {
     executedResourceRowsOf,
     settledResourceIdentity,
     settlementFromEntry,
+    journalCarriesFailedEntry,
 } = require('../src/sdk-doc-sync/settled-resources');
 
 const FOLDER_STABLE_ID = 'resource:res:folder-Authentication';
@@ -180,4 +181,26 @@ test('executedResourceRowsOf falls back to activeExecution without a pending lis
     const rows = executedResourceRowsOf({ activeExecution: active });
     assert.equal(rows.length, 1);
     assert.equal(rows[0].reviewUnitId, 'review:node:a:b');
+});
+
+test('journalCarriesFailedEntry detects failed invariants and observed failures for the pad gate', () => {
+    const directory = tempDir();
+    const failedInvariant = journalFile(directory, 'failed-invariant.jsonl', [
+        { type: 'prepared', actionId: 'unit' },
+        { type: 'observed', actionId: 'unit', status: 'success', verified: true },
+        { type: 'tree-delta', ok: false, errors: [{ code: 'TREE_DELTA_COPY_STRUCTURE_DRIFT' }] },
+        { type: 'completion', status: 'executed', completionSentinel: true },
+    ]);
+    assert.equal(journalCarriesFailedEntry(failedInvariant), true);
+    const observedFailure = journalFile(directory, 'observed-failure.jsonl', [
+        { type: 'observed', actionId: 'resource:x', status: 'failure', verified: false },
+    ]);
+    assert.equal(journalCarriesFailedEntry(observedFailure), true);
+    const clean = journalFile(directory, 'clean.jsonl', [
+        { type: 'observed', actionId: 'unit', status: 'success', verified: true },
+        { type: 'completion', status: 'executed', completionSentinel: true },
+    ]);
+    assert.equal(journalCarriesFailedEntry(clean), false);
+    assert.equal(journalCarriesFailedEntry(path.join(directory, 'missing.jsonl')), false);
+    assert.equal(journalCarriesFailedEntry(null), false);
 });

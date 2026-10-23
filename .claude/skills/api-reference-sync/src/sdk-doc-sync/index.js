@@ -1641,6 +1641,18 @@ class SdkDocSync {
                     observed.olderDocumentReferences = (references || [])
                         .map(reference => reference?.recordId)
                         .filter(Boolean);
+                    // Idempotent replay (2026-10-23, batch side of the
+                    // stranded-WIP walls): the executor pinned the pre-write
+                    // live multiset (sharedTokenRevalidation) and compares it
+                    // against this post-write read; an adopted copy whose
+                    // record already linked the page changed nothing in the
+                    // reference graph, and the kernel keeps the approved set
+                    // instead of subtracting a removal that never happened.
+                    const preWrite = Array.isArray(entry?.sharedTokenRevalidation?.liveRecordIds)
+                        ? [...entry.sharedTokenRevalidation.liveRecordIds].sort()
+                        : null;
+                    observed.referenceGraphUnchanged = Boolean(preWrite
+                        && JSON.stringify(preWrite) === JSON.stringify([...observed.olderDocumentReferences].sort()));
                 } catch (error) {
                     observationErrors.push({ code: 'TREE_DELTA_OBSERVATION_FAILED', detail: 'tokenReferences', message: error.message });
                 }

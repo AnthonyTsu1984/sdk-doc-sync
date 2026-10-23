@@ -1273,11 +1273,26 @@ class SyncExecutor {
     // duplicates carry real reference counts.
     const liveRecordIds = referenceRecordIds(liveReferences);
     // Repointing removes exactly one reference — the repointed track's record
-    // — not every record sharing its (possibly cloned) recordId.
+    // — not every record sharing its (possibly cloned) recordId. The one
+    // exception is the idempotent replay (2026-10-23 stranded-WIP walls): an
+    // adopted copy whose record already linked the page changes NOTHING in
+    // the reference graph, and evidence collected after an earlier repoint
+    // would otherwise subtract a removal that never happened (twice). The
+    // pre-write shared-token check pinned the live multiset before the copy;
+    // zero measured pre→post change means the expectation is the approved
+    // set unchanged. Any other shape keeps the single-removal model, so a
+    // mid-run external edit still fails the comparison.
     let expectedRecordIds = normalizeReferenceMultiset(expected);
     if (attestation.decision === 'COPY_PATCH_AND_REPOINT'
       || attestation.decision === 'COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE') {
-      expectedRecordIds = removeOneOccurrence(expectedRecordIds, plan.source.recordId);
+      const preWrite = Array.isArray(result.sharedTokenRevalidation?.liveRecordIds)
+        ? [...result.sharedTokenRevalidation.liveRecordIds].sort()
+        : null;
+      const graphUnchanged = preWrite !== null
+        && JSON.stringify(preWrite) === JSON.stringify(liveRecordIds);
+      if (!graphUnchanged) {
+        expectedRecordIds = removeOneOccurrence(expectedRecordIds, plan.source.recordId);
+      }
     }
     const ok = referenceMultisetsEqual(expectedRecordIds, liveRecordIds);
     result.treeDeltaVerification = {

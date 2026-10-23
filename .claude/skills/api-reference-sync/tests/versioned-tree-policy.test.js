@@ -606,6 +606,43 @@ test('verifyPlacementWalkBinding binds plans to the execution-named placement wa
     assert.equal(reversed.errors[0].code, 'PLACEMENT_WALK_UNBOUND');
 });
 
+test('verifyTreeDeltaPostconditions: an idempotent adopted replay keeps the approved reference set (2026-10-23 stranded-WIP walls)', () => {
+    // Evidence collected AFTER an earlier repoint (the stranded attempt) plus
+    // a replay whose adoption changed nothing in the reference graph: the
+    // single-removal model would subtract a removal that never happened —
+    // referenceGraphUnchanged (pinned pre==post by the executor) keeps the
+    // approved set, and any real drift still fails.
+    const plan = {
+        stableId: 'python:Collections:add_collection_struct_field',
+        source: { recordId: 'rec-acsf', documentToken: 'doc-acsf' },
+        inheritanceEvidence: inheritanceEvidence(),
+        invariantAttestations: [{
+            id: INVARIANT_ID,
+            version: 5,
+            inputDigest: sha('plan'),
+            decision: DECISIONS.COPY_PATCH_AND_REPOINT,
+            evidenceDigest: null,
+        }],
+    };
+    const observed = {
+        // The graph never changed: the full approved multiset survives
+        // (the repointed record keeps referencing the adopted page).
+        olderDocumentReferences: ['rec-load-partitions-v26', 'rec-load-partitions-v30'],
+        referenceGraphUnchanged: true,
+        createdDocumentToken: 'doc-copy-new',
+        targetRecordDocumentToken: 'doc-copy-new',
+    };
+    const replay = verifyTreeDeltaPostconditions({ plan, observed });
+    assert.equal(replay.ok, true, 'the idempotent replay verifies against the unchanged approved set');
+
+    const sneaky = verifyTreeDeltaPostconditions({
+        plan,
+        observed: { ...observed, olderDocumentReferences: ['rec-load-partitions-v26', 'rec-sneaky'] },
+    });
+    assert.equal(sneaky.ok, false, 'a real drift still fails even with the flag mis-stamped');
+    assert.equal(sneaky.errors[0].code, 'TREE_DELTA_REFERENCES_DRIFTED');
+});
+
 test('verifyTreeDeltaPostconditions reports kernel v5 copy-structure mirror drift', () => {
     const plan = {
         stableId: 'cpp:Partitions:LoadPartitions',

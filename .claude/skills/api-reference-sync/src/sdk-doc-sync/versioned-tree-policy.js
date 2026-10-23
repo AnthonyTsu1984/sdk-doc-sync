@@ -603,8 +603,14 @@ function verifyTreeDeltaPostconditions({ plan, observed }) {
     // Repointing removes exactly ONE reference — the repointed track's
     // record — not every record sharing its (possibly cloned) recordId.
     const expectedRemaining = evidenceReferenceIds(evidence).sort();
-    if (decision === DECISIONS.COPY_PATCH_AND_REPOINT
-      || decision === DECISIONS.COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE) {
+    if ((decision === DECISIONS.COPY_PATCH_AND_REPOINT
+      || decision === DECISIONS.COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE)
+      && observed?.referenceGraphUnchanged !== true) {
+      // referenceGraphUnchanged marks the idempotent adopted replay: the
+      // pre-write multiset equals the post-write one (the executor pinned
+      // both), so no reference was removed and the approved set stands
+      // unchanged — subtracting here would demand a removal that never
+      // happened (2026-10-23 stranded-WIP walls).
       const repointedIndex = expectedRemaining.indexOf(plan.source?.recordId);
       if (repointedIndex >= 0) expectedRemaining.splice(repointedIndex, 1);
     }

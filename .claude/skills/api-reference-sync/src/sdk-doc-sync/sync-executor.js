@@ -222,13 +222,14 @@ class SyncExecutionError extends Error {
 }
 
 class SyncExecutor {
-  constructor({ documentWriter, bitableWriter, verifier = null, tokenReferenceReader = null } = {}) {
+  constructor({ documentWriter, bitableWriter, verifier = null, tokenReferenceReader = null, apiPatchReanchorer = null } = {}) {
     if (!documentWriter) throw new TypeError('documentWriter is required');
     if (!bitableWriter) throw new TypeError('bitableWriter is required');
     this.documentWriter = documentWriter;
     this.bitableWriter = bitableWriter;
     this.verifier = verifier;
     this.tokenReferenceReader = tokenReferenceReader;
+    this.apiPatchReanchorer = apiPatchReanchorer;
   }
 
   async execute(plan, {
@@ -1549,6 +1550,24 @@ class SyncExecutor {
       let patched;
       if (result.adoptedDocument && await this._adoptedDocumentConverged(plan, result)) {
         patched = { token: copied.token, patched: false, adoptedConverged: true };
+      } else if (result.adoptedDocument && typeof this.apiPatchReanchorer === 'function') {
+        // A DIRTY adopted page converges via a patch plan re-anchored to the
+        // adopted page's live blocks — the approved plan's anchors describe
+        // the source document (the fresh-copy shape), which an
+        // already-patched page left behind when the artifact itself changed
+        // between attempts (2026-10-23 LexicalHighlighter: the
+        // Constructor-bearing re-extraction changed the artifact under a
+        // page patched with the lossy one). The re-anchor is derived with
+        // the same planner and the same safety validation as planning.
+        const reanchored = await this.apiPatchReanchorer({
+          patchPlan: plan.apiPatchPlan,
+          documentToken: copied.token,
+          artifact,
+          stableId: plan.stableId,
+        });
+        patched = await this._patchDocument({ ...plan, apiPatchPlan: reanchored }, artifact, copied.token, {
+          sourceDocumentToken: plan.copySource.documentToken,
+        });
       } else {
         patched = await this._patchDocument(plan, artifact, copied.token, {
           sourceDocumentToken: plan.copySource.documentToken,

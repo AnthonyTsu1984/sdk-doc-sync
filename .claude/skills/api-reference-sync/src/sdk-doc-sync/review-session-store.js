@@ -20,6 +20,7 @@ const { loadState, saveState } = require('../../../doc-ops-core/src/session-stor
 const { buildAcceptanceManifest } = require('./review-units');
 const { executionTargetsBaseline, normalizedTargetsValue } = require('./record-state');
 const { deriveUnitEvidence } = require('./unit-evidence');
+const { settlementFromEntry } = require('./settled-resources');
 const { validateGroupingApprovalReceipt } = require('./grouping-proposal');
 
 // The lifecycle this store hardens (PR #22's five review rounds), now
@@ -544,10 +545,39 @@ function recordDocumentExecution(session, execution, { batchContinue = false } =
   const nextPendings = existing
     ? pendings.map((item) => (item.reviewUnitId === execution.reviewUnitId ? entry : item))
     : [...pendings, entry];
+  // Resource settlements ride the session as first-class state (2026-10-23
+  // EmbeddingList-folder wall): a verified resolution recorded only in the
+  // unit's journal is lost when the unit's row rolls forward to a newer
+  // journal (replay replaces the pending row; acceptance re-keys it), and
+  // the still-true resource fact — this folder EXISTS, verified — goes
+  // unowned at the next replan (UNASSIGNED_REVIEW_UNIT_RESOURCE). Merge the
+  // journal's verified resolutions into session.settledResources here, and
+  // let settledResourceIdentity consult the map before the row scan.
+  let mergedSettlements = session.settledResources || [];
+  try {
+    const journalEntries = readExecutionJournal(journalPath);
+    for (const journalEntry of journalEntries) {
+      const settlement = settlementFromEntry(journalEntry);
+      if (!settlement) continue;
+      if (mergedSettlements.some((row) => row.ref === settlement.ref)) continue;
+      mergedSettlements = [...mergedSettlements, {
+        ref: settlement.ref,
+        kind: settlement.kind,
+        value: settlement.value,
+        observedActionId: settlement.observedActionId,
+        executionJournalDigest: execution.executionJournalDigest,
+        resolvedAt: executedAt,
+      }];
+    }
+  } catch {
+    // An unreadable journal contributes no settlements (the row scan below
+    // and the planner's actionable plan stay fail-closed).
+  }
   return REVIEW_MACHINE.apply('recordDocumentExecution', session, {
     pendingExecutions: Object.freeze(nextPendings),
     activeExecution: entry,
     activeReviewUnitId: execution.reviewUnitId,
+    settledResources: Object.freeze(mergedSettlements),
   }, { timestamp: executedAt });
 }
 

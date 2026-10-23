@@ -528,6 +528,44 @@ class SdkDocSync {
                 verifier: this.verifier,
                 tokenReferenceReader: tokenReferenceReader
                     || (referenceTracks.length > 0 ? createTokenReferenceReader({ tracks: referenceTracks }) : null),
+                // Replay-after-partial re-anchor (2026-10-23
+                // LexicalHighlighter wall): an adopted copy patched with an
+                // EARLIER artifact no longer matches the approved patch
+                // plan's anchors (they describe the source document). The
+                // engine owns the block reader + renderer + planner, so the
+                // re-anchor runs here with the same machinery and the same
+                // safety validation as planning.
+                apiPatchReanchorer: async ({ patchPlan, documentToken, artifact }) => {
+                    if (!this.documentBlockReader || typeof this.documentBlockReader.readBlocks !== 'function') {
+                        const error = new Error(`Live document blocks are required to re-anchor a replay patch for ${documentToken}`);
+                        error.code = 'DOCUMENT_BLOCK_READER_REQUIRED';
+                        throw error;
+                    }
+                    const reanchorProfile = sdkLayoutProfiles[artifact.layout.profileId];
+                    if (!reanchorProfile || reanchorProfile.version !== artifact.layout.profileVersion) {
+                        const error = new Error(`Unknown SDK layout profile ${artifact.layout.profileId}@${artifact.layout.profileVersion}`);
+                        error.code = 'INVALID_LAYOUT_PROFILE';
+                        throw error;
+                    }
+                    const currentBlocks = await this.documentBlockReader.readBlocks(documentToken);
+                    const desiredBlocks = await this._renderArtifactBlocks(artifact);
+                    const reanchored = this.apiPatchPlanner({
+                        currentBlocks,
+                        desiredBlocks,
+                        profile: reanchorProfile,
+                        documentToken,
+                        repairApproval: null,
+                        preservedBlockPlacements: [],
+                        copyOnWrite: false,
+                    });
+                    if (reanchored.validation?.valid !== true) {
+                        const firstError = reanchored.validation?.errors?.[0];
+                        const error = new Error(`Replay patch re-anchoring failed: ${JSON.stringify(reanchored.validation?.errors || [])}`);
+                        error.code = firstError?.code || 'PATCH_REANCHORING_BLOCKED';
+                        throw error;
+                    }
+                    return reanchored;
+                },
             });
             this.tokenReferenceReader = this.executor.tokenReferenceReader || tokenReferenceReader || null;
         }
@@ -1369,6 +1407,16 @@ class SdkDocSync {
         for (const entry of result.results) {
             if (entry.status === 'success' && entry.resolvedResource?.kind === 'virtual_node_repoint') {
                 repointRecordIds.set(`resource:${entry.resolvedResource.ref}`, entry.resolvedResource.recordId);
+            }
+        }
+        // Settled repoints rode a PREVIOUS batch (their pads stay out of this
+        // one) — the resolutions map is pre-seeded from the session's
+        // settlement state, so the observation can still read the VirtualNode
+        // record's live link instead of reporting it unrepointed (2026-10-23
+        // Database:use_database replay wall).
+        for (const [settledRef, settledResolution] of resourceResolutions) {
+            if (settledResolution?.kind === 'virtual_node_repoint' && !repointRecordIds.has(`resource:${settledRef}`)) {
+                repointRecordIds.set(`resource:${settledRef}`, settledResolution.recordId || settledResolution.value);
             }
         }
         for (const entry of result.results) {

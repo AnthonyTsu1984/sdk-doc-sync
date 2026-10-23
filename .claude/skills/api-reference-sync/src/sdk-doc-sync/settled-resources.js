@@ -60,8 +60,26 @@ function settlementFromEntry(entry) {
 }
 
 // Derives the journal-verified resolution for one resource action, or null.
+// The session's first-class settledResources map (merged at execution
+// recording, 2026-10-23 EmbeddingList-folder wall) answers FIRST: a unit's
+// row rolls forward across replays and acceptance re-keys it, so the journal
+// that verified an older resource's resolution can lose its row reference —
+// the map is the durable face, the row scan the legacy fallback.
 function settledResourceIdentity({ reviewSession, actionStableId, resourceRef = null }) {
     if (!nonEmptyString(actionStableId)) return null;
+    for (const settled of reviewSession?.settledResources || []) {
+        if (!settled || settled.ref !== (resourceRef ?? settled.ref)) continue;
+        if (nonEmptyString(settled.observedActionId) && settled.observedActionId !== actionStableId) continue;
+        if (resourceRef !== null && settled.ref !== resourceRef) continue;
+        if (!nonEmptyString(settled.value) && !nonEmptyString(settled.recordId)) continue;
+        return {
+            observedActionId: settled.observedActionId,
+            ref: settled.ref,
+            kind: settled.kind ?? null,
+            value: settled.value ?? settled.recordId,
+            recordId: nonEmptyString(settled.recordId) ? settled.recordId : null,
+        };
+    }
     for (const row of executedResourceRowsOf(reviewSession)) {
         let entries;
         try {

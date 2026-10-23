@@ -1528,7 +1528,14 @@ class SdkDocSync {
                 || null;
             let contentPreflight = null;
             if (markdownPreview !== null && profile) {
-                const check = checkMarkdownContentQuality(markdownPreview, profile);
+                // Update-verbatim provenance keys the preflight the same way
+                // verifyDocument does (c8 seam / M5 ruling 2026-10-21): the
+                // response-fields strong form is a generation-surface
+                // requirement; UPDATE-family pages carry the PR's terminal
+                // bytes, which never include the schema-first PARAMETERS list.
+                const check = checkMarkdownContentQuality(markdownPreview, profile, {
+                    unbindReturnsResponseFields: /^(UPDATE|COPY_PATCH)/.test(String(plan.action || '')),
+                });
                 if (check.violations.length > 0) {
                     const error = new Error(`write-approval preview fails the content preflight for ${plan.stableId}: ${check.violations.map((violation) => `${violation.code} (${violation.detail})`).join('; ')}`);
                     error.code = 'PREVIEW_CONTENT_PREFLIGHT_FAILED';

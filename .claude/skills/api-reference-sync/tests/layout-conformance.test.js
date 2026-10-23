@@ -360,6 +360,45 @@ test('unbindReturnsResponseFields: UPDATE-verbatim provenance unbinds the strong
     );
 });
 
+test('checkMarkdownContentQuality: unbindReturnsResponseFields mirrors the verify-site keying for the write-approval preflight (c8 seam)', () => {
+    // The write-approval preview is the page verbatim, so its preflight must
+    // honor the same update-verbatim provenance the verify call site carries
+    // (c8 / M5 ruling): the runner's scoped dry-run builds the presentation
+    // for UPDATE-family units whose PR bytes never carry the schema-first
+    // PARAMETERS list — without the option the preflight refuses the batch
+    // the operator ruling already sanctioned.
+    const prVerbatimMarkdown = [
+        'This operation constructs a **CollectionSchema** object from a dictionary representation.',
+        '',
+        '**RETURN TYPE:**',
+        '*[CollectionSchema](CollectionSchema/CollectionSchema.md)*',
+        '',
+        '**RETURNS:**',
+        'A **[CollectionSchema](CollectionSchema/CollectionSchema.md)** object.',
+    ].join('\n');
+    // Default (generation surface): the strong form still reports.
+    assert.equal(
+        checkMarkdownContentQuality(prVerbatimMarkdown, sdkLayoutProfiles.python)
+            .violations.some((violation) => violation.code === 'RETURNS_MIN_DEPTH'),
+        true,
+        'without the flag the schema-first strong form stays bound',
+    );
+    // Update-verbatim: the strong form is unbound for exactly this page.
+    assert.deepEqual(
+        checkMarkdownContentQuality(prVerbatimMarkdown, sdkLayoutProfiles.python, { unbindReturnsResponseFields: true }).violations,
+        [],
+        'the PR-verbatim shape conforms with the flag',
+    );
+    // Only the response-fields rule is unbound: a CJK mixing violation still
+    // reports under the same flag.
+    assert.equal(
+        checkMarkdownContentQuality(`${prVerbatimMarkdown}\n这一行中英混排会被内容规则拦下。`, sdkLayoutProfiles.python, { unbindReturnsResponseFields: true })
+            .violations.some((violation) => violation.code === 'CONTENT_CJK_MIXING'),
+        true,
+        'every other content rule stays bound under the flag',
+    );
+});
+
 test('checkMarkdownContentQuality runs the five rules over preview markdown, skipping fenced code', () => {
     const profile = sdkLayoutProfiles.java;
     const code = (markdown, name) => checkMarkdownContentQuality(markdown, profile)

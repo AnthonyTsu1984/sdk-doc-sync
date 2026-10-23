@@ -501,11 +501,20 @@ function checkContentRules(contentRules, entries, calloutGroups, report) {
 // is the page verbatim, so a violation must stop the batch before it reaches
 // the operator. Fenced code is skipped: rule targets are page prose, never
 // example code.
-function checkMarkdownContentQuality(markdown, profile) {
+function checkMarkdownContentQuality(markdown, profile, options = {}) {
     const violations = [];
     const rules = profile?.layoutRules;
     if (!rules?.contentQuality || typeof markdown !== 'string') {
         return { invariantId: LAYOUT_INVARIANT_ID, violations };
+    }
+    // Update-verbatim provenance (M5 ruling 2026-10-21, c8 seam 2026-10-22):
+    // the same unbind the verify call site carries — UPDATE-family pages are
+    // the PR's terminal bytes and never carry the schema-first strong form.
+    // The write-approval preview is the page verbatim, so the preflight must
+    // key off the plan's action family exactly like verifyDocument does.
+    let contentRules = rules.contentQuality;
+    if (options.unbindReturnsResponseFields === true) {
+        contentRules = { ...contentRules, returnsResponseFieldsRequired: false };
     }
     const report = (code, detail) => violations.push({ code, detail });
     const entries = [];
@@ -551,7 +560,7 @@ function checkMarkdownContentQuality(markdown, profile) {
         if (line === '') continue;
         entries.push({ kind, text: line });
     }
-    checkContentRules(rules.contentQuality, entries, [], report);
+    checkContentRules(contentRules, entries, [], report);
     // 2026-10-06 python ruling: the request payload is one parameter per
     // line in the bare call form — a signature opening line carrying a
     // top-level comma collapsed all inputs onto one line.

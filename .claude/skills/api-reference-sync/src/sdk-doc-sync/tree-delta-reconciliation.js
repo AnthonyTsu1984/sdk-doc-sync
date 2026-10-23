@@ -52,6 +52,28 @@ async function deriveFolderChainNames({ listFolder, versionRootToken, folderToke
     return names;
 }
 
+// Kernel v5 copy-mirror semantics, 2026-10-23 section-rehome amendment (py
+// v3.0 campaign): a copy mirrors when the name chains are identical, or when
+// the ONLY divergence is the section level directly under the version root
+// while every deeper level matches by name and the depth is preserved — the
+// identity-map-governed track reorganization shape (py v2.6 ORM/FieldSchema
+// → v3.0 MilvusClient/FieldSchema: the placement authority re-homed the
+// class sections; the target tree already establishes the class folder).
+// The V1 flattening mode this gate was built for is a depth collapse and
+// stays refused; a one-name chain whose only level is the section also
+// stays refused — with no deeper level to corroborate the family, a bare
+// cross-section move is not distinguishable from a misplacement.
+function copyChainsMirror(sourceNames, targetNames) {
+    if (!Array.isArray(sourceNames) || !Array.isArray(targetNames)) return false;
+    if (sourceNames.length !== targetNames.length || sourceNames.length === 0) return false;
+    for (let level = 1; level < sourceNames.length; level += 1) {
+        if (sourceNames[level] !== targetNames[level]) return false;
+    }
+    // A one-name chain's only level IS the section: with no deeper level to
+    // corroborate the family, it mirrors only when identical.
+    return sourceNames.length >= 2 || sourceNames[0] === targetNames[0];
+}
+
 async function deriveFolderAncestry({
   listFolder,
   versionRootToken,
@@ -226,6 +248,7 @@ function reconcileTreeDelta({
 
 module.exports = {
     deriveFolderChainNames,
+  copyChainsMirror,
   deriveFolderAncestry,
   documentTokenFromLink,
   folderTokenFromLink,

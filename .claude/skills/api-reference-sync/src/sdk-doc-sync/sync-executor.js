@@ -9,7 +9,7 @@ const { organizationRecordType } = require('./sdk-organization-contract');
 const { validateInheritanceEvidence } = require('./inheritance-evidence');
 const { DEPRECATED_PROGRESS, captureRecordState, isDeprecatedProgress, normalizedTargetsValue, sameNormalizedTargets } = require('./record-state');
 const { verbatimCarriesIncludeMarker, verbatimContentDigest } = require('./verbatim-content');
-const { deriveFolderAncestry, deriveFolderChainNames } = require('./tree-delta-reconciliation');
+const { deriveFolderAncestry, deriveFolderChainNames, copyChainsMirror } = require('./tree-delta-reconciliation');
 const {
   normalizeReferenceMultiset,
   referenceMultisetsEqual,
@@ -1166,6 +1166,10 @@ class SyncExecutor {
   // source copied flat into the parent directory) diverges here, before any
   // write. Both chains are re-derived live, exactly like the containment
   // gate above; plans attested before kernel v5 keep verifying as before.
+  // 2026-10-23 section-rehome amendment: the section level directly under
+  // the version root may differ when every deeper level matches and the
+  // depth is preserved (copyChainsMirror) — identity-map-governed track
+  // reorganizations re-home class sections across versions.
   async _assertCopyStructureMirror(plan, result) {
     const attestation = (plan.invariantAttestations || [])
       .find((entry) => entry?.id === 'api.versioned-tree-delta');
@@ -1185,7 +1189,7 @@ class SyncExecutor {
     const targetNames = targetChain.length >= 2
       ? await this._folderChainNames(targetChain[0], targetChain[targetChain.length - 1])
       : null;
-    if (!sourceNames || !targetNames || JSON.stringify(sourceNames) !== JSON.stringify(targetNames)) {
+    if (!sourceNames || !targetNames || !copyChainsMirror(sourceNames, targetNames)) {
       const error = new SyncExecutionError(
         'TREE_DELTA_COPY_STRUCTURE_MISMATCH',
         `Copy target must mirror the source section structure for ${plan.stableId}: source [${(sourceNames || []).join(' / ')}] under ${placement.versionRootToken} vs target [${(targetNames || []).join(' / ')}] under ${plan.target?.versionRootToken ?? '(missing)'}`,

@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { reconcileTreeDelta } = require('../src/sdk-doc-sync/tree-delta-reconciliation');
+const { reconcileTreeDelta, copyChainsMirror } = require('../src/sdk-doc-sync/tree-delta-reconciliation');
 const {
     assertKnownTrackKeys,
     loadChangedIdentities,
@@ -167,4 +167,21 @@ test("assertKnownTrackKeys fails closed on typo'd track versions but accepts oth
         () => assertKnownTrackKeys(registry, { 'v2.6x': ['Slug-One'] }),
         /unknown track version\(s\): v2\.6x/,
     );
+});
+
+test('copyChainsMirror: full equality mirrors; section-level rename mirrors at preserved depth; depth collapse and deeper divergence refuse', () => {
+    // 2026-10-23 section-rehome amendment (py v3.0 campaign): the identity
+    // map governs placement and re-homed the class sections across versions
+    // (v2.6 ORM/FieldSchema -> v3.0 MilvusClient/FieldSchema). The mirror
+    // semantics keep blocking what kernel v5 was built for — depth collapse
+    // (V1 flattening) and misplacements — while sanctioning the re-homed
+    // section level.
+    assert.equal(copyChainsMirror(['ORM', 'FieldSchema'], ['ORM', 'FieldSchema']), true, 'identical chains mirror');
+    assert.equal(copyChainsMirror(['ORM', 'FieldSchema'], ['MilvusClient', 'FieldSchema']), true, 'section rename with preserved deeper levels mirrors');
+    assert.equal(copyChainsMirror(['Collections'], ['Collections']), true, 'identical one-name chains mirror');
+    assert.equal(copyChainsMirror(['Vector'], ['Collections']), false, 'a bare cross-section move at one level stays refused');
+    assert.equal(copyChainsMirror(['ORM', 'FieldSchema'], ['MilvusClient']), false, 'depth collapse (V1 flattening) stays refused');
+    assert.equal(copyChainsMirror(['ORM', 'FieldSchema'], ['MilvusClient', 'Management']), false, 'deeper-level divergence stays refused');
+    assert.equal(copyChainsMirror(null, ['Collections']), false, 'unreachable chains never mirror');
+    assert.equal(copyChainsMirror(['ORM', 'FieldSchema', 'Sub'], ['MilvusClient', 'FieldSchema', 'Sub']), true, 'three-level chains re-home at the section level too');
 });

@@ -1689,6 +1689,110 @@ test('SyncExecutor refuses a kernel v5 copy whose target does not mirror the sou
   assert.match(result.error.message, /source \[Vector\].*vs target \[Collections\]/);
 });
 
+test('SyncExecutor passes a section-rehomed kernel v5 copy whose deeper chain levels mirror (2026-10-23 py v3.0 reorganization)', async () => {
+  const { documentWriter, bitableWriter } = spies();
+  // py v3.0 reorganization shape: v2.6 source ORM/FieldSchema copied into
+  // v3.0 MilvusClient/FieldSchema — section renamed by the placement
+  // authority, class level preserved. The mirror gate must let the copy
+  // through to the actual document work (copyDocument runs).
+  const calls = [];
+  const rehomedTree = {
+    async listFolder({ folderToken }) {
+      if (folderToken === 'root-v24-src') return [{ token: 'src-orm', type: 'folder', name: 'ORM' }];
+      if (folderToken === 'src-orm') return [{ token: 'src-fieldschema', type: 'folder', name: 'FieldSchema' }];
+      if (folderToken === 'root-v26') return [{ token: 'milvusclient-v26', type: 'folder', name: 'MilvusClient' }];
+      if (folderToken === 'milvusclient-v26') return [{ token: 'fieldschema-v26', type: 'folder', name: 'FieldSchema' }];
+      return [];
+    },
+    async copyDocument(input) {
+      calls.push('copyDocument');
+      return { token: 'doc-copy', url: 'https://docs.example/doc-copy', title: input.title, folderToken: input.folderToken };
+    },
+    async patchDocument() {
+      calls.push('patchDocument');
+      return { patched: true };
+    },
+    async deleteDocument() { return { deleted: true }; },
+  };
+  const context = planningContext({
+    current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'src-fieldschema' },
+    copySource: {
+      documentToken: 'doc-v26',
+      link: 'https://docs.example/docx/doc-v26',
+      title: 'construct_from_dict()',
+      placement: { versionRootToken: 'root-v24-src', folderToken: 'src-fieldschema' },
+    },
+    target: {
+      version: 'v2.6.x',
+      parentRecordId: 'parent-v26',
+      folderToken: 'fieldschema-v26',
+      versionRootToken: 'root-v26',
+      folderAncestry: ['root-v26', 'milvusclient-v26', 'fieldschema-v26'],
+      ancestryVerified: true,
+    },
+  });
+  const copyPlan = plan('UPDATE', context);
+  const executor = new SyncExecutor({
+    documentWriter: rehomedTree,
+    bitableWriter,
+    tokenReferenceReader: tokenReferenceReaderFor(copyPlan),
+  });
+  const result = await executor.execute(copyPlan, {
+    artifact: artifact('# construct_from_dict\n\nupdated copied markdown'),
+    approval: { approved: true },
+  });
+  assert.notEqual(result.error && result.error.code, 'TREE_DELTA_COPY_STRUCTURE_MISMATCH', 'the section-rehomed copy passes the mirror gate');
+  assert.ok(calls.includes('copyDocument'), 'execution proceeds past the gate into the copy');
+  assert.ok(result.completedSteps.includes('verifyCopyStructure'));
+});
+
+test('SyncExecutor refuses a kernel v5 copy whose section rehome collapses depth (V1 flattening stays blocked)', async () => {
+  const { documentWriter, bitableWriter } = spies();
+  // Same reorganization, but the target drops the class level — the source
+  // [ORM, FieldSchema] would land flat under [MilvusClient]. Depth collapse
+  // is exactly the V1 failure mode the mirror gate exists for.
+  const flatTree = {
+    async listFolder({ folderToken }) {
+      if (folderToken === 'root-v24-src') return [{ token: 'src-orm', type: 'folder', name: 'ORM' }];
+      if (folderToken === 'src-orm') return [{ token: 'src-fieldschema', type: 'folder', name: 'FieldSchema' }];
+      return folderToken === 'root-v26'
+        ? [{ token: 'milvusclient-v26', type: 'folder', name: 'MilvusClient' }]
+        : [];
+    },
+  };
+  const context = planningContext({
+    current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'src-fieldschema' },
+    copySource: {
+      documentToken: 'doc-v26',
+      link: 'https://docs.example/docx/doc-v26',
+      title: 'construct_from_dict()',
+      placement: { versionRootToken: 'root-v24-src', folderToken: 'src-fieldschema' },
+    },
+    target: {
+      version: 'v2.6.x',
+      parentRecordId: 'parent-v26',
+      folderToken: 'milvusclient-v26',
+      versionRootToken: 'root-v26',
+      folderAncestry: ['root-v26', 'milvusclient-v26'],
+      ancestryVerified: true,
+    },
+  });
+  const copyPlan = plan('UPDATE', context);
+  const executor = new SyncExecutor({
+    documentWriter: flatTree,
+    bitableWriter,
+    tokenReferenceReader: tokenReferenceReaderFor(copyPlan),
+  });
+  const result = await executor.execute(copyPlan, {
+    artifact: artifact('# construct_from_dict\n\nupdated copied markdown'),
+    approval: { approved: true },
+  });
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'TREE_DELTA_COPY_STRUCTURE_MISMATCH');
+  assert.ok(result.error.message.includes('source [ORM / FieldSchema]'), 'message reports the source chain');
+  assert.ok(result.error.message.includes('vs target [MilvusClient]'), 'message reports the collapsed target chain');
+});
+
 test('SyncExecutor refuses a kernel v5 copy plan that lost its copySource.placement evidence', async () => {
   const { documentWriter, bitableWriter } = spies();
   const context = planningContext({

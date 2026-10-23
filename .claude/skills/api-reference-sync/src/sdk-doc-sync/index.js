@@ -40,7 +40,7 @@ const {
     WRITE_PLAN_ACTIONS,
     verifyPlacementWalkBinding,
 } = require('./versioned-tree-policy');
-const { deriveFolderAncestry, deriveFolderChainNames } = require('./tree-delta-reconciliation');
+const { deriveFolderAncestry, deriveFolderChainNames, copyChainsMirror } = require('./tree-delta-reconciliation');
 const { buildAcceptanceManifest, buildReviewUnitManifest } = require('./review-units');
 const { settledResourceIdentity } = require('./settled-resources');
 const {
@@ -1702,8 +1702,7 @@ class SdkDocSync {
                                 versionRootToken: plan.target.versionRootToken,
                                 folderToken: plan.target.folderToken,
                             });
-                            observed.copyStructureMirrored = Boolean(sourceNames && targetNames
-                                && JSON.stringify(sourceNames) === JSON.stringify(targetNames));
+                            observed.copyStructureMirrored = copyChainsMirror(sourceNames, targetNames);
                         } catch (error) {
                             observationErrors.push({ code: 'TREE_DELTA_OBSERVATION_FAILED', detail: 'copyStructureMirror', message: error.message });
                         }
@@ -1758,8 +1757,7 @@ class SdkDocSync {
                                 versionRootToken: plan.target.versionRootToken,
                                 folderToken,
                             });
-                            observed.copyStructureMirrored = Boolean(sourceNames && targetNames
-                                && JSON.stringify(sourceNames) === JSON.stringify(targetNames));
+                            observed.copyStructureMirrored = copyChainsMirror(sourceNames, targetNames);
                         } catch (error) {
                             observationErrors.push({ code: 'TREE_DELTA_OBSERVATION_FAILED', detail: 'copyStructureMirror', message: error.message });
                         }

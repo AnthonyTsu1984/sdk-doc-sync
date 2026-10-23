@@ -27,6 +27,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ENGINE = path.join(__dirname, 'sdk-doc-sync.js');
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 
 function usage() {
   process.stdout.write(`usage:
@@ -190,8 +191,11 @@ function statePathFor(config) {
 }
 
 function loadState(config) {
+  // 直读而非复用 readJsonFile：后者失败时 process.exit，catch 不到——
+  // 缺文件/坏文件按"从零开始"处理（调和器语义：state 只是本地清单）。
   try {
-    return readJsonFile(statePathFor(config), 'sync-state');
+    const parsed = JSON.parse(fs.readFileSync(statePathFor(config), 'utf8'));
+    return { doneUnits: [], ...parsed };
   } catch {
     return { doneUnits: [] };
   }
@@ -241,6 +245,33 @@ function unitListFromPlan(plan) {
     reviewUnitId: String(unit.reviewUnitId),
     documentStableId: unit.documentStableId || null,
   }));
+}
+
+// 零验证失败 journal 的兜底：一次内容类失败的尝试会在该 digest 的执行
+// journal 里留下无任何 verified-success 的失败记录，同 digest 重试会被引擎
+// 以 EXECUTION_RECONCILIATION_REQUIRED 拒绝（旧编排靠重生成换 digest 绕开，
+// retired settle 之后没有对账路径）。只要 journal 里没有任何 verified
+// success 的 observed 条目——即没有任何已验证的落地写入——就字节保全地
+// 归档（镜像引擎自己对 rolled-back journal 的归档模式），让重试走全新
+// journal。写路径幂等：同内容重写字节相同，重放安全。带 verified success
+// 的 journal 是真实落地证据，绝不归档，如实上报由操作员处置。
+function tryHealZeroVerifiedJournal(digest, unitId, log) {
+  const journalPath = path.join(REPO_ROOT, 'tmp', 'api-reference-sync', `${digest.replace(':', '-')}.jsonl`);
+  if (!fs.existsSync(journalPath)) return false;
+  let entries;
+  try {
+    entries = fs.readFileSync(journalPath, 'utf8').trim().split('\n')
+      .filter((line) => line.trim() !== '').map((line) => JSON.parse(line));
+  } catch {
+    return false;
+  }
+  const hasVerifiedSuccess = entries.some((entry) => entry.type === 'observed'
+    && entry.status === 'success' && entry.verified === true);
+  if (hasVerifiedSuccess) return false;
+  const archive = `${journalPath}.failed-${Date.now()}.jsonl`;
+  fs.renameSync(journalPath, archive);
+  log(`unit ${unitId}: zero-verified failure journal archived (${path.basename(archive)}), replaying on a fresh journal`);
+  return true;
 }
 
 // 单单元收敛：scoped dry-run 取执行时 digest（内部身份，非操作员仪式）→
@@ -302,6 +333,14 @@ function reconcileUnit(config, unit, { attemptLog }) {
         continue;
       }
       return { ok: false, code: 'NETWORK_EXHAUSTED', detail: flat.slice(0, 400) };
+    }
+    // 上次失败留下的零验证 journal 挡住重放 → 归档后同 digest 重试一次。
+    const diagnostics = Array.isArray(execJson?.executionResult?.diagnostics)
+      ? execJson.executionResult.diagnostics : [];
+    if (diagnostics.some((entry) => entry?.code === 'EXECUTION_RECONCILIATION_REQUIRED')) {
+      if (tryHealZeroVerifiedJournal(digest, unit.reviewUnitId, attemptLog) && round < 3) {
+        continue;
+      }
     }
     // 内容/验证类 → 记录并继续跑下一个单元；不冻结全局。
     const code = execJson?.executionResult?.diagnostics?.[0]?.code

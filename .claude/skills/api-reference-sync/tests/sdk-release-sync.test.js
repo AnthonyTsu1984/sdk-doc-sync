@@ -91,6 +91,13 @@ test('runner source keeps the fault-tolerance contract anchors', () => {
   assert.match(source, /wipUnitsFromPlan/);
   // 会话自愈：归档重建而非报错冻结
   assert.match(source, /archived to/);
+  // 零验证失败 journal 自愈（重设计漏掉的对账后继）：同 digest 重试被
+  // EXECUTION_RECONCILIATION_REQUIRED 挡住时，无 verified-success 的 journal
+  // 字节保全归档后重放；有 verified success 的绝不归档。
+  assert.match(source, /tryHealZeroVerifiedJournal/);
+  assert.match(source, /EXECUTION_RECONCILIATION_REQUIRED/);
+  assert.match(source, /entry.verified === true/);
+  assert.match(source, /零验证失败 journal/);
   // 批次 digest 是内部身份：不出现任何操作员门禁格式
   assert.doesNotMatch(source, /APPROVE_CAMPAIGN|APPROVE_WRITES|APPROVE_GROUPING/);
 });

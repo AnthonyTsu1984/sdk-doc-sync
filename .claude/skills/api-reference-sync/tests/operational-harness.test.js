@@ -374,14 +374,19 @@ test('complete operational manifest passes', () => {
   assert.deepEqual(result, { valid: true, errors: [] });
 });
 
-test('sdk-doc-sync guidance requires human-visible access and durable execution completion evidence', () => {
+test('sdk-release-sync guidance pins human-visible reports, WIP-to-Draft convergence, and no-global-freeze', () => {
+  // 2026-10-23 重设计：旧交接契约（completion sentinel / do-not-relaunch 对账 /
+  // scan-state 终点仪式）随编排层退役。新契约：写→验→Draft 直线收敛、运行报告
+  // 人工可见、单单元失败不冻结全局、WIP 滞留由 recover 清扫兜底。
   const skill = fs.readFileSync(path.join(__dirname, '..', 'SKILL.md'), 'utf8');
-  assert.match(skill, /human-visible access/i);
-  assert.match(skill, /completion sentinel/i);
-  assert.match(skill, /do not relaunch/i);
-  assert.match(skill, /Acceptance Finalization/i);
-  assert.match(skill, /WIP.*Draft/i);
-  assert.match(skill, /scan-state\.json/i);
+  assert.match(skill, /写→验→Draft/);
+  assert.match(skill, /单单元失败不冻结全局/);
+  assert.match(skill, /WIP 兜底/);
+  assert.match(skill, /human-visible|人工可见|运行报告/);
+  assert.match(skill, /WIP.*Draft|终化/);
+  // 旧仪式语言不得回流
+  assert.doesNotMatch(skill, /completion sentinel/i);
+  assert.doesNotMatch(skill, /do not relaunch/i);
 });
 
 test('Java and post-write guidance route the new operational harness', () => {

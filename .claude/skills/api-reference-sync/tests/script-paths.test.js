@@ -211,6 +211,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/sdk-layout-validator.test.js',
     '.claude/skills/api-reference-sync/tests/sdk-organization-contract.test.js',
     '.claude/skills/api-reference-sync/tests/sdk-reference-ir.test.js',
+    '.claude/skills/api-reference-sync/tests/sdk-release-sync.test.js',
     '.claude/skills/api-reference-sync/tests/sdk-renderers.test.js',
     '.claude/skills/api-reference-sync/tests/sdk-review-session-cli.test.js',
     '.claude/skills/api-reference-sync/tests/semantic-content-map.test.js',
@@ -287,29 +288,19 @@ test('sdk-doc-sync operational references exist and are linked from the skill', 
   }
 });
 
-test('interactive approval gates require exact digest-bound copy-ready replies', () => {
+test('operator ceremony is retired: no digest-bound gate replies, plain unit-list confirmation', () => {
+  // 2026-10-23 重设计裁定：操作员面前的 digest 门禁仪式整体退役。SKILL.md
+  // 不得再出现任何 APPROVE_* sha256 门禁格式；写入确认 = 单元清单 + 操作员
+  // 确认（bin/sdk-release-sync.js sync 的清单确认）。引擎内部批次 digest 保留
+  // 为纯内部身份（幂等去重），不是操作员批准面。
   const skillRoot = path.resolve(__dirname, '..');
   const skill = fs.readFileSync(path.join(skillRoot, 'SKILL.md'), 'utf8');
-  const integration = fs.readFileSync(path.join(skillRoot, 'references', 'bot-integration.md'), 'utf8');
-  const prompts = fs.readFileSync(path.join(skillRoot, 'references', 'bot-prompts.md'), 'utf8');
-
-  for (const source of [skill, integration, prompts]) {
-    assert.match(source, /APPROVE_GROUPING sha256:<proposal-digest>/);
-    assert.match(source, /APPROVE_WRITES sha256:<batch-digest>/);
-    assert.match(source, /APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>/);
-  }
-  // The 2026-10-16 ruling retires document review and acceptance review — the
-  // write approval authorizes acceptance, so those gates are no longer live.
-  assert.match(skill, /APPROVE_DOCUMENT.*APPROVE_ACCEPTANCE.*retired/is);
-  assert.match(integration, /retired \(2026-10-16 ruling: the write approval authorizes acceptance\)/);
-  assert.match(prompts, /retired \(2026-10-16 ruling: the write approval authorizes acceptance\)/);
-
-  assert.match(skill, /If approved, reply exactly/i);
-  assert.match(skill, /interactive chat.*MUST read.*bot-integration.*bot-prompts/is);
-  assert.match(integration, /bare approval command.*not approved/is);
-  assert.match(prompts, /If approved, reply exactly:/);
-  assert.match(prompts, /Structural VirtualNode or Module records.*excluded.*WIP.*Draft/is);
-  assert.match(prompts, /COPY_PATCH_AND_REPOINT.*restore.*Bitable.*delete.*copy.*never.*history/is);
+  assert.doesNotMatch(skill, /APPROVE_GROUPING sha256:/);
+  assert.doesNotMatch(skill, /APPROVE_WRITES sha256:/);
+  assert.doesNotMatch(skill, /APPROVE_CAMPAIGN sha256:/);
+  assert.doesNotMatch(skill, /APPROVE_ROLLBACK <review-unit-id> sha256:/);
+  assert.match(skill, /单元清单/);
+  assert.match(skill, /已退役的机制/);
 });
 
 test('rollback CLI reference documents deterministic plan, approval, execute, and reconciliation', () => {

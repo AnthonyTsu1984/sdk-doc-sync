@@ -5,71 +5,50 @@ description: Use when a Milvus or Zilliz SDK, CLI, REST API, or OpenAPI release 
 
 # API Reference Sync
 
-Synchronize versioned API-reference records without changing documentation ownership or release history.
+把一个 SDK 版本发布同步到飞书 API Reference 库。**直线流程，一个 runner，三个命令。**
 
-## Trigger Boundary
+## 流程（全流程就这四步）
 
-Use for release-range discovery, inventory, versioned planning, backfill, deprecation, reparenting, or source-backed SDK/CLI/REST updates.
-
-Do not use for a narrative guide, localization, code-only checks, or missing language tabs in one document. Use `verified-doc-authoring`, `localized-doc-sync`, `doc-code-verify`, or `procedure-code-sync` respectively.
-
-## Permission Boundary
-
-- Discovery through dry-run is read-only; write only after the user gives explicit approval of the exact batch digest. Keep the older-version doc as a historical snapshot — never patch or delete it during a newer release sync.
-- Write approval authorizes Acceptance Finalization (2026-10-16 ruling: a verified, recorded execution finalizes `WIP→Draft` in the same approved write — `--auto-accept`). It never authorizes rollback (`APPROVE_ROLLBACK <review-unit-id> sha256:<digest>`, pre-finalization only).
-- Mechanical clauses are code-enforced: `Slug` never written (TOPOLOGY_RECORD_SLUG_URL); the executor never writes `Targets`; rollback only via `bin/sdk-document-rollback.js`.
-
-## Shared Contract
-
-- Capability baseline: [capabilities.json](capabilities.json); canonical artifacts, lineage, approval envelopes, journals, and state semantics come from `../doc-ops-core/`.
-- REST/OpenAPI review is one unit per `(versionTrack, endpoint, method)`; the Feishu state machine does not apply to zdoc spec-file writes; fragments are deterministic from pinned revisions, never control-plane truth from Feishu; adapters must never guess an internal-to-public control-plane mapping — ambiguous ones are agent work (`sdk-rest.md`).
-- Planning emits a deterministic `reviewUnitManifest`, one unit per public document; never execute a multi-document release batch outside verified batch mode.
-- Verified batch mode is an explicit operator decision, never a default: the operator sets batch size `K` (first batch = canary). One WRITE gate binds the ordered next `K` units, not per-unit digests. Any verification failure freezes the batch — a new invariant failure freezes batch mode for that release until root-caused; verified units stay intact and verified.
-- Acceptance is authorized by the write approval (2026-10-16 ruling, superseding the 2026-10-01 two-gate flow): a verified, recorded execution finalizes — governed `WIP→Draft` with the digest-bound per-unit receipt — in the same approved write (`--auto-accept`); no separate acceptance gate remains. The unit is terminal (corrective release instead); `scan-state.json` moves at mechanical `close-session` once every unit finalized.
-- The manifest digest binds the stable document sequence, not stale write plans: replan immediately before approval (`--review-unit-id` → scoped dry-run → `--approve-batch-digest <hash>`); any changed artifact, correction, or unit selection means a new batch and new approval. Units-based campaign receipts bind the unit set + the three chains instead (2026-10-16 ruling): a regenerated unit digest inside the approved set executes without a fresh gate (`CONTENT_REGENERATED` journaled). Review comments rebuild only that unit; never advance while comments remain unresolved.
-- Progress lives in a review-session JSON: create only from the complete initial dry-run (`--session-state`), resume only via `--resume-session`; caller-declared unit IDs are never proof of acceptance. Rotation is gate-boundary: one campaign = one session file, ~42% context budget per chat — an approval not in its durable artifact does not survive rotation.
-- Journal every approved action before and after mutation, ending in a durable completion sentinel; an existing journal returns `EXECUTION_RECONCILIATION_REQUIRED` — reconcile live state first, do not relaunch. Rollback capsules precede every mutation; a finalized session is not rollback-capable.
-- PR intake from `milvus-io/web-content` is read-only discovery (`bin/sdk-pr-scan.js`, `sdk-pr-sync.md`; MERGED PRs only). Batch 15: the filtered scope IS the of-record — proposal, approval, and dry-runs bind one file.
-
-## Explicit Interactive Gates
-
-Quickstart:
+1. **备料（确定性，无模型）**：`intake-assemble` 扫 SDK 源码 + dump PR 页 → 组装每单元最终内容（candidate-spec → reviewed-context，字节保真由 `compare-update-spec-context` 断言）。
+2. **手写一份小配置** `sync-config.json`（语言/轨/飞书 token/工件路径；旧战役用 `init --from-plan` 一键迁移）。
+3. **`bin/sdk-release-sync.js sync --config <cfg>`**：展示单元清单 → 操作员确认 → 逐单元 写→验→Draft。
+4. **失败后**：重跑 `sync`（自动跳过已完成）；**WIP 滞留用 `recover` 清扫**（文档已写对则直接终化，没写对则重写）。`status` 随时看全表状态。
 
 ```bash
-npm run api-reference-sync -- --sdk-dir repos/pymilvus --language python \
-  --sdk-name pymilvus --sdk-version v2.6.x \
-  --release-scope tmp/sdk-release-scout/python-v26.json --dry-run --json
+# 从旧 campaign plan 迁移配置（一次性）
+node bin/sdk-release-sync.js init --from-plan tmp/api-reference-sync/campaign-plans/python-v30-sync/campaign-plan.json
+
+# 看状态（只读）
+node bin/sdk-release-sync.js status --config tmp/api-reference-sync/campaign-plans/python-v30-sync/sync-config.json
+
+# 收敛（先弹清单确认）
+node bin/sdk-release-sync.js sync --config <cfg>
+
+# WIP 兜底清扫（可定时；发布是定时的，WIP 不许滞留超过一个清扫周期）
+node bin/sdk-release-sync.js recover --config <cfg>
 ```
 
-For any interactive chat review or approval, **MUST read** [references/bot-integration.md](references/bot-integration.md) and [references/bot-prompts.md](references/bot-prompts.md). 
+## 容错语义（runner 内建，操作员不需要操心）
 
-| Gate | Bound artifact | If approved, reply exactly |
-|------|----------------|----------------------------|
-| Merged campaign gate | scope/grouping/candidateSpec/units envelope receipt | `APPROVE_CAMPAIGN sha256:<campaignPlanDigest>` |
-| Grouping review | Complete candidate-proposal semantic digest | `APPROVE_GROUPING sha256:<proposal-digest>` |
-| Write approval | `proposedExecutionBatch.batchDigest` | `APPROVE_WRITES sha256:<batch-digest>` |
-| Rollback approval | Active or accepted unit ID and its deterministic rollback manifest | `APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>` |
+- **传输类失败**（网络超时/限流/5xx）自动指数退避重试，写路径幂等（同内容重写字节相同）。
+- **单单元失败不冻结全局**：记录原因，继续下一个单元；报告列全部失败项，重跑只碰失败项。
+- **digest 漂移内部自愈**：执行前重取该单元当前 digest 再执行（旧编排里三轮才追出的缝，现在是内部重试）。
+- **会话是内部实现细节**：runner 自建自管，形状不对自动归档重建，不存在"会话残留"这类冻结。
+- **WIP 兜底**：任何原因停在 WIP 的记录，`recover` 一律收敛到终态（对→终化，错→重写）。
 
-Document review (`APPROVE_DOCUMENT`) and acceptance review (`APPROVE_ACCEPTANCE`) are retired (2026-10-16 ruling).
+## 边界（保持不变的部分）
 
-Multi-line batch replies (legacy sessions and `REQUEST_DOCUMENT` change requests) are parsed by CODE: relay the operator's text verbatim into `bin/sdk-review-session.js resolve-batch-review`. It classifies each `APPROVE_DOCUMENT`/`REQUEST_DOCUMENT` line, re-derives journal hashes, and refuses the WHOLE reply on any unbindable line (typed `REPLY_*` refusals). Replays converge; unaddressed units stay pending; never re-classify lines yourself (2026-10-07 R16).
-
-Gate cards are plain text: generate via `scripts/gate-presentation.js`, then pass `scripts/gate-presentation-check.js … --ensure` — `PRESENTATION_OK` is a precondition; a failing gate is NOT presented.
-
-Approval and receipt digests are read ONLY programmatically, from session/store/artifact — a truncated display digest is presentation, never input (references/cli.md).
-
-## Domain Workflow
-
-1. Release scope: read `scan-state.json` + BOTH Git log and Git diff since the last accepted tag (`bin/sdk-release-scout.js` pins both).
-2. Candidate proposal: normalize symbols, resolve records and live ancestry, stop for grouping and successor-track review; the same-pass successor check is a judgment obligation. Scope = the filtered scope (batch 15; sdk-pr-sync.md Canonical intake chain).
-3. Reviewed planning: source-verified artifacts, immutable plans, `planCount == diffCount`, exact evidence; `scripts/intake-preflight.js --strict` before any campaign.
-4. Collaborative execution: deterministic order, one unit at a time — approve, execute, verify, finalize (acceptance rides the write approval, `--auto-accept`).
-5. Acceptance: each verified unit finalizes as it runs (`WIP→Draft`, refetch-verified, digest-bound per-unit receipt); `close-session` advances `scan-state.json` and runs process-learning capture (打回即铸).
-6. Campaign-runner preflight: PARTIAL is failure (record, stop, reconcile); scripts are COPIED FROM THE CERTIFIED TEMPLATE, never inherited (audit B-4).
-7. Operator-authored pages land through a hand-authored surgical `apiPatchPlan`, simulation-validated pre-approval (disclose: preview = desired shape, landing = surgical delta).
-8. Batch runbook: start from `sdk-review-session.js handoff --session <file> [--recipe <recipe.json>]`. Recipes: config/intake-recipes.json; dispatch: docs/agent-dispatch-brief-template.md.
+- 写入前需要操作员对单元清单的显式确认（`--yes` 仅限无人值守定时场景）。
+- 旧版本文档作为历史快照保留——发布同步中绝不 patch 或删除旧版文档。
+- `Slug` 字段永不写入；`Targets` 由 targets 工件决定，执行器不擅自写。
+- 回滚走 `bin/sdk-document-rollback.js`，runner 不做删除式回滚。
+- REST/OpenAPI review is one unit per `(versionTrack, endpoint, method)`; adapters must never guess an internal-to-public control-plane mapping — ambiguous ones are agent work ([references/sdk-rest.md](references/sdk-rest.md)).
+- 运维细节参考（按需读）：[references/document-rollback.md](references/document-rollback.md)、[references/schema-first-generation.md](references/schema-first-generation.md)、[references/release-smoke-test.md](references/release-smoke-test.md)、[references/post-write-verification.md](references/post-write-verification.md)。
+- PR 只读发现（`sdk-pr-scan`）等专项流程见 [references/cli.md](references/cli.md)。
 
 ## Domain Invariants
+
+引擎层的内容保证（重设计只换了编排层，这些引擎不变量原样有效；生产代码逐条强制）：
 
 - Single-request methods never get their own H3; Example is a bare code block (LAYOUT_SINGLE_REQUEST_H3). [api.global-layout-rules]
 - Classify ownership as `standalone`, `method_owned`, or `ambiguous`, embedding method-owned request, response, result, task, info, iterator, descriptor, transport, and wrapper types in their owner pages. [api.ownership-classification]
@@ -105,23 +84,18 @@ Approval and receipt digests are read ONLY programmatically, from session/store/
 - Sessions close only with learnings on the record (打回即铸): rule-candidate drafts or suppression with rationale (PROCESS_LEARNING_CAPTURE_REQUIRED). [api.process-learning-capture]
 - Operator-authored pages land via surgical apiPatchPlan (desired = live + reviewed delta; ascending insertAt; simulation pre-gate — audit B-1). [api.operator-authored-surgical-patch]
 
-## Precedent Intake (how this file grows)
+## 已退役的机制（不要再引入）
 
-1. Three-question test: schema writable? fixture writable? replays 100% from on-disk artifacts? All three → CODE (typed code + fixture + registry entry); partially → precedent (one sentence, narrative archived); neither → operator adjudication. Every never/refuse here cites a real code.
-2. A recurring incident's first stop is not this file: `close-session` drafts rule candidates (打回即铸); fix data/code + fixture first; edit precedent prose only when the adjudication itself changed. Precedent template: principle + code + date/decider + archive pointer; prose over three lines names its archive.
-3. This file is lint-gated (`scripts/skill-md-lint.js`: size budget, pointer integrity, marker↔registry digest consistency) — the anti-rebound mechanism.
+2026-10-23 重设计裁定：以下机制**整体移除**——digest 门禁仪式（APPROVE_* sha256）、
+战役收据与三链复验、会话状态机的操作员可见面、执行 journal 对账、failure-class
+预算重试环、dwf 编排模板（release-sync-campaign.dwf.ts 十阶段）、campaign
+freeze/settle。引擎内部的批次 digest 保留为**纯内部身份**（幂等去重用），
+操作员不接触、不比对、不批准任何摘要。
 
-## Required References
+## 深入参考（按需读）
 
-- Language rules: [Python](sdk-python.md), [Java](sdk-java.md), [Node.js](sdk-node.md), [C++](sdk-cpp.md), [Go](sdk-go.md), [Rust](sdk-rust.md), [Zilliz CLI](sdk-zilliz-cli.md), [REST/OpenAPI](sdk-rest.md), [PR intake](sdk-pr-sync.md), and [cross-SDK alignment](sdk-alignment.md).
-- Release and planning: [references/versioning.md](references/versioning.md), [references/active-track-inheritance.md](references/active-track-inheritance.md), [references/inheritance-evidence.md](references/inheritance-evidence.md), [references/tree-delta-policy.md](references/tree-delta-policy.md), and [references/schema-first-generation.md](references/schema-first-generation.md).
-- Bitable hierarchy and layout sampling: [references/bitable-document-organization.md](references/bitable-document-organization.md).
-- Execution and verification: [references/post-write-verification.md](references/post-write-verification.md), [references/release-smoke-test.md](references/release-smoke-test.md), and [references/stable-core-boundary.md](references/stable-core-boundary.md).
-- Commands and recovery: [references/cli.md](references/cli.md) and [references/troubleshooting.md](references/troubleshooting.md).
-- Workspace: [references/workspace-contract.md](references/workspace-contract.md); surgical patching: [references/surgical-patch.md](references/surgical-patch.md); per-document rollback: [references/document-rollback.md](references/document-rollback.md).
-- Interactive chat and bot gates: [references/bot-integration.md](references/bot-integration.md) and [references/bot-prompts.md](references/bot-prompts.md).
-- Precedent history: [references/skill-history/2026-10-15-pre-thin.md](references/skill-history/2026-10-15-pre-thin.md).
-
-## Output
-
-Report release range, phase/status, artifact paths, proposed or approved batch digest, actions and blockers, document/record links, verification evidence, journal digest, acceptance state, and whether `scan-state.json` changed.
+- [references/cli.md](references/cli.md) — 全部 CLI 的完整 flag 语义
+- [references/sdk-pr-sync.md](references/sdk-pr-sync.md) — PR 只读发现与 scope 约定
+- [references/sdk-rest.md](references/sdk-rest.md) — REST/OpenAPI 轨
+- [references/stable-core-boundary.md](references/stable-core-boundary.md) — 运行时代码与 tmp 运行工件的边界
+- intake 链细节：`scripts/intake-assemble.js` 头注释与 `scripts/compare-update-spec-context.js`

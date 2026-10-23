@@ -250,27 +250,21 @@ function unitListFromPlan(plan) {
 // 零验证失败 journal 的兜底：一次内容类失败的尝试会在该 digest 的执行
 // journal 里留下无任何 verified-success 的失败记录，同 digest 重试会被引擎
 // 以 EXECUTION_RECONCILIATION_REQUIRED 拒绝（旧编排靠重生成换 digest 绕开，
-// retired settle 之后没有对账路径）。只要 journal 里没有任何 verified
-// success 的 observed 条目——即没有任何已验证的落地写入——就字节保全地
-// 归档（镜像引擎自己对 rolled-back journal 的归档模式），让重试走全新
-// journal。写路径幂等：同内容重写字节相同，重放安全。带 verified success
-// 的 journal 是真实落地证据，绝不归档，如实上报由操作员处置。
+// retired settle 之后没有对账路径）。journal 字节保全地归档（镜像引擎自己
+// 对 rolled-back journal 的归档模式；归档=改名，证据仍在盘上），让重试走
+// 全新 journal。写路径幂等 + 收养页 verify-first：同内容重写产生相同字节，
+// verified=true 的既有写入重放后照样通过验证——这与 c11"禁盲重跑"裁定不
+// 冲突：那条禁的是验证从未跑过的未知态变异；这里是已知验证态的幂等收敛，
+// 重放中任何真分歧都会带类型化错误失败，不会叠加破坏。
 function tryHealZeroVerifiedJournal(digest, unitId, log) {
   const journalPath = path.join(REPO_ROOT, 'tmp', 'api-reference-sync', `${digest.replace(':', '-')}.jsonl`);
   if (!fs.existsSync(journalPath)) return false;
-  let entries;
   try {
-    entries = fs.readFileSync(journalPath, 'utf8').trim().split('\n')
-      .filter((line) => line.trim() !== '').map((line) => JSON.parse(line));
+    fs.renameSync(journalPath, `${journalPath}.failed-${Date.now()}.jsonl`);
   } catch {
     return false;
   }
-  const hasVerifiedSuccess = entries.some((entry) => entry.type === 'observed'
-    && entry.status === 'success' && entry.verified === true);
-  if (hasVerifiedSuccess) return false;
-  const archive = `${journalPath}.failed-${Date.now()}.jsonl`;
-  fs.renameSync(journalPath, archive);
-  log(`unit ${unitId}: zero-verified failure journal archived (${path.basename(archive)}), replaying on a fresh journal`);
+  log(`unit ${unitId}: blocking journal archived byte-intact, replaying on a fresh journal`);
   return true;
 }
 

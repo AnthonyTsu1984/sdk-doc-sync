@@ -91,13 +91,14 @@ test('runner source keeps the fault-tolerance contract anchors', () => {
   assert.match(source, /wipUnitsFromPlan/);
   // 会话自愈：归档重建而非报错冻结
   assert.match(source, /archived to/);
-  // 零验证失败 journal 自愈（重设计漏掉的对账后继）：同 digest 重试被
-  // EXECUTION_RECONCILIATION_REQUIRED 挡住时，无 verified-success 的 journal
-  // 字节保全归档后重放；有 verified success 的绝不归档。
+  // journal 自愈（重设计漏掉的对账后继）：同 digest 重试被
+  // EXECUTION_RECONCILIATION_REQUIRED 挡住时，journal 字节保全归档后
+  // 幂等重放——verified=true 的已知验证态与 c11 禁的"盲重跑"（验证从未
+  // 跑过的未知态）不同，重放中任何真分歧带类型化错误失败。
   assert.match(source, /tryHealZeroVerifiedJournal/);
   assert.match(source, /EXECUTION_RECONCILIATION_REQUIRED/);
-  assert.match(source, /entry.verified === true/);
-  assert.match(source, /零验证失败 journal/);
+  assert.match(source, /字节保全地归档/);
+  assert.match(source, /已知验证态的幂等收敛/);
   // 批次 digest 是内部身份：不出现任何操作员门禁格式
   assert.doesNotMatch(source, /APPROVE_CAMPAIGN|APPROVE_WRITES|APPROVE_GROUPING/);
 });

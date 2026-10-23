@@ -589,12 +589,19 @@ function checkMarkdownContentQuality(markdown, profile, options = {}) {
         // class itself instead of __init__), and a fence without a single
         // "(" is not a signature either — the cure is an explicit one-field
         // context.signature in the bare call form.
-        const classHeader = requestFenceLines.find((line) =>
-            /^\s*(?:async\s+)?class\s+[A-Za-z_]\w*\s*[:(]/.test(line));
-        if (classHeader) {
-            report('REQUEST_SIGNATURE_NOT_CALLABLE', `request syntax must be a callable signature, not a class header: ${classHeader.trim()}`);
-        } else if (requestFenceLines.length > 0 && !requestFenceLines.some((line) => line.includes('('))) {
-            report('REQUEST_SIGNATURE_NOT_CALLABLE', 'request syntax must be a callable signature (no "(" found in the block)');
+        // 2026-10-23 operator ruling (py-v30 class pages, the PR wins): the
+        // PR bytes legitimately render `class pymilvus.X` headers for class
+        // constructor pages and stay verbatim — the callable demand is a
+        // generation-surface requirement. UPDATE/COPY_PATCH previews unbind
+        // it at the preflight call site; CREATE pages stay bound.
+        if (options.unbindRequestSignatureCallable !== true) {
+            const classHeader = requestFenceLines.find((line) =>
+                /^\s*(?:async\s+)?class\s+[A-Za-z_]\w*\s*[:(]/.test(line));
+            if (classHeader) {
+                report('REQUEST_SIGNATURE_NOT_CALLABLE', `request syntax must be a callable signature, not a class header: ${classHeader.trim()}`);
+            } else if (requestFenceLines.length > 0 && !requestFenceLines.some((line) => line.includes('('))) {
+                report('REQUEST_SIGNATURE_NOT_CALLABLE', 'request syntax must be a callable signature (no "(" found in the block)');
+            }
         }
     }
     return { invariantId: LAYOUT_INVARIANT_ID, violations };

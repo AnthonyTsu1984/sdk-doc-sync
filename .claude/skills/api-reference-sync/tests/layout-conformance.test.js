@@ -435,6 +435,51 @@ test('checkMarkdownContentQuality: unbindDescriptionTypeLinks — PR-verbatim ba
     );
 });
 
+test('checkMarkdownContentQuality: unbindRequestSignatureCallable — PR-verbatim class headers conform for UPDATE pages (2026-10-23 ruling)', () => {
+    // The PR's class-constructor pages render `class pymilvus.X` in the
+    // request-syntax fence; the operator ruled the PR bytes stay verbatim.
+    // The callable-signature demand (2026-10-08) is generation-surface only.
+    const prVerbatimClassPage = [
+        'This operation constructs an empty embedding list.',
+        '',
+        '## Request Syntax',
+        '',
+        '```python',
+        'class pymilvus.EmbeddingList',
+        '```',
+    ].join('\n');
+    // Default (generation surface): the class header reports.
+    assert.equal(
+        checkMarkdownContentQuality(prVerbatimClassPage, sdkLayoutProfiles.python)
+            .violations.some((violation) => violation.code === 'REQUEST_SIGNATURE_NOT_CALLABLE'),
+        true,
+        'without the flag the callable-signature requirement stays bound',
+    );
+    // Update-verbatim: the same bytes conform.
+    assert.deepEqual(
+        checkMarkdownContentQuality(prVerbatimClassPage, sdkLayoutProfiles.python, { unbindRequestSignatureCallable: true }).violations,
+        [],
+        'the PR-verbatim class header conforms with the flag',
+    );
+    // The sibling fence rule stays bound under the same flag: a collapsed
+    // one-line signature still reports.
+    const collapsed = [
+        'This operation constructs an empty embedding list.',
+        '',
+        '## Request Syntax',
+        '',
+        '```python',
+        'EmbeddingList(embeddings, dim, dtype)',
+        '```',
+    ].join('\n');
+    assert.equal(
+        checkMarkdownContentQuality(collapsed, sdkLayoutProfiles.python, { unbindRequestSignatureCallable: true })
+            .violations.some((violation) => violation.code === 'REQUEST_SIGNATURE_ONE_PARAM_PER_LINE'),
+        true,
+        'the one-param-per-line fence rule stays bound under the flag',
+    );
+});
+
 test('checkMarkdownContentQuality runs the five rules over preview markdown, skipping fenced code', () => {
     const profile = sdkLayoutProfiles.java;
     const code = (markdown, name) => checkMarkdownContentQuality(markdown, profile)

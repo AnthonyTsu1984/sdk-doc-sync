@@ -1537,6 +1537,9 @@ class SdkDocSync {
                 const check = checkMarkdownContentQuality(markdownPreview, profile, {
                     unbindReturnsResponseFields: isUpdateFamilyAction,
                     unbindDescriptionTypeLinks: isUpdateFamilyAction,
+                    // 2026-10-23 ruling: PR-verbatim class headers stay; the
+                    // callable-signature demand is generation-surface only.
+                    unbindRequestSignatureCallable: isUpdateFamilyAction,
                 });
                 if (check.violations.length > 0) {
                     const error = new Error(`write-approval preview fails the content preflight for ${plan.stableId}: ${check.violations.map((violation) => `${violation.code} (${violation.detail})`).join('; ')}`);

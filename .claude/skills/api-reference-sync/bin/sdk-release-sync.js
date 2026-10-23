@@ -422,7 +422,7 @@ function cmdSync(config, { only, yes }) {
   for (const unitId of acceptedUnitIds) {
     if (!done.has(unitId)) {
       done.add(unitId);
-      log(`session-accepted ${unitId} — marking the runner ledger done`);
+      process.stdout.write(`session-accepted ${unitId} — marking the runner ledger done\n`);
     }
   }
   state.doneUnits = [...done];

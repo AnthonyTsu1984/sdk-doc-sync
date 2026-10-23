@@ -59,6 +59,7 @@ const ARG_SPECS = Object.freeze([
   { flag: '--record-link', key: 'recordLinks', kind: 'multi' },
   { flag: '--comments-resolved', key: 'commentsResolved', kind: 'boolean' },
   { flag: '--approve-digest', key: 'approveDigest', kind: 'value' },
+  { flag: '--approved-batch-digest', key: 'approvedBatchDigest', kind: 'value' },
   { flag: '--external-receipt', key: 'externalReceipt', kind: 'value' },
   { flag: '--base-token', key: 'baseToken', kind: 'value' },
   { flag: '--table-id', key: 'tableId', kind: 'value' },

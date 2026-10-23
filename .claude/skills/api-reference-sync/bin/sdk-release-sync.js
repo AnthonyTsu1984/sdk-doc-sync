@@ -23,8 +23,10 @@
 // 实证。
 
 const { spawnSync } = require('node:child_process');
+const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const fs = require('node:fs');
 const path = require('node:path');
+const REVIEW_SESSION_CLI = path.join(__dirname, 'sdk-review-session.js');
 
 const ENGINE = path.join(__dirname, 'sdk-doc-sync.js');
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
@@ -256,6 +258,85 @@ function unitListFromPlan(plan) {
 // verified=true 的既有写入重放后照样通过验证——这与 c11"禁盲重跑"裁定不
 // 冲突：那条禁的是验证从未跑过的未知态变异；这里是已知验证态的幂等收敛，
 // 重放中任何真分歧都会带类型化错误失败，不会叠加破坏。
+// 悬挂行恢复：heal 归档了 pending 行引用的 journal 后，同一单元的下一次
+// scoped dry 会在 resume 校验上死（Execution journal is missing）。归档件
+// 字节保全，按行内的 digest 精确匹配找回并改名复原——校验通过后执行期的
+// journal 门若再拒绝，heal 会再归档一次，循环收敛。
+// 已记录的失败执行 → sanctioned 打回：pending 行的 journal 带失败条目
+// （ok:false 不变量或 observed failure）说明这是一次等待重放的失败执行，
+// 不是待验收的成功执行。恢复悬挂 journal（若 heal 归档过）后走引擎自己的
+// request-document-changes 转移（executed→in_progress），重放以真实重规划
+// 收敛——比 heal 归档+同 digest 重试少一次对账死锁。
+function retractFailedPending(config, unit, log) {
+  const sessionPath = sessionPathFor(config);
+  let session;
+  try {
+    session = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
+  } catch {
+    return false;
+  }
+  const row = (session.pendingExecutions || []).find((item) => item.reviewUnitId === unit.reviewUnitId);
+  if (!row || !row.executionJournalPath) return false;
+  if (!fs.existsSync(row.executionJournalPath)) {
+    restoreDanglingJournal(config, unit, log);
+  }
+  let entries;
+  try {
+    entries = fs.readFileSync(row.executionJournalPath, 'utf8').trim().split('\n').filter(Boolean)
+      .map((line) => JSON.parse(line));
+  } catch {
+    return false;
+  }
+  const hasFailed = entries.some((entry) => entry?.ok === false
+    || (entry?.type === 'observed' && entry?.status === 'failure'));
+  if (!hasFailed) return false;
+  const result = spawnSync(process.execPath, [
+    REVIEW_SESSION_CLI, 'request-document-changes',
+    '--session', sessionPath,
+    '--review-unit-id', unit.reviewUnitId,
+    '--reason', 'runner heal: the pending row records a failed execution (failed invariant/failure entry); the replay replans for real',
+  ], { encoding: 'utf8' });
+  if (result.status !== 0) {
+    log(`unit ${unit.reviewUnitId}: retraction refused: ${(result.stderr || result.stdout || '').slice(0, 200)}`);
+    return false;
+  }
+  log(`unit ${unit.reviewUnitId}: failed pending execution retracted (changes-requested); replaying on a fresh replan`);
+  return true;
+}
+
+function restoreDanglingJournal(config, unit, log) {
+  let session;
+  try {
+    session = JSON.parse(fs.readFileSync(sessionPathFor(config), 'utf8'));
+  } catch {
+    return false;
+  }
+  const row = (session.pendingExecutions || []).find((item) => item.reviewUnitId === unit.reviewUnitId);
+  if (!row || !row.executionJournalPath || fs.existsSync(row.executionJournalPath)) return false;
+  const dir = path.dirname(row.executionJournalPath);
+  const stem = path.basename(row.executionJournalPath);
+  let candidates = [];
+  try {
+    candidates = fs.readdirSync(dir).filter((f) => f.startsWith(`${stem}.failed-`));
+  } catch {
+    return false;
+  }
+  for (const name of candidates) {
+    const candidatePath = path.join(dir, name);
+    try {
+      const entries = fs.readFileSync(candidatePath, 'utf8').trim().split('\n').filter(Boolean)
+        .map((line) => JSON.parse(line));
+      if (digestSemantic(entries) !== row.executionJournalDigest) continue;
+      fs.renameSync(candidatePath, row.executionJournalPath);
+      log(`unit ${unit.reviewUnitId}: dangling journal restored from ${name}`);
+      return true;
+    } catch {
+      continue;
+    }
+  }
+  return false;
+}
+
 function tryHealZeroVerifiedJournal(digest, unitId, log) {
   const journalPath = path.join(REPO_ROOT, 'tmp', 'api-reference-sync', `${digest.replace(':', '-')}.jsonl`);
   if (!fs.existsSync(journalPath)) return false;
@@ -289,6 +370,7 @@ function reconcileUnit(config, unit, { attemptLog }) {
     '--auto-approve',
   ]);
 
+  retractFailedPending(config, unit, attemptLog);
   let dry = scopedDry();
   let dryJson = parseEngineJson(dry.stdout);
   let digest = dryJson?.proposedExecutionBatch?.batchDigest || null;

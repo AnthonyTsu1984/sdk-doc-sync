@@ -714,6 +714,47 @@ test('verifyTreeDeltaPostconditions refuses a created category folder off the pl
     assert.equal(legacy.ok, true);
 });
 
+test('verifyTreeDeltaPostconditions derives the replay expectation from the measured pre-write baseline', () => {
+    // Approved evidence still carries the pre-campaign reference multiset
+    // (self counted); the measured pre-write baseline is the already-
+    // repointed graph — an adopted replay changed nothing, so the baseline
+    // IS the expectation.
+    const plan = {
+        stableId: 'cpp:Partitions:LoadPartitions',
+        source: { recordId: 'rec-load-partitions-v30', documentToken: 'doc-load-partitions-v26' },
+        inheritanceEvidence: inheritanceEvidence(),
+        invariantAttestations: [{
+            id: INVARIANT_ID,
+            version: 5,
+            inputDigest: sha('plan'),
+            decision: DECISIONS.COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE,
+            evidenceDigest: null,
+            requiredResourceDag: [],
+        }],
+    };
+    const observed = {
+        olderDocumentReferences: ['rec-load-partitions-v26'],
+        preWriteReferences: ['rec-load-partitions-v26'],
+        referenceGraphUnchanged: true,
+        createdDocumentToken: 'doc-copy-new',
+        targetRecordDocumentToken: 'doc-copy-new',
+        categoryFolderToken: 'folder-partitions-v30',
+        categoryFolderLink: 'https://zilliverse.feishu.cn/drive/folder/folder-partitions-v30',
+        categoryNodeLink: 'https://zilliverse.feishu.cn/drive/folder/folder-partitions-v30',
+        createdDocumentFolderToken: 'folder-partitions-v30',
+    };
+    const replay = verifyTreeDeltaPostconditions({ plan, observed });
+    assert.equal(replay.ok, true, 'the adopted replay verifies against the measured baseline');
+    // Without the measured baseline the legacy approved-set face applies and
+    // this shape still refuses (a removal the approved set never saw).
+    const legacy = verifyTreeDeltaPostconditions({
+        plan,
+        observed: { ...observed, preWriteReferences: undefined },
+    });
+    assert.equal(legacy.ok, false);
+    assert.ok(legacy.errors.some((entry) => entry.code === 'TREE_DELTA_REFERENCES_DRIFTED'));
+});
+
 test('verifyTreeDeltaPostconditions proves the executed transition and catches drift', () => {
     const plan = {
         stableId: 'cpp:Partitions:LoadPartitions',

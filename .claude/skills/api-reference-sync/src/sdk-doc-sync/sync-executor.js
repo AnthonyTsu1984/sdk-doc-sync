@@ -1318,11 +1318,22 @@ class SyncExecutor {
       const preWrite = Array.isArray(result.sharedTokenRevalidation?.liveRecordIds)
         ? [...result.sharedTokenRevalidation.liveRecordIds].sort()
         : null;
-      const graphUnchanged = preWrite !== null
-        && JSON.stringify(preWrite) === JSON.stringify(liveRecordIds);
-      if (!graphUnchanged) {
-        expectedRecordIds = removeOneOccurrence(expectedRecordIds, plan.source.recordId);
+      if (preWrite !== null) {
+        // The pre-write gate already reconciled the live multiset against the
+        // approved evidence — strictly on a first execution, via the
+        // confirmed self-repoint tolerance on a replay. This execution's
+        // delta applies to THAT measured baseline; deriving from the
+        // approved set instead would double-subtract a repoint that happened
+        // before this run ever started (2026-10-23 Database:use_database
+        // adopted-replay wall).
+        const baseline = normalizeReferenceMultiset(preWrite);
+        const graphUnchanged = JSON.stringify(baseline)
+          === JSON.stringify(normalizeReferenceMultiset(liveRecordIds));
+        expectedRecordIds = graphUnchanged
+          ? baseline
+          : removeOneOccurrence(baseline, plan.source.recordId);
       }
+      // No revalidation recorded (legacy shape) keeps the approved-set face.
     }
     const ok = referenceMultisetsEqual(expectedRecordIds, liveRecordIds);
     result.treeDeltaVerification = {

@@ -602,17 +602,36 @@ function verifyTreeDeltaPostconditions({ plan, observed }) {
     || decision === DECISIONS.COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE) {
     // Repointing removes exactly ONE reference — the repointed track's
     // record — not every record sharing its (possibly cloned) recordId.
-    const expectedRemaining = evidenceReferenceIds(evidence).sort();
-    if ((decision === DECISIONS.COPY_PATCH_AND_REPOINT
-      || decision === DECISIONS.COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE)
-      && observed?.referenceGraphUnchanged !== true) {
-      // referenceGraphUnchanged marks the idempotent adopted replay: the
-      // pre-write multiset equals the post-write one (the executor pinned
-      // both), so no reference was removed and the approved set stands
-      // unchanged — subtracting here would demand a removal that never
-      // happened (2026-10-23 stranded-WIP walls).
-      const repointedIndex = expectedRemaining.indexOf(plan.source?.recordId);
-      if (repointedIndex >= 0) expectedRemaining.splice(repointedIndex, 1);
+    // 2026-10-23 measured-baseline amendment: when the observation carries
+    // the pre-write multiset, the expectation derives from THAT (the
+    // pre-write gate already reconciled it against the approved evidence) —
+    // an adopted replay whose record repointed before this run would
+    // otherwise demand a removal of a reference the approved set counts
+    // twice-era stale (Database:use_database wall). Observations without
+    // the baseline keep the approved-set face.
+    const preWriteReferences = Array.isArray(observed?.preWriteReferences)
+      ? [...observed.preWriteReferences].filter(nonEmptyString).sort()
+      : null;
+    let expectedRemaining;
+    if (preWriteReferences !== null) {
+      expectedRemaining = preWriteReferences;
+      if (observed?.referenceGraphUnchanged !== true) {
+        const repointedIndex = expectedRemaining.indexOf(plan.source?.recordId);
+        if (repointedIndex >= 0) expectedRemaining.splice(repointedIndex, 1);
+      }
+    } else {
+      expectedRemaining = evidenceReferenceIds(evidence).sort();
+      if ((decision === DECISIONS.COPY_PATCH_AND_REPOINT
+        || decision === DECISIONS.COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE)
+        && observed?.referenceGraphUnchanged !== true) {
+        // referenceGraphUnchanged marks the idempotent adopted replay: the
+        // pre-write multiset equals the post-write one (the executor pinned
+        // both), so no reference was removed and the approved set stands
+        // unchanged — subtracting here would demand a removal that never
+        // happened (2026-10-23 stranded-WIP walls).
+        const repointedIndex = expectedRemaining.indexOf(plan.source?.recordId);
+        if (repointedIndex >= 0) expectedRemaining.splice(repointedIndex, 1);
+      }
     }
     const live = [...(observed?.olderDocumentReferences || [])].filter(nonEmptyString).sort();
     if (JSON.stringify(expectedRemaining) !== JSON.stringify(live)) {

@@ -1697,6 +1697,7 @@ class SdkDocSync {
                     const preWrite = Array.isArray(entry?.sharedTokenRevalidation?.liveRecordIds)
                         ? [...entry.sharedTokenRevalidation.liveRecordIds].sort()
                         : null;
+                    observed.preWriteReferences = preWrite;
                     observed.referenceGraphUnchanged = Boolean(preWrite
                         && JSON.stringify(preWrite) === JSON.stringify([...observed.olderDocumentReferences].sort()));
                 } catch (error) {

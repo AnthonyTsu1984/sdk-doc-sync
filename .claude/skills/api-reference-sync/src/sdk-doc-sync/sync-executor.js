@@ -1040,9 +1040,47 @@ class SyncExecutor {
     });
     // A copy lands a new docx in the target folder — the same folder-level
     // uniqueness guard as CREATE applies (sameNameInOneDirectory:
-    // always-a-defect).
-    await this._assertNoCreateTitleCollision(plan, artifact, action);
+    // always-a-defect), with the copy-specific replay-after-partial
+    // adoption below.
+    await this._verifyCopyUniquenessWithAdoption(plan, result, artifact, action);
     result.completedSteps.push('verifyTargetPlacement');
+  }
+
+  // Replay-after-partial adoption for copies (python-v30 stranded-WIP wall,
+  // 2026-10-23): the sameNameInOneDirectory refusal is correct for a fresh
+  // copy, but an earlier attempt of THIS plan may have already taken the
+  // successor-side copy — the page exists in the target folder AND the
+  // record this plan repoints already links it. Minting a second same-title
+  // docx beside the plan's own landed product is never convergence;
+  // adopting the linked page (patch it in place, repoint idempotent) is.
+  // Any other collision — an unlinked stranger — stays a hard refusal for
+  // the operator, exactly like CREATE.
+  async _verifyCopyUniquenessWithAdoption(plan, result, artifact, action) {
+    try {
+      await this._assertNoCreateTitleCollision(plan, artifact, action);
+      return;
+    } catch (error) {
+      if (error.code !== 'CREATE_TITLE_COLLISION_IN_FOLDER') throw error;
+      const collisionTokens = String(error.details?.collisionTokens || '')
+        .split(',').map((token) => token.trim())
+        .filter((token) => token && token !== '(unknown token)');
+      if (collisionTokens.length !== 1) throw error;
+      if (!nonEmptyString(plan.source?.recordId)) throw error;
+      if (typeof this.tokenReferenceReader?.listTokenReferences !== 'function') throw error;
+      for (const collisionToken of collisionTokens) {
+        const references = await this.tokenReferenceReader
+          .listTokenReferences({ documentToken: collisionToken });
+        const recordIds = referenceRecordIds(references);
+        if (!recordIds.includes(plan.source.recordId)) continue;
+        result.adoptedDocument = {
+          token: collisionToken,
+          title: error.details.title,
+          folderToken: error.details.folderToken,
+        };
+        return;
+      }
+      throw error;
+    }
   }
 
   async _assertLiveFolderChain({ rootToken, chain, leafToken, stableId, evidenceLabel }) {
@@ -1422,9 +1460,11 @@ class SyncExecutor {
     await this._assertSharedTokenEvidence(plan, result);
     assertPublishableArtifact(plan, artifact);
 
-    const copied = await this._copyDocument(plan, artifact, action);
+    const copied = result.adoptedDocument
+      ? { ...result.adoptedDocument }
+      : await this._copyDocument(plan, artifact, action);
     result.createdDocument = copied;
-    result.completedSteps.push('copyDocument');
+    result.completedSteps.push(result.adoptedDocument ? 'adoptCopyDocument' : 'copyDocument');
 
     try {
       this._assertCreatedDocumentLink(plan, copied);
@@ -1453,7 +1493,11 @@ class SyncExecutor {
       } else if (!error.step) {
         error.step = result.completedSteps.includes('patchDocument') ? 'updateRecord' : 'patchDocument';
       }
-      await this._cleanupCreatedDocument(copied, result);
+      // An adopted document is the earlier attempt's landed product — this
+      // run's failure path must never delete it.
+      if (!result.adoptedDocument) {
+        await this._cleanupCreatedDocument(copied, result);
+      }
       throw error;
     }
   }

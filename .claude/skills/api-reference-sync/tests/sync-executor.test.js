@@ -1793,6 +1793,136 @@ test('SyncExecutor refuses a kernel v5 copy whose section rehome collapses depth
   assert.ok(result.error.message.includes('vs target [MilvusClient]'), 'message reports the collapsed target chain');
 });
 
+test('SyncExecutor adopts a same-title collision the plan record already links (stranded-WIP replay) and never deletes it on failure', async () => {
+  // python-v30 remove_privileges_from_group wall (2026-10-23): the stranded
+  // earlier attempt had already taken the successor-side copy — the page
+  // exists in the target folder AND the record this plan repoints links it.
+  // A fresh copy beside the plan's own product is never convergence.
+  const { bitableWriter } = spies();
+  const calls = [];
+  const adoptedTree = {
+    async listFolder({ folderToken }) {
+      if (folderToken === 'root-v24-src') return [{ token: 'src-collections-v26', type: 'folder', name: 'Collections' }];
+      if (folderToken === 'root-v26') return [{ token: 'collections-v26', type: 'folder', name: 'Collections' }];
+      // The target folder already holds the landed same-title page.
+      if (folderToken === 'collections-v26') return [{ token: 'doc-stranded', type: 'docx', name: 'createCollection()' }];
+      return [];
+    },
+    async copyDocument(input) {
+      calls.push(['copyDocument', input]);
+      return { token: 'doc-second-copy', url: 'https://docs.example/docx/doc-second-copy', title: input.title, folderToken: input.folderToken };
+    },
+    async patchDocument(input) {
+      calls.push(['patchDocument', input]);
+      return { patched: true };
+    },
+    async deleteDocument(input) {
+      calls.push(['deleteDocument', input]);
+      return { deleted: true };
+    },
+  };
+  // Two-phase reader keyed by token: the source token answers the approved
+  // reference set on its first read (the pre-write shared-token check) and
+  // the post-copy set afterwards (the post-write tree-delta check); the
+  // stranded collision token answers the plan's own record — the earlier
+  // attempt's repoint.
+  const readerFor = (plan, answers) => {
+    const reads = new Map();
+    return {
+      async listTokenReferences({ documentToken }) {
+        const seen = (reads.get(documentToken) || 0) + 1;
+        reads.set(documentToken, seen);
+        const phases = answers[documentToken] || [];
+        const answer = phases[Math.min(seen, phases.length) - 1] || [];
+        return answer.map((recordId) => ({ recordId }));
+      },
+    };
+  };
+  const context = planningContext({
+    current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },
+  });
+  const copyPlan = plan('UPDATE', context);
+  const answers = {
+    [copyPlan.source.documentToken]: [[copyPlan.source.recordId], []],
+    'doc-stranded': [[copyPlan.source.recordId]],
+  };
+
+  // Adoption happy path: the collision token is linked by the plan's own
+  // source record — adopt it, patch in place, repoint idempotently.
+  const executor = new SyncExecutor({
+    documentWriter: adoptedTree,
+    bitableWriter,
+    tokenReferenceReader: readerFor(copyPlan, answers),
+  });
+  const result = await executor.execute(copyPlan, {
+    artifact: artifact('# createCollection\n\nupdated copied markdown'),
+    approval: { approved: true },
+  });
+  assert.equal(result.status, 'success', JSON.stringify(result.error || {}));
+  assert.ok(result.completedSteps.includes('adoptCopyDocument'), 'the stranded copy is adopted');
+  assert.ok(!result.completedSteps.includes('copyDocument'), 'no second same-title docx is minted');
+  assert.ok(result.completedSteps.includes('patchDocument'));
+  assert.equal(result.createdDocument.token, 'doc-stranded');
+  assert.ok(calls.every(([name]) => name !== 'copyDocument'), 'the writer never copies');
+
+  // Failure path: a patch failure must NOT delete the adopted page — it is
+  // the earlier attempt's landed product.
+  const calls2 = [];
+  const failingTree = {
+    ...adoptedTree,
+    async listFolder({ folderToken }) { return adoptedTree.listFolder({ folderToken }); },
+    async patchDocument() { throw new Error('patch failed'); },
+    async deleteDocument(input) {
+      calls2.push(['deleteDocument', input]);
+      return { deleted: true };
+    },
+  };
+  const failing = new SyncExecutor({
+    documentWriter: failingTree,
+    bitableWriter,
+    tokenReferenceReader: readerFor(copyPlan, structuredClone(answers)),
+  });
+  const failed = await failing.execute(copyPlan, {
+    artifact: artifact('# createCollection\n\nupdated copied markdown'),
+    approval: { approved: true },
+  });
+  assert.equal(failed.status, 'error');
+  assert.equal(calls2.length, 0, 'an adopted page is never deleted by the failure path');
+});
+
+test('SyncExecutor still refuses a same-title collision no record links (unlinked stranger stays operator territory)', async () => {
+  const { bitableWriter } = spies();
+  const strangerTree = {
+    async listFolder({ folderToken }) {
+      if (folderToken === 'root-v24-src') return [{ token: 'src-collections-v26', type: 'folder', name: 'Collections' }];
+      if (folderToken === 'root-v26') return [{ token: 'collections-v26', type: 'folder', name: 'Collections' }];
+      if (folderToken === 'collections-v26') return [{ token: 'doc-stranger', type: 'docx', name: 'createCollection()' }];
+      return [];
+    },
+  };
+  const context = planningContext({
+    current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },
+  });
+  const copyPlan = plan('UPDATE', context);
+  const executor = new SyncExecutor({
+    documentWriter: strangerTree,
+    bitableWriter,
+    tokenReferenceReader: {
+      async listTokenReferences({ documentToken }) {
+        return documentToken === copyPlan.source.documentToken
+          ? [{ recordId: copyPlan.source.recordId }]
+          : [{ recordId: 'rec-someone-else' }];
+      },
+    },
+  });
+  const result = await executor.execute(copyPlan, {
+    artifact: artifact('# createCollection\n\nupdated copied markdown'),
+    approval: { approved: true },
+  });
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'CREATE_TITLE_COLLISION_IN_FOLDER');
+});
+
 test('SyncExecutor refuses a kernel v5 copy plan that lost its copySource.placement evidence', async () => {
   const { documentWriter, bitableWriter } = spies();
   const context = planningContext({

@@ -399,6 +399,42 @@ test('checkMarkdownContentQuality: unbindReturnsResponseFields mirrors the verif
     );
 });
 
+test('checkMarkdownContentQuality: unbindDescriptionTypeLinks — PR-verbatim backticked class mentions conform for UPDATE pages (2026-10-23)', () => {
+    // M5 forbids enrichment of UPDATE bytes; the PR corpus carries backticked
+    // class mentions in exception prose ("not a `StructFieldSchema`
+    // instance"). The linked citation form is renderer GENERATION behavior —
+    // demanding it from verbatim bytes would force enrichment.
+    const prVerbatimException = [
+        'This operation adds a struct field to the collection schema.',
+        '',
+        '**PARAMETERS:**',
+        '- **struct_schema** (*[StructFieldSchema](StructFieldSchema/StructFieldSchema.md)*) - The struct schema.',
+        '',
+        '**EXCEPTIONS:**',
+        '- **MilvusException** - Raised when **struct_schema** is not a `StructFieldSchema` instance.',
+    ].join('\n');
+    // Default (generation surface): the backticked mention reports.
+    assert.equal(
+        checkMarkdownContentQuality(prVerbatimException, sdkLayoutProfiles.python)
+            .violations.some((violation) => violation.code === 'DESCRIPTION_TYPE_CODE_UNLINKED'),
+        true,
+        'without the flag the linked-citation requirement stays bound',
+    );
+    // Update-verbatim: the same bytes conform.
+    assert.deepEqual(
+        checkMarkdownContentQuality(prVerbatimException, sdkLayoutProfiles.python, { unbindDescriptionTypeLinks: true }).violations,
+        [],
+        'the PR-verbatim backticked mention conforms with the flag',
+    );
+    // CJK still fires under the same flag — only the one rule is unbound.
+    assert.equal(
+        checkMarkdownContentQuality(`${prVerbatimException}\n这一行中英混排会被内容规则拦下。`, sdkLayoutProfiles.python, { unbindDescriptionTypeLinks: true })
+            .violations.some((violation) => violation.code === 'CONTENT_CJK_MIXING'),
+        true,
+        'every other content rule stays bound under the flag',
+    );
+});
+
 test('checkMarkdownContentQuality runs the five rules over preview markdown, skipping fenced code', () => {
     const profile = sdkLayoutProfiles.java;
     const code = (markdown, name) => checkMarkdownContentQuality(markdown, profile)

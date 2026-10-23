@@ -512,9 +512,21 @@ function checkMarkdownContentQuality(markdown, profile, options = {}) {
     // the PR's terminal bytes and never carry the schema-first strong form.
     // The write-approval preview is the page verbatim, so the preflight must
     // key off the plan's action family exactly like verifyDocument does.
+    // 2026-10-23 second generation-surface rule (py-v30 add_collection_
+    // struct_field): descriptionTypeLinksRequired demands the RENDERER's
+    // citation form, but the PR bytes legitimately carry backticked class
+    // mentions in exception prose (corpus line "not a `StructFieldSchema`
+    // instance") — linking them would be enrichment, which M5 forbids for
+    // UPDATE pages. This rule only ever fires on the markdown path (block
+    // facts carry no backticks), so the verify call site stays untouched.
     let contentRules = rules.contentQuality;
-    if (options.unbindReturnsResponseFields === true) {
-        contentRules = { ...contentRules, returnsResponseFieldsRequired: false };
+    if (options.unbindReturnsResponseFields === true
+        || options.unbindDescriptionTypeLinks === true) {
+        contentRules = {
+            ...contentRules,
+            ...(options.unbindReturnsResponseFields === true ? { returnsResponseFieldsRequired: false } : {}),
+            ...(options.unbindDescriptionTypeLinks === true ? { descriptionTypeLinksRequired: false } : {}),
+        };
     }
     const report = (code, detail) => violations.push({ code, detail });
     const entries = [];

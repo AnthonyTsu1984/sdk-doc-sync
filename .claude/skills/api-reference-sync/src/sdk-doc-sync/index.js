@@ -1533,8 +1533,10 @@ class SdkDocSync {
                 // response-fields strong form is a generation-surface
                 // requirement; UPDATE-family pages carry the PR's terminal
                 // bytes, which never include the schema-first PARAMETERS list.
+                const isUpdateFamilyAction = /^(UPDATE|COPY_PATCH)/.test(String(plan.action || ''));
                 const check = checkMarkdownContentQuality(markdownPreview, profile, {
-                    unbindReturnsResponseFields: /^(UPDATE|COPY_PATCH)/.test(String(plan.action || '')),
+                    unbindReturnsResponseFields: isUpdateFamilyAction,
+                    unbindDescriptionTypeLinks: isUpdateFamilyAction,
                 });
                 if (check.violations.length > 0) {
                     const error = new Error(`write-approval preview fails the content preflight for ${plan.stableId}: ${check.violations.map((violation) => `${violation.code} (${violation.detail})`).join('; ')}`);

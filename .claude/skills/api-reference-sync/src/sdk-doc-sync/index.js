@@ -1033,7 +1033,7 @@ class SdkDocSync {
             return planned;
         });
         try {
-            result.executionBatch = buildExecutionBatch(approvedPlans, actionablePlanIds);
+            result.executionBatch = batchBuilder(approvedPlans, actionablePlanIds);
         } catch (error) {
             result.executionResult = blockedExecutionResult({
                 batch: null,

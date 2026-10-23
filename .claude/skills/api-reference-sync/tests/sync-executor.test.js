@@ -1176,6 +1176,34 @@ test('SyncExecutor blocks mutations when live references drifted from the approv
   assert.deepEqual(calls, []);
 });
 
+test('replay tolerance removes one self reference only when the live record left the token', async () => {
+  const recordReader = (link) => new SyncExecutor({
+    documentWriter: {},
+    bitableWriter: { async getRecord() { return { recordId: 'rec-self', fields: { Docs: { link } } }; } },
+  });
+  const copyPlan = { action: 'COPY_PATCH_AND_REPOINT', source: { recordId: 'rec-self', documentToken: 'doc-src' } };
+  // The plan's own record already repointed at the adopted copy.
+  const repointed = recordReader('https://zilliverse.feishu.cn/docx/doc-copy');
+  assert.equal(await repointed._replayToleratedReferenceMultiset(copyPlan, ['rec-other'], ['rec-self', 'rec-other']), true);
+  // The self record still on the source token: real first-execution shape,
+  // not the tolerated replay (the strict equality check handles it; here the
+  // tolerance must refuse so a clone deletion cannot hide behind it).
+  const stillOnToken = recordReader('https://zilliverse.feishu.cn/docx/doc-src');
+  assert.equal(await stillOnToken._replayToleratedReferenceMultiset(copyPlan, ['rec-other'], ['rec-self', 'rec-other']), false);
+  // Unreadable record fails closed to strict.
+  const unreadable = new SyncExecutor({ documentWriter: {}, bitableWriter: {} });
+  assert.equal(await unreadable._replayToleratedReferenceMultiset(copyPlan, ['rec-other'], ['rec-self', 'rec-other']), false);
+  // Two approved occurrences of self: one removal is not enough.
+  const two = recordReader('https://zilliverse.feishu.cn/docx/doc-copy');
+  assert.equal(await two._replayToleratedReferenceMultiset(copyPlan, ['rec-other'], ['rec-self', 'rec-self', 'rec-other']), false);
+  // Non-copy decisions keep the strict face.
+  const updateExecutor = recordReader('https://zilliverse.feishu.cn/docx/doc-copy');
+  assert.equal(await updateExecutor._replayToleratedReferenceMultiset({ action: 'UPDATE', source: { recordId: 'rec-self', documentToken: 'doc-src' } }, ['rec-other'], ['rec-self', 'rec-other']), false);
+  // An unrelated record dropping off is real drift, not the tolerated shape.
+  const unrelated = recordReader('https://zilliverse.feishu.cn/docx/doc-copy');
+  assert.equal(await unrelated._replayToleratedReferenceMultiset(copyPlan, [], ['rec-self', 'rec-other']), false);
+});
+
 test('SyncExecutor fails closed when no live token reference reader is wired', async () => {
   const { calls, documentWriter, bitableWriter } = spies();
 

@@ -905,12 +905,41 @@ class SyncExecutor {
     }
   }
 
+  // Replay-after-partial tolerance for the pre-write reference multiset
+  // (2026-10-23 Database:use_database wall): a copy+repoint replayed after
+  // its own previous execution landed finds the plan's OWN record already off
+  // the source token — it points at the adopted copy. The pre-write check was
+  // written for the first execution, where live equals the approved set
+  // exactly. Tolerate exactly one self-removal, and only when the live self
+  // record confirms it no longer references the source token (cloned bases
+  // reuse recordIds, so the multiset alone cannot tell a repointed self from
+  // a deleted clone — the record read disambiguates; an unreadable record
+  // fails closed to strict). The verify-first adoption path then pins the
+  // adopted copy's content, so a wrongly-repointed record still fails typed.
+  async _replayToleratedReferenceMultiset(plan, liveRecordIds, approvedRecordIds) {
+    if (plan.action !== 'COPY_PATCH_AND_REPOINT') return false;
+    const selfId = plan.source?.recordId;
+    if (!nonEmptyString(selfId) || !nonEmptyString(plan.source?.documentToken)) return false;
+    const selfInLive = liveRecordIds.filter((id) => id === selfId).length;
+    const selfInApproved = approvedRecordIds.filter((id) => id === selfId).length;
+    if (selfInLive >= selfInApproved || selfInApproved === 0) return false;
+    const withoutSelf = [...approvedRecordIds];
+    withoutSelf.splice(withoutSelf.indexOf(selfId), 1);
+    if (!referenceMultisetsEqual(liveRecordIds, withoutSelf)) return false;
+    try {
+      const record = await this._getRecord(selfId);
+      const link = docsField(record).link || '';
+      return !link.includes(plan.source.documentToken);
+    } catch {
+      return false;
+    }
+  }
+
   // Pre-write interception for the shared-token invariant: revalidate the
   // approved inheritance evidence and requery live cross-track references
   // immediately before the first document mutation. Every failure path throws
   // before any writer call, so a blocked action performs zero writes.
-  async _assertSharedTokenEvidence(plan, result) {
-    const evidence = plan.inheritanceEvidence;
+  async _assertSharedTokenEvidence(plan, result) {    const evidence = plan.inheritanceEvidence;
     const validation = validateInheritanceEvidence(evidence, {
       stableId: plan.stableId,
       current: plan.source ? {
@@ -982,7 +1011,8 @@ class SyncExecutor {
     // compared count-for-count with the approved evidence.
     const liveRecordIds = referenceRecordIds(liveReferences);
     const approvedRecordIds = normalizeReferenceMultiset(evidence.sharedToken.referencedRecordIds);
-    if (!referenceMultisetsEqual(liveRecordIds, approvedRecordIds)) {
+    if (!referenceMultisetsEqual(liveRecordIds, approvedRecordIds)
+      && !(await this._replayToleratedReferenceMultiset(plan, liveRecordIds, approvedRecordIds))) {
       const error = new SyncExecutionError(
         'SHARED_TOKEN_REFERENCES_DRIFTED',
         `Live references to ${plan.source.documentToken} no longer match the approved evidence for ${plan.stableId}`,

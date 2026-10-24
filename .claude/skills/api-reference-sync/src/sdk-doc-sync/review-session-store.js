@@ -63,6 +63,13 @@ const REVIEW_MACHINE = defineSessionMachine({
     // every sdk-doc-sync entry against this session chains its --release-scope
     // digest against the approved scope (GROUPING_STALE otherwise).
     recordGroupingApproval: { from: ['in_progress'], to: SAME_STATE },
+    // Corrective release (2026-10-24 ruling): a finalized unit whose LIVE
+    // page carries a landed engine defect (e.g. the N2 replacer mangle) is
+    // released back to in_progress with a typed, evidence-bound ledger row —
+    // the one sanctioned out-edge from the unit terminal. Evidence stays on
+    // disk (receipts are sidecar-superseded, never deleted); the session
+    // stays open so the released units can re-plan and re-finalize.
+    recordCorrectiveRelease: { from: ['in_progress'], to: SAME_STATE },
   },
 });
 
@@ -202,8 +209,11 @@ function targetsFinalForReviewUnit(reviewUnitId, audienceRulings = null) {
 // from the session arrays — pendingExecutions = executed, acceptedReviewUnits
 // = finalized — so there is exactly one durable representation, and the
 // machine supplies the typed guards: a finalized unit has no outgoing
-// transitions (rollback and change requests refuse; corrective release
-// instead), and per-acceptance Draft writes drive the terminal transition.
+// transitions (rollback and change requests refuse), and per-acceptance Draft
+// writes drive the terminal transition. The one sanctioned escape is the
+// SESSION-level corrective release (releaseUnitForCorrectiveRework), which
+// removes the unit from acceptedReviewUnits — the derived demotion to
+// in_progress — instead of forging a terminal out-edge the machine forbids.
 const UNIT_MACHINE = defineSessionMachine({
   name: 'api-reference-sync:review-unit',
   initial: 'in_progress',
@@ -214,6 +224,12 @@ const UNIT_MACHINE = defineSessionMachine({
     recordDocumentChangesRequested: { from: ['executed'], to: 'in_progress' },
     recordRollbackIntent: { from: ['in_progress', 'executed'], to: SAME_STATE },
     recordDocumentRollback: { from: ['in_progress', 'executed'], to: 'in_progress' },
+    // Deliberately NO terminal out-edge here, ever: the machine factory
+    // structurally refuses one, and that invariant is load-bearing. The
+    // corrective release (2026-10-24) is a SESSION-level supersession — the
+    // unit's finalized state is DERIVED from acceptedReviewUnits, so releasing
+    // the entry IS the demotion to in_progress, guarded and ledgered by
+    // releaseUnitForCorrectiveRework on the session machine.
   },
 });
 
@@ -974,6 +990,64 @@ function recordFinalTargets(session, { units, stampedAt = new Date().toISOString
       .sort((left, right) => left.reviewUnitId.localeCompare(right.reviewUnitId))),
     finalTargetsStampedAt: stampedAt,
   }, { timestamp: stampedAt });
+}
+
+// Corrective release (2026-10-24 ruling): the sanctioned finalized→in_progress
+// out-edge for a unit whose live page carries a landed engine defect. The
+// release is evidence-bound: a non-empty reason plus, when the caller has one,
+// a digest over the defect evidence (e.g. the live-page mangled-prose scan).
+// Receipts on disk are NEVER deleted or edited — the caller supersedes them
+// with sidecars; the session row keeps the superseded acceptance's digest so
+// the ledger row is auditable without touching evidence files. The unit
+// demotes to in_progress and re-enters the ordinary plan → execute → accept
+// path; `correctiveReleases` is the durable "why" the close learns to skip.
+function releaseUnitForCorrectiveRework(session, { units, reason, evidenceDigest = null, releasedAt = new Date().toISOString() } = {}) {
+  if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
+  if (session.scanStateUpdated === true) throw new Error('Review session is finalized');
+  if (!nonEmptyString(reason)) {
+    throw Object.assign(new Error('corrective release requires a reason'), { code: 'CORRECTIVE_RELEASE_REASON_REQUIRED' });
+  }
+  if (evidenceDigest !== null && !/^sha256:[0-9a-f]{64}$/.test(String(evidenceDigest))) {
+    throw Object.assign(new Error(`corrective release evidence digest must be sha256:<hex>, got ${evidenceDigest}`), { code: 'CORRECTIVE_RELEASE_EVIDENCE_DIGEST_INVALID' });
+  }
+  if (!Array.isArray(units) || units.length === 0) {
+    throw Object.assign(new Error('corrective release requires units'), { code: 'CORRECTIVE_RELEASE_UNITS_REQUIRED' });
+  }
+  REVIEW_MACHINE.assertTransition('recordCorrectiveRelease', session);
+  const acceptedByUnitId = new Map((session.acceptedReviewUnits || []).map((unit) => [unit.reviewUnitId, unit]));
+  const released = [];
+  for (const reviewUnitId of units) {
+    if (!nonEmptyString(reviewUnitId)) {
+      throw Object.assign(new Error('corrective release units must be non-empty strings'), { code: 'CORRECTIVE_RELEASE_UNIT_INVALID' });
+    }
+    const accepted = acceptedByUnitId.get(reviewUnitId);
+    if (!accepted) {
+      throw Object.assign(new Error(`corrective release references a unit that is not finalized in this session: ${reviewUnitId}`), { code: 'CORRECTIVE_RELEASE_UNIT_NOT_FINALIZED' });
+    }
+    released.push({
+      reviewUnitId,
+      reason,
+      evidenceDigest,
+      supersededAcceptance: {
+        executionJournalDigest: accepted.executionJournalDigest || null,
+        acceptedAt: accepted.acceptedAt || null,
+        finalizedAt: accepted.finalizedAt || null,
+      },
+      releasedAt,
+    });
+  }
+  const releasedIds = new Set(units);
+  const pendings = pendingList(session);
+  const head = pendingHead(pendings);
+  return REVIEW_MACHINE.apply('recordCorrectiveRelease', session, {
+    acceptedReviewUnits: Object.freeze((session.acceptedReviewUnits || [])
+      .filter((unit) => !releasedIds.has(unit.reviewUnitId))
+      .sort((left, right) => left.reviewUnitId.localeCompare(right.reviewUnitId))),
+    correctiveReleases: Object.freeze([...(session.correctiveReleases || []), ...released]
+      .sort((left, right) => left.reviewUnitId.localeCompare(right.reviewUnitId) || left.releasedAt.localeCompare(right.releasedAt))),
+    activeExecution: head ? clone(head) : null,
+    activeReviewUnitId: head ? head.reviewUnitId : null,
+  }, { timestamp: releasedAt });
 }
 
 // A write-gate journal records one `observed` entry per action; a wall is any
@@ -1829,6 +1903,7 @@ module.exports = {
   recordDocumentChangesRequested,
   recordDocumentRollback,
   recordGroupingApproval,
+  releaseUnitForCorrectiveRework,
   recordReviewDecision,
   recordRollbackIntent,
   prepareDocumentAcceptance,

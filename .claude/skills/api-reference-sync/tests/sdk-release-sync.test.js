@@ -102,3 +102,49 @@ test('runner source keeps the fault-tolerance contract anchors', () => {
   // 批次 digest 是内部身份：不出现任何操作员门禁格式
   assert.doesNotMatch(source, /APPROVE_CAMPAIGN|APPROVE_WRITES|APPROVE_GROUPING/);
 });
+
+// ---------- corrective-release（2026-10-24 打回机制） ----------
+
+test('usage: corrective-release is documented with its evidence contract', () => {
+  const result = run([]);
+  assert.match(result.stdout, /corrective-release/);
+  assert.match(result.stdout, /--reason/);
+  assert.match(result.stdout, /--evidence/);
+});
+
+test('corrective-release refuses typed before any engine spawn when inputs are missing', () => {
+  const config = tempFile('sync-config.json', JSON.stringify({
+    language: 'python', sdkName: 'pymilvus', track: 'v3.0.x', sdkDir: 'repos/pymilvus',
+    feishu: { baseToken: 'b', tableId: 'tbl', rootToken: 'r' },
+    artifacts: { scope: 's.json', referenceContext: 'c.json', targets: 't.json', grouping: 'g.json', identityMap: 'i.json' },
+    workDir: 'tmp/does-not-exist-corrective',
+  }));
+  const noUnits = run(['corrective-release', '--config', config, '--reason', 'x', '--yes']);
+  assert.equal(noUnits.status, 1);
+  assert.match(noUnits.stderr, /--units/);
+  assert.doesNotMatch(noUnits.stderr, /at Object/);
+  const noReason = run(['corrective-release', '--config', config, '--units', 'review:python:X:y', '--yes']);
+  assert.equal(noReason.status, 1);
+  assert.match(noReason.stderr, /--reason/);
+  assert.doesNotMatch(noReason.stderr, /at Object/);
+});
+
+test('runner source keeps the corrective-release contract anchors', () => {
+  const source = fs.readFileSync(RUNNER, 'utf8');
+  // 会话内机器转移走 store 的 releaseUnitForCorrectiveRework（finalized 单元
+  // 的派生降级），而不是 forge 终态出边——机器工厂结构性拒绝那种转移。
+  assert.match(source, /releaseUnitForCorrectiveRework/);
+  assert.match(source, /expectedPreviousDigest: sessionDigest/);
+  // 回执降级 = sidecar，字节不动（证据保全）
+  assert.match(source, /\.superseded-corrective-release\.json/);
+  assert.match(source, /回执字节不动/);
+  // 台账落 corrective-releases/ 且带 releaseId
+  assert.match(source, /corrective-releases/);
+  assert.match(source, /releaseId/);
+  // fail-closed 三 refusal：不在 scope、记录非 Draft、无处已终化
+  assert.match(source, /nowhere to re-converge/);
+  assert.match(source, /not Draft/);
+  assert.match(source, /not finalized anywhere/);
+  // 台账剪枝后单元重新可收敛
+  assert.match(source, /done\.delete\(unitId\)/);
+});

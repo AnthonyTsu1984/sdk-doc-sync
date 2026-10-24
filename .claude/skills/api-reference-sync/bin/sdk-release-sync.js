@@ -23,7 +23,9 @@
 // 实证。
 
 const { spawnSync } = require('node:child_process');
+const { createHash } = require('node:crypto');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
+const { releaseUnitForCorrectiveRework, loadReviewSessionState, saveReviewSession } = require('../src/sdk-doc-sync/review-session-store');
 const fs = require('node:fs');
 const path = require('node:path');
 const REVIEW_SESSION_CLI = path.join(__dirname, 'sdk-review-session.js');
@@ -36,6 +38,8 @@ function usage() {
   sdk-release-sync sync    --config <sync-config.json> [--only <unitId> ...] [--yes]
   sdk-release-sync recover --config <sync-config.json> [--yes]
   sdk-release-sync status  --config <sync-config.json>
+  sdk-release-sync corrective-release --config <sync-config.json> --units <unitId> [--unit <unitId> ...]
+                                      --reason <text> [--evidence <file>] [--yes]
   sdk-release-sync init    --from-plan <campaign-plan.json> [--out <sync-config.json>]
 
 sync-config.json（init 从旧 campaign plan 迁移，或手写）:
@@ -46,6 +50,11 @@ sync-config.json（init 从旧 campaign plan 迁移，或手写）:
     "workDir": "tmp/..." }
 
 --yes：跳过单元清单确认提示（无人值守/定时场景用；交互场景默认先展示清单）。
+
+corrective-release（2026-10-24）：把已终化但活页携带已落地引擎缺陷的单元
+打回重收敛——台账剪枝 + 会话内机器转移（finalized→in_progress，带证据
+digest）+ 验收回执 sidecar 降级（回执文件字节不动）+ Draft 记录断言。
+单元随后由 sync --only 走常规 重规划→执行→验收 路径收敛。
 `);
 }
 
@@ -428,24 +437,181 @@ function reconcileUnit(config, unit, { attemptLog }) {
 
 // 记录 progress=WIP 的单元：indexed[].metadata.slug ↔ scope 动作 canonicalSlug
 // ↔ stableId ↔ preview documentStableId，四段映射到 reviewUnitId。
-function wipUnitsFromPlan(plan, config) {
+function recordProgressByUnit(plan, config) {
   const scope = readJsonFile(config.artifacts.scope, 'scope');
   const slugToStable = new Map((scope.actions || [])
     .filter((action) => action?.canonicalSlug && action?.stableId)
     .map((action) => [action.canonicalSlug, action.stableId]));
   const previews = Array.isArray(plan.reviewUnitPreviews) ? plan.reviewUnitPreviews : [];
   const stableToUnit = new Map(previews.map((unit) => [unit.documentStableId, unit.reviewUnitId]));
-  const indexed = Array.isArray(plan.indexed) ? plan.indexed : [];
-  const wip = [];
-  for (const record of indexed) {
+  const progressByUnit = new Map();
+  for (const record of Array.isArray(plan.indexed) ? plan.indexed : []) {
     const slug = record?.metadata?.slug;
-    const progress = String(record?.metadata?.progress || '').toUpperCase();
-    if (progress !== 'WIP') continue;
     const unitId = stableToUnit.get(slugToStable.get(slug));
-    if (unitId) wip.push(unitId);
+    if (unitId) progressByUnit.set(unitId, String(record?.metadata?.progress || ''));
   }
-  return wip;
+  return progressByUnit;
 }
+
+function wipUnitsFromPlan(plan, config) {
+  const progressByUnit = recordProgressByUnit(plan, config);
+  return [...progressByUnit.entries()]
+    .filter(([, progress]) => progress.toUpperCase() === 'WIP')
+    .map(([unitId]) => unitId);
+}
+
+// ---------- corrective-release ----------
+
+const ACCEPTANCE_RECEIPTS_DIR = path.join(REPO_ROOT, 'tmp', 'api-reference-sync');
+const CORRECTIVE_RELEASES_DIR = path.join(REPO_ROOT, 'tmp', 'api-reference-sync', 'corrective-releases');
+
+// 已终化单元的活页缺陷打回（2026-10-24 corrective-release 机制）：
+//   1. 规划面断言：单元必须出现在当前 scope 的 dry-run 清单里（否则打回后
+//      无处重收敛，直接拒绝）；
+//   2. 记录生命周期断言：Bitable 记录必须是 Draft（终化不改 Progress，发现
+//      非 Draft = 有人动过记录，fail-closed 交操作员处置）；
+//   3. 会话内机器转移：releaseUnitForCorrectiveRework（finalized→in_progress，
+//      带原因+证据 digest， correctiveReleases 行留档）；
+//   4. 台账剪枝：doneUnits 删行（state 只是本地清单，语义=可重收敛）；
+//   5. 回执降级：unit-acceptance-review-*.json 逐份写 sidecar 标记 superseded，
+//      回执字节不动（证据保全）；
+//   6. 全量写进 corrective-releases/<releaseId>.json 并打印 releaseId——
+//      后续 sync 的每一份新验收都能追溯到这次 release。
+function cmdCorrectiveRelease(config, { units, reason, evidence, yes }) {
+  if (!units || units.length === 0) fail('corrective-release requires --units <unitId> (repeatable/comma-separated)');
+  if (!reason) fail('corrective-release requires --reason <text>');
+  const wanted = [...new Set(units.flatMap((value) => String(value).split(','))).values()]
+    .map((value) => value.trim()).filter(Boolean);
+  if (wanted.length === 0) fail('corrective-release got an empty unit list');
+
+  const plan = planDryRun(config);
+  const planned = new Set(unitListFromPlan(plan).map((unit) => unit.reviewUnitId));
+  const progressByUnit = recordProgressByUnit(plan, config);
+
+  const state = loadState(config);
+  const done = new Set(state.doneUnits || []);
+  const sessionPath = sessionPathFor(config);
+  let liveSession = null;
+  let sessionDigest = null;
+  let liveAccepted = new Set();
+  if (fs.existsSync(sessionPath)) {
+    try {
+      const loaded = loadReviewSessionState(sessionPath);
+      liveSession = loaded.session;
+      sessionDigest = loaded.sessionDigest;
+      liveAccepted = new Set((liveSession.acceptedReviewUnits || []).map((unit) => unit.reviewUnitId));
+    } catch (error) {
+      fail(`cannot load live session for corrective release: ${error.message}`);
+    }
+  }
+
+  const inScope = [];
+  const notInScope = wanted.filter((unitId) => {
+    if (planned.has(unitId)) { inScope.push(unitId); return false; }
+    return true;
+  });
+  if (notInScope.length > 0) {
+    fail(`corrective-release refuses: unit(s) not in the current scope's plan (nowhere to re-converge): ${notInScope.join(', ')}`);
+  }
+  const notDraft = inScope.filter((unitId) => {
+    const progress = progressByUnit.get(unitId);
+    return progress !== undefined && progress.toUpperCase() !== 'DRAFT';
+  });
+  if (notDraft.length > 0) {
+    fail(`corrective-release refuses: record(s) not Draft (operator disposition required before release): ${notDraft.join(', ')}`);
+  }
+  const releasable = inScope.filter((unitId) => liveAccepted.has(unitId) || done.has(unitId));
+  const unknown = inScope.filter((unitId) => !releasable.includes(unitId));
+  if (unknown.length > 0) {
+    fail(`corrective-release refuses: unit(s) not finalized anywhere (doneUnits ledger nor live session): ${unknown.join(', ')}`);
+  }
+
+  process.stdout.write(`\n=== corrective release（${releasable.length} 单元）===\n`);
+  for (const unitId of releasable) {
+    process.stdout.write(`  ${unitId} — ${liveAccepted.has(unitId) ? 'live-session release (finalized→in_progress)' : 'ledger-only release (finalized in archived session)'}\n`);
+  }
+  process.stdout.write(`\nreason: ${reason}\n`);
+  if (!yes && !confirmWithOperator('确认打回以上单元', releasable)) {
+    process.stdout.write('aborted by operator\n');
+    return 1;
+  }
+
+  // 会话内机器转移先行（失败即整体拒绝，台账不产生半程状态）。
+  let sessionOps = [];
+  if (liveSession && releasable.some((unitId) => liveAccepted.has(unitId))) {
+    const sessionUnits = releasable.filter((unitId) => liveAccepted.has(unitId));
+    const successor = releaseUnitForCorrectiveRework(liveSession, {
+      units: sessionUnits,
+      reason,
+      evidenceDigest: evidence ? digestSemantic(fs.readFileSync(evidence, 'utf8')) : null,
+    });
+    saveReviewSession(sessionPath, successor, { expectedPreviousDigest: sessionDigest });
+    sessionOps = sessionUnits.map((unitId) => ({ unitId, op: 'session-release' }));
+    process.stdout.write(`session: ${sessionUnits.length} unit(s) released (finalized→in_progress)\n`);
+  }
+
+  // 回执降级：sidecar 标记，回执字节不动。
+  const supersededReceipts = [];
+  if (fs.existsSync(ACCEPTANCE_RECEIPTS_DIR)) {
+    for (const name of fs.readdirSync(ACCEPTANCE_RECEIPTS_DIR)) {
+      if (!name.startsWith('unit-acceptance-review-') || !name.endsWith('.json') || name.includes('.superseded')) continue;
+      const receiptPath = path.join(ACCEPTANCE_RECEIPTS_DIR, name);
+      let receipt;
+      try {
+        receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+      } catch { continue; }
+      if (!releasable.includes(receipt?.reviewUnitId)) continue;
+      supersededReceipts.push({ receipt: name, reviewUnitId: receipt.reviewUnitId, digest: `sha256:${createHash('sha256').update(fs.readFileSync(receiptPath)).digest('hex')}` });
+    }
+  }
+
+  const evidenceDigest = evidence ? digestSemantic(fs.readFileSync(evidence, 'utf8')) : null;
+  const releaseId = digestSemantic({
+    kind: 'corrective-release',
+    units: releasable,
+    reason,
+    evidenceDigest,
+    supersededReceipts,
+    sessionOps,
+  });
+  fs.mkdirSync(CORRECTIVE_RELEASES_DIR, { recursive: true });
+  const ledgerPath = path.join(CORRECTIVE_RELEASES_DIR, `${releaseId.replace(/^sha256:/, '')}.json`);
+  fs.writeFileSync(ledgerPath, `${JSON.stringify({
+    releaseId,
+    units: releasable,
+    reason,
+    evidenceDigest,
+    evidencePath: evidence || null,
+    supersededReceipts,
+    sessionOps,
+    releasedAt: new Date().toISOString(),
+  }, null, 2)}\n`);
+  for (const entry of supersededReceipts) {
+    const sidecar = path.join(ACCEPTANCE_RECEIPTS_DIR, `${entry.receipt}.superseded-corrective-release.json`);
+    if (!fs.existsSync(sidecar)) {
+      fs.writeFileSync(sidecar, `${JSON.stringify({
+        supersededBy: releaseId,
+        receipt: entry.receipt,
+        reviewUnitId: entry.reviewUnitId,
+        reason,
+        supersededAt: new Date().toISOString(),
+      }, null, 2)}\n`);
+    }
+  }
+
+  // 台账剪枝：released 单元重新可收敛。
+  for (const unitId of releasable) done.delete(unitId);
+  state.doneUnits = [...done];
+  saveState(config, state);
+
+  process.stdout.write(`\ncorrective release complete: ${releaseId}\n`);
+  process.stdout.write(`ledger: ${path.relative(REPO_ROOT, ledgerPath)}\n`);
+  process.stdout.write(`receipt sidecars: ${supersededReceipts.length}\n`);
+  process.stdout.write('next: archive the released session (mv sync-session.json sync-session.corrective-released-<ts>.json), then `sync --only <units>` re-converges them on a fresh session.\n');
+  return 0;
+}
+
+// ---------- 入口 ----------
 
 function confirmWithOperator(label, lines) {
   process.stdout.write(`\n=== ${label}（${lines.length} 项）===\n`);
@@ -600,6 +766,18 @@ function main(argv) {
   if (subcommand === 'sync') return cmdSync(config, { only, yes });
   if (subcommand === 'recover') return cmdRecover(config, { yes });
   if (subcommand === 'status') { cmdStatus(config); return 0; }
+  if (subcommand === 'corrective-release') {
+    const units = [];
+    for (let i = 0; i < rest.length; i += 1) {
+      if ((rest[i] === '--unit' || rest[i] === '--units') && rest[i + 1]) units.push(rest[++i]);
+    }
+    return cmdCorrectiveRelease(config, {
+      units,
+      reason: flagValue('--reason'),
+      evidence: flagValue('--evidence'),
+      yes,
+    });
+  }
   usage();
   return 1;
 }

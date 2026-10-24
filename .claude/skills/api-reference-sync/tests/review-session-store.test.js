@@ -18,8 +18,11 @@ const {
   recordDocumentExecution,
   recordDocumentRollback,
   recordRollbackIntent,
+  releaseUnitForCorrectiveRework,
   loadReviewSessionState,
   saveReviewSession,
+  unitStatusOf,
+  UNIT_MACHINE,
   validateResumeSession,
 } = require('../src/sdk-doc-sync/review-session-store');
 
@@ -1392,4 +1395,117 @@ test('a zero-action rollback journal (empty-inversion reversals) validates and c
   assert.equal(updated.rollbackReceipts[0].originalExecutionJournalDigest, execution.digest);
   assert.equal(updated.rollbackReceipts[0].rollbackManifestDigest, 'sha256:rollback-manifest-zero');
   assert.equal(updated.activeExecution, null);
+});
+
+// ---------- corrective release (2026-10-24) ----------
+
+function acceptedSession(directory, journal) {
+  const initial = createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:corrective',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  });
+  return recordDocumentAcceptance(withExecution(initial, journal), {
+    reviewUnitId: 'review:node:Collections:a',
+    executionJournalPath: journal.filePath,
+    executionJournalDigest: journal.digest,
+    touchedRecords: [{ actionId: 'node:Collections:a', recordId: 'rec-a', documentToken: 'doc-a' }],
+    documentLinks: ['https://example.feishu.cn/docx/doc-a'],
+    recordLinks: ['https://example.feishu.cn/base/base?record=rec-a'],
+    commentsResolved: true,
+    acceptedAt: '2026-10-23T12:00:00.000Z',
+  });
+}
+
+test('releaseUnitForCorrectiveRework demotes a finalized unit with an evidence-bound ledger row', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-corrective-'));
+  const journal = executionJournal(directory);
+  const accepted = acceptedSession(directory, journal);
+
+  const released = releaseUnitForCorrectiveRework(accepted, {
+    units: ['review:node:Collections:a'],
+    reason: 'live page carries the N2 replacer mangle (landed 2026-10-22, fixed in engine 2026-10-23)',
+    evidenceDigest: `sha256:${'e'.repeat(64)}`,
+    releasedAt: '2026-10-24T10:00:00.000Z',
+  });
+
+  assert.deepEqual(released.acceptedReviewUnits, [], 'the released unit leaves acceptedReviewUnits');
+  assert.equal(unitStatusOf(released, 'review:node:Collections:a'), 'in_progress');
+  assert.equal(unitStatusOf(released, 'review:node:Collections:b'), 'in_progress', 'the untouched unit is unaffected');
+  assert.equal(released.correctiveReleases.length, 1);
+  const row = released.correctiveReleases[0];
+  assert.equal(row.reviewUnitId, 'review:node:Collections:a');
+  assert.match(row.reason, /N2 replacer mangle/);
+  assert.equal(row.evidenceDigest, `sha256:${'e'.repeat(64)}`);
+  assert.equal(row.supersededAcceptance.executionJournalDigest, journal.digest);
+  assert.equal(row.supersededAcceptance.acceptedAt, '2026-10-23T12:00:00.000Z');
+  assert.equal(row.releasedAt, '2026-10-24T10:00:00.000Z');
+  assert.equal(released.status, 'in_progress', 'the session stays open');
+});
+
+test('a released unit re-enters the ordinary execution path', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-corrective-rerun-'));
+  const journal = executionJournal(directory);
+  const released = releaseUnitForCorrectiveRework(acceptedSession(directory, journal), {
+    units: ['review:node:Collections:a'],
+    reason: 'engine defect released for rework',
+  });
+
+  const replay = executionJournal(directory, 'node:Collections:a', 'execution-replay.jsonl');
+  const reExecuted = recordDocumentExecution(released, {
+    reviewUnitId: 'review:node:Collections:a',
+    executionJournalPath: replay.filePath,
+    executionJournalDigest: replay.digest,
+    executedAt: '2026-10-24T11:00:00.000Z',
+  });
+  assert.equal(unitStatusOf(reExecuted, 'review:node:Collections:a'), 'executed');
+  assert.equal(reExecuted.correctiveReleases.length, 1, 'the release row survives the re-run');
+});
+
+test('releaseUnitForCorrectiveRework round-trips through save/load', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-corrective-io-'));
+  const journal = executionJournal(directory);
+  const sessionPath = path.join(directory, 'session.json');
+  const released = releaseUnitForCorrectiveRework(acceptedSession(directory, journal), {
+    units: ['review:node:Collections:a'],
+    reason: 'round trip',
+    evidenceDigest: `sha256:${'f'.repeat(64)}`,
+  });
+  saveReviewSession(sessionPath, released, { expectedPreviousDigest: null });
+  const restored = loadReviewSession(sessionPath);
+  assert.equal(restored.correctiveReleases.length, 1);
+  assert.equal(restored.correctiveReleases[0].reviewUnitId, 'review:node:Collections:a');
+  assert.deepEqual(restored.acceptedReviewUnits, []);
+});
+
+test('releaseUnitForCorrectiveRework guards: reason, digest shape, non-finalized, closed session, unit machine', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-corrective-guard-'));
+  const journal = executionJournal(directory);
+  const accepted = acceptedSession(directory, journal);
+
+  assert.throws(() => releaseUnitForCorrectiveRework(accepted, { units: ['review:node:Collections:a'] }),
+    /CORRECTIVE_RELEASE_REASON_REQUIRED|requires a reason/);
+  assert.throws(() => releaseUnitForCorrectiveRework(accepted, {
+    units: ['review:node:Collections:a'], reason: 'x', evidenceDigest: 'not-a-digest',
+  }), /evidence digest/);
+  assert.throws(() => releaseUnitForCorrectiveRework(accepted, { units: [], reason: 'x' }),
+    /requires units/);
+  assert.throws(() => releaseUnitForCorrectiveRework(accepted, {
+    units: ['review:node:Collections:b'], reason: 'x',
+  }), /not finalized in this session/);
+  assert.throws(() => releaseUnitForCorrectiveRework({ ...accepted, scanStateUpdated: true }, {
+    units: ['review:node:Collections:a'], reason: 'x',
+  }), /finalized/);
+  // The terminal stays structurally closed: the machine factory refuses any
+  // transition originating in finalized, so the release is a session-level
+  // supersession (derived-state demotion), never a unit-machine out-edge.
+  assert.equal(UNIT_MACHINE.transitions.releaseUnitForCorrectiveRework, undefined);
+  assert.throws(() => require('../../doc-ops-core/src/session-state-machine').defineSessionMachine({
+    name: 'forged-terminal-out-edge',
+    initial: 'in_progress',
+    terminal: 'finalized',
+    transitions: { escape: { from: ['finalized'], to: 'in_progress' } },
+  }), /cannot originate in the terminal state/);
 });

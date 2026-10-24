@@ -97,6 +97,11 @@ if ! command -v opencode >/dev/null 2>&1; then
 fi
 OPENCODE_VERSION="$(opencode --version)" || fail "opencode --version failed after install"
 log "opencode $OPENCODE_VERSION ready"
+log "npm i -g @larksuite/cli（写路径依赖：引擎 spawn lark-cli，缺它=批准后写作全阻断）"
+if ! command -v lark-cli >/dev/null 2>&1; then
+  npm i -g @larksuite/cli --silent
+fi
+log "lark-cli ready: $(lark-cli --version 2>/dev/null | head -n1)"
 
 # ---------- 4. clone 三仓（幂等：在库即跳过；SDK 用浅克隆省 PVC） ----------
 clone_if_missing() { # clone_if_missing <url> <dir>

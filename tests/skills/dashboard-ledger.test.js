@@ -10,6 +10,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const {
+  SENTINELS,
   buildLedger,
   computeNextDailyRun,
   scanStateKeyFor,
@@ -198,7 +199,7 @@ test('finalized sessions sort after active work; session scanStateKey wins', (t)
   assert.equal(ledger.campaigns[1].scanState.key, 'custom-key');
 });
 
-test('sentinels derive lastRun from cursor mtime and schedule from wall clock', (t) => {
+test('sentinels derive lastRun from the newest daily report and findings from the ledger (batch 17)', (t) => {
   const { root, write } = makeFixtureTree();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -208,18 +209,37 @@ test('sentinels derive lastRun from cursor mtime and schedule from wall clock', 
   const expectedCppNext = new Date(now); expectedCppNext.setDate(expectedCppNext.getDate() + 1);
   expectedCppNext.setHours(9, 0, 0, 0);
 
-  write('tmp/sdk-release-scout/daily-scan-state.json', { lastTags: {}, lastPrNumber: 1170 });
-  fs.utimesSync(path.join(root, 'tmp/sdk-release-scout/daily-scan-state.json'), now, now);
+  // Batch 17: "last ran" is the newest daily report's mtime (the py cursor
+  // state files are retired), and the PR watermark comes from the findings
+  // ledger: disposed #1200 + pending #1201/#1206 for cpp, go untouched.
+  const cppReport = write('tmp/sdk-release-scout/daily/2026-10-05.md', '# C++ SDK 每日扫描报告 2026-10-05\n**结论：无变化**\n');
+  fs.utimesSync(cppReport, now, now);
+  write('tmp/api-reference-sync/daily-scan/pr-findings.jsonl', [
+    JSON.stringify({ seq: 1, type: 'discovered', prNumber: 1200, languages: ['cpp'], discoveredOn: '2026-10-04' }),
+    JSON.stringify({ seq: 2, type: 'disposed', prNumber: 1200, language: null, at: '2026-10-05T00:00:00.000Z' }),
+    JSON.stringify({ seq: 3, type: 'discovered', prNumber: 1201, languages: ['cpp'], discoveredOn: '2026-10-05' }),
+    JSON.stringify({ seq: 4, type: 'discovered', prNumber: 1206, languages: ['cpp', 'go'], discoveredOn: '2026-10-05' }),
+  ].join('\n') + '\n');
 
   const ledger = buildLedger({ repoRoot: root, now });
   const cpp = ledger.sentinels.find((s) => s.id === 'cpp-daily-scan');
+  const go = ledger.sentinels.find((s) => s.id === 'go-daily-scan');
   const java = ledger.sentinels.find((s) => s.id === 'java-daily-scan');
-  assert.ok(cpp && java);
+  assert.ok(cpp && go && java);
   assert.equal(cpp.status, 'ok');
-  assert.equal(cpp.cursor.lastPrNumber, 1170);
+  assert.equal(new Date(cpp.lastRunAt).getTime(), now.getTime(), 'lastRun = newest report mtime');
   assert.equal(new Date(cpp.nextRunAt).getTime(), expectedCppNext.getTime());
-  assert.equal(java.status, 'never-run', 'cursor absent → never-run, not an error');
-  assert.equal(java.lastRunAt, null);
+  assert.deepEqual(cpp.findings, { ledgerPresent: true, watermark: 1200, pending: 2 }, 'watermark = disposed max, pending = 待处置件数');
+  assert.equal(go.status, 'never-run', 'report absent → never-run, not an error');
+  assert.equal(go.lastRunAt, null);
+  assert.deepEqual(go.findings, { ledgerPresent: true, watermark: 0, pending: 1 }, 'go sees only its own language slice (1206)');
+  assert.deepEqual(java.findings, { ledgerPresent: true, watermark: 0, pending: 0 }, 'java has no ledger slice yet → zero counts, ledger present');
+  // Profile facts flow in from the daily-scan profile, not a second copy.
+  assert.equal(cpp.artifactsDir, 'tmp/sdk-release-scout/daily');
+  assert.deepEqual(SENTINELS.find((s) => s.id === 'cpp-daily-scan').scanStateKeys, ['cpp-v26', 'cpp-v30']);
+  assert.deepEqual(SENTINELS.find((s) => s.id === 'node-daily-scan').scanStateKeys, ['node-v26', 'node'],
+    'node v3.0.x rides the legacy bare node key, straight from the profile');
+  assert.deepEqual(SENTINELS.find((s) => s.id === 'go-daily-scan').scanStateKeys, ['go', 'go-v3']);
 });
 
 test('sentinel readiness reports capability vs baseline-seeded honestly', (t) => {
@@ -227,28 +247,29 @@ test('sentinel readiness reports capability vs baseline-seeded honestly', (t) =>
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const now = new Date('2026-10-08T12:00:00');
-  // cpp: fully ready — clone + both maps + both scan-state keys + a cursor.
+  const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const touchReport = (name) => {
+    const reportPath = write(`tmp/sdk-release-scout/daily/${name}`, '# 每日扫描报告\n');
+    fs.utimesSync(reportPath, now, now);
+  };
+  // cpp: fully ready — clone + both maps + both scan-state keys + a report.
   write('repos/milvus-sdk-cpp/.keep', '');
   write('.claude/skills/api-reference-sync/references/identity/cpp-v26.json', { schemaVersion: 1 });
   write('.claude/skills/api-reference-sync/references/identity/cpp-v30.json', { schemaVersion: 1 });
   write('.claude/skills/api-reference-sync/scan-state.json', { 'cpp-v26': {}, 'cpp-v30': {} });
-  const cursorPath = write('tmp/sdk-release-scout/daily-scan-state.json', { lastPrNumber: 1 });
-  fs.utimesSync(cursorPath, now, now);
+  touchReport(`${stamp}.md`);
 
-  // rust: clone + maps + cursor, but no scan-state keys → capability armed,
-  // baseline missing — the honest 待首战 state (no cursor-file needed for the
-  // map/clone checks, but capabilityReady includes a run; give it one).
+  // rust: clone + maps + report, but no scan-state keys → capability armed,
+  // baseline missing — the honest 待首战 state.
   write('repos/milvus-sdk-rust/.keep', '');
   write('.claude/skills/api-reference-sync/references/identity/rust-v26.json', { schemaVersion: 1 });
   write('.claude/skills/api-reference-sync/references/identity/rust-v30.json', { schemaVersion: 1 });
-  const rustCursor = write('tmp/sdk-release-scout/rust-daily-scan-state.json', { lastPrNumber: 1 });
-  fs.utimesSync(rustCursor, now, now);
+  touchReport(`rust-${stamp}.md`);
 
-  // go: clone + cursor but a missing identity map → 前提缺失, not 待首战.
+  // go: clone + report but a missing identity map → 前提缺失, not 待首战.
   write('repos/milvus-sdk-go/.keep', '');
   write('.claude/skills/api-reference-sync/references/identity/go-v26.json', { schemaVersion: 1 });
-  const goCursor = write('tmp/sdk-release-scout/go-daily-scan-state.json', { lastPrNumber: 1 });
-  fs.utimesSync(goCursor, now, now);
+  touchReport(`go-${stamp}.md`);
 
   const ledger = buildLedger({ repoRoot: root, now });
   const cpp = ledger.sentinels.find((s) => s.id === 'cpp-daily-scan');
@@ -267,14 +288,14 @@ test('sentinel readiness reports capability vs baseline-seeded honestly', (t) =>
   assert.deepEqual(go.readiness.identityMaps.missing, ['go-v30.json']);
 });
 
-test('stale sentinel flagged after 25h without a cursor update', (t) => {
+test('stale sentinel flagged after 25h without a new daily report', (t) => {
   const { root, write } = makeFixtureTree();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const now = new Date('2026-10-05T10:00:00');
   const old = new Date(now.getTime() - 26 * 60 * 60 * 1000);
-  write('tmp/sdk-release-scout/daily-scan-state.json', { lastTags: {}, lastPrNumber: 1 });
-  fs.utimesSync(path.join(root, 'tmp/sdk-release-scout/daily-scan-state.json'), old, old);
+  const reportPath = write('tmp/sdk-release-scout/daily/2026-10-04.md', '# C++ SDK 每日扫描报告 2026-10-04\n');
+  fs.utimesSync(reportPath, old, old);
 
   const ledger = buildLedger({ repoRoot: root, now });
   assert.equal(ledger.sentinels.find((s) => s.id === 'cpp-daily-scan').status, 'stale');

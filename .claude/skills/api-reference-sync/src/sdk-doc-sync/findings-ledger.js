@@ -9,7 +9,9 @@
 //
 // Semantics (batch 17 §5):
 //   * A language's disposed watermark = the max PR number whose status is
-//     disposed|ignored. Findings = number > watermark, not ignored.
+//     disposed|ignored. The DISCOVERY filter is "number > watermark, prefix
+//     hit, not ignored" (applied by the scan CLI to fetch results); pending
+//     here is the owed view: folded status pending, regardless of number.
 //   * Recording a finding is idempotent by PR number; a PR touching several
 //     languages unions the language set.
 //   * Marking is the ONLY way the watermark advances; a scan run never does.
@@ -185,13 +187,14 @@ function disposedWatermark(entries, language) {
   ), 0);
 }
 
-// Findings a language still owes: PRs above the watermark that are not ignored.
+// Findings a language still owes: every recorded PR whose folded status is
+// still pending. Status-based, NOT number-based — the "> watermark" cut is
+// the DISCOVERY filter's job (applied to fetch results before recording);
+// here it would silently drop a lower pending finding whenever a higher PR
+// is disposed out of order (batch 17 regression pin: owed ≠ below-the-watermark).
 function pendingFindings(entries, language) {
-  const watermark = disposedWatermark(entries, language);
   return foldLedger(entries).filter((state) => (
-    state.prNumber > watermark
-      && state.languages.includes(language)
-      && state.status !== 'ignored'
+    state.languages.includes(language) && state.status === 'pending'
   ));
 }
 

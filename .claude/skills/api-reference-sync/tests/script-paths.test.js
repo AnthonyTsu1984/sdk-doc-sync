@@ -31,6 +31,17 @@ test('sdk-release-scout CLI path exists', () => {
   assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'sdk-document-rollback.js')), true);
 });
 
+test('daily-scan CLI, kernel and profile paths exist (batch 17)', () => {
+  const skillRoot = path.resolve(__dirname, '..');
+  for (const relative of [
+    'scripts/daily-scan.js',
+    'src/sdk-doc-sync/daily-scan-core.js',
+    'config/daily-scan-profiles.json',
+  ]) {
+    assert.equal(fs.existsSync(path.join(skillRoot, relative)), true, `Missing daily-scan path: ${relative}`);
+  }
+});
+
 test('sdk-doc-sync planning helper scripts exist', () => {
   const skillRoot = path.resolve(__dirname, '..');
   for (const script of [
@@ -115,6 +126,8 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/copy-and-repoint-plan.test.js',
     '.claude/skills/api-reference-sync/tests/cpp-scanner-coverage.test.js',
     '.claude/skills/api-reference-sync/tests/create-shell-collision.test.js',
+    '.claude/skills/api-reference-sync/tests/daily-scan-cli.test.js',
+    '.claude/skills/api-reference-sync/tests/daily-scan-core.test.js',
     '.claude/skills/api-reference-sync/tests/decision-capture.test.js',
     '.claude/skills/api-reference-sync/tests/derive-overlay.test.js',
     '.claude/skills/api-reference-sync/tests/document-ir.test.js',

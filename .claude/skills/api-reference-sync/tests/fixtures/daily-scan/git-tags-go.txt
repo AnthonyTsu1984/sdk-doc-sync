@@ -1,0 +1,9 @@
+client/v2.6.5
+client/v2.6.4
+client/v2.6.3
+client/v2.6.2
+client/v2.6.1
+client/v2.6.0-rc.1
+client/v2.6.0
+client/v3.0.0-beta
+client/v3.0.0

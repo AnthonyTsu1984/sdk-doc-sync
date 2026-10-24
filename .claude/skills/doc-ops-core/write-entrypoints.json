@@ -416,6 +416,13 @@
       "basis": "no external mutation signature found"
     },
     {
+      "path": ".claude/skills/api-reference-sync/scripts/daily-scan.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "daily-scan",
+      "basis": "discovery only: writes the local daily report, scout artifacts and the findings ledger; never advances scan-state nor writes Feishu/Bitable"
+    },
+    {
       "path": ".claude/skills/api-reference-sync/scripts/diff-node-v26.js",
       "skill": "api-reference-sync",
       "classification": "read-only",

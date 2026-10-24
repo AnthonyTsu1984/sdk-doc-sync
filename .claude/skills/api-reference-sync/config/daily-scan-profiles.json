@@ -1,0 +1,130 @@
+{
+  "profileVersion": 1,
+  "comment": "每日扫描哨兵的唯一语言事实源（批 17）。六脚本/ledger SENTINELS/cron 提示词三处重复归此处。displayName/noTagSuffix/prSectionName/reportTitle 为批 17 实现追加的呈现层字段：六份 py 脚本的报告措辞在四个名字上并不统一（go 的 fetch/无变化行用 repos/milvus-sdk-go、PR 节用 milvus-sdk-go；python 用 pymilvus），为逐字保留而入数据，不入代码。",
+  "shared": {
+    "webContentRepo": "milvus-io/web-content",
+    "webContentDir": "../web-content",
+    "prListLimit": 30,
+    "artifactsDir": "tmp/sdk-release-scout/daily",
+    "findingsLedgerPath": "tmp/api-reference-sync/daily-scan/pr-findings.jsonl",
+    "scanStatePath": ".claude/skills/api-reference-sync/scan-state.json",
+    "scoutCli": ".claude/skills/api-reference-sync/bin/sdk-release-scout.js"
+  },
+  "languages": {
+    "cpp": {
+      "sdkDir": "repos/milvus-sdk-cpp",
+      "sdkName": "milvus-sdk-cpp",
+      "webContentPathPrefix": "API_Reference/milvus-sdk-cpp/",
+      "reportName": "{date}.md",
+      "reportTitle": "C++ SDK",
+      "displayName": "milvus-sdk-cpp",
+      "prSectionName": "milvus-sdk-cpp",
+      "noTagSuffix": "两轨道均无新 tag",
+      "tracks": [
+        { "version": "v2.6.x", "scanStateKey": "cpp-v26", "artifactKey": "cpp-v26", "preReleaseBelowRelease": true },
+        { "version": "v3.0.x", "scanStateKey": "cpp-v30", "artifactKey": "cpp-v30", "preReleaseBelowRelease": true }
+      ],
+      "identityMaps": ["cpp-v26.json", "cpp-v30.json"],
+      "extraIgnoreRules": [],
+      "notes": []
+    },
+    "go": {
+      "sdkDir": "repos/milvus-sdk-go",
+      "sdkName": "milvus",
+      "webContentPathPrefix": "API_Reference/milvus-sdk-go/",
+      "reportName": "go-{date}.md",
+      "reportTitle": "Go SDK",
+      "displayName": "repos/milvus-sdk-go",
+      "prSectionName": "milvus-sdk-go",
+      "noTagSuffix": "两轨道均无新 client/ tag",
+      "tracks": [
+        {
+          "version": "v2.6.x",
+          "scanStateKey": "go",
+          "artifactKey": "go-v26",
+          "tagPrefix": "client/v2.6.",
+          "preReleaseBelowRelease": true,
+          "notes": ["monorepo 克隆：Go SDK tag 仅 client/ 命名空间，server 侧 v* 不在发布范围"]
+        },
+        { "version": "v3.0.x", "scanStateKey": "go-v3", "artifactKey": "go-v30", "tagPrefix": "client/v3.0.", "preReleaseBelowRelease": true }
+      ],
+      "identityMaps": ["go-v26.json", "go-v30.json"],
+      "extraIgnoreRules": [],
+      "notes": []
+    },
+    "java": {
+      "sdkDir": "repos/milvus-sdk-java",
+      "sdkName": "milvus-sdk-java",
+      "webContentPathPrefix": "API_Reference/milvus-sdk-java/",
+      "reportName": "java-{date}.md",
+      "reportTitle": "Java SDK",
+      "displayName": "milvus-sdk-java",
+      "prSectionName": "milvus-sdk-java",
+      "noTagSuffix": "两轨道均无新 tag",
+      "tracks": [
+        { "version": "v2.6.x", "scanStateKey": "java-v26", "artifactKey": "java-v26", "preReleaseBelowRelease": true },
+        { "version": "v3.0.x", "scanStateKey": "java-v30", "artifactKey": "java-v30", "preReleaseBelowRelease": true }
+      ],
+      "identityMaps": ["java-v26.json", "java-v30.json"],
+      "extraIgnoreRules": [],
+      "notes": []
+    },
+    "python": {
+      "sdkDir": "repos/pymilvus",
+      "sdkName": "pymilvus",
+      "webContentPathPrefix": "API_Reference/pymilvus/",
+      "reportName": "python-{date}.md",
+      "reportTitle": "Python SDK",
+      "displayName": "pymilvus",
+      "prSectionName": "pymilvus",
+      "noTagSuffix": "两轨道均无新 tag",
+      "tracks": [
+        { "version": "v2.6.x", "scanStateKey": "python", "artifactKey": "python-v26", "preReleaseBelowRelease": true },
+        { "version": "v3.0.x", "scanStateKey": "python-v3", "artifactKey": "python-v30", "preReleaseBelowRelease": true }
+      ],
+      "identityMaps": ["python-v26.json", "python-v30.json"],
+      "extraIgnoreRules": [],
+      "notes": []
+    },
+    "rust": {
+      "sdkDir": "repos/milvus-sdk-rust",
+      "sdkName": "milvus-sdk-rust",
+      "webContentPathPrefix": "API_Reference/milvus-sdk-rust/",
+      "reportName": "rust-{date}.md",
+      "reportTitle": "Rust SDK",
+      "displayName": "milvus-sdk-rust",
+      "prSectionName": "milvus-sdk-rust",
+      "noTagSuffix": "无可对比的新 tag（或全部待首战）",
+      "tracks": [
+        { "version": "v2.6.x", "scanStateKey": "rust-v26", "artifactKey": "rust-v26", "preReleaseBelowRelease": true },
+        { "version": "v3.0.x", "scanStateKey": "rust-v30", "artifactKey": "rust-v30", "preReleaseBelowRelease": true }
+      ],
+      "identityMaps": ["rust-v26.json", "rust-v30.json"],
+      "extraIgnoreRules": [],
+      "notes": []
+    },
+    "node": {
+      "sdkDir": "repos/milvus-sdk-node",
+      "sdkName": "milvus-sdk-node",
+      "webContentPathPrefix": "API_Reference/milvus-sdk-node/",
+      "reportName": "node-{date}.md",
+      "reportTitle": "Node.js SDK",
+      "displayName": "milvus-sdk-node",
+      "prSectionName": "milvus-sdk-node",
+      "noTagSuffix": "无可对比的新 tag",
+      "tracks": [
+        { "version": "v2.6.x", "scanStateKey": "node-v26", "artifactKey": "node-v26", "preReleaseBelowRelease": true },
+        {
+          "version": "v3.0.x",
+          "scanStateKey": "node",
+          "artifactKey": "node-v30",
+          "preReleaseBelowRelease": true,
+          "notes": ["scan-state 键=legacy 裸 node（无 node-v3 别名），与 config/release-tracks.json scanStateKey 覆写互为镜像；工件名必须 node-v30 以合 DAILY_SCOUT_RE"]
+        }
+      ],
+      "identityMaps": ["node-v26.json", "node-v30.json"],
+      "extraIgnoreRules": [],
+      "notes": []
+    }
+  }
+}

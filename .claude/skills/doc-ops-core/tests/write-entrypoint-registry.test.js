@@ -89,7 +89,13 @@ test('tracked entrypoint registry covers the complete frozen inventory with hone
   //     record-campaign-approval, record-grouping-approval, gate-presentation,
   //     gate-presentation-check, revision-unit-digests, bin/campaign-run) and
   //     added the canonical runner bin/sdk-release-sync.js, 118→110.
-  assert.equal(discovered.length, 110);
+  //   - +1 read-only daily-scan canonical CLI
+  //     .claude/skills/api-reference-sync/scripts/daily-scan.js (batch 17
+  //     daily-scan 收编: the six retired py sentinels → one CLI + one profile;
+  //     discovery only — writes the local daily report, scout artifacts and
+  //     the findings ledger under tmp/, never advances scan-state nor writes
+  //     Feishu/Bitable), 110→111.
+  assert.equal(discovered.length, 111);
   assert.deepEqual(result, { valid: true, errors: [] });
   const canonical = registry.entries.find((entry) => entry.path.endsWith('/sdk-doc-sync.js'));
   assert.equal(canonical.classification, 'canonical-governed');

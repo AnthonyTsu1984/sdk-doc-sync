@@ -3,13 +3,20 @@
 //
 // One rule: the dashboard never creates a second source of truth. Every card
 // field is derived from durable files the governed CLIs already write (review
-// sessions, scan-state, admission ledger, daily-scan cursors). This module is
+// sessions, scan-state, admission ledger, daily-scan reports + the daily-scan
+// findings ledger). This module is
 // a pure function of the filesystem — same tree in, same ledger out; no
 // writes, no network. The HTTP server (server.js) only caches and pushes the
 // output of this module.
 
 const fs = require('node:fs');
 const path = require('node:path');
+
+const {
+  disposedWatermark: ledgerDisposedWatermark,
+  pendingFindings: ledgerPendingFindings,
+  readLedger,
+} = require('../../.claude/skills/api-reference-sync/src/sdk-doc-sync/findings-ledger');
 
 const SESSION_SCAN_ROOTS = ['tmp/sdk-release-scout', 'tmp/sdk-doc-sync-runs'];
 const SCAN_STATE_RELATIVE_PATH = '.claude/skills/api-reference-sync/scan-state.json';
@@ -18,100 +25,47 @@ const ADMISSION_LEDGER_RELATIVE_PATH = 'tmp/skill-feedback-rollout/admitted-fing
 const GATE_PRESENTATION_RELATIVE_PATH = 'tmp/api-reference-sync/gate-presentation/latest.html';
 const EVENTS_DIR_RELATIVE_PATH = 'tmp/dashboard-events';
 
-// Sentinel (cron automation) definitions. nextRun derives from an explicit
-// daily wall-clock time instead of cron parsing: host-side automation state
-// (CronList) is not on disk, and the automations are fixed daily schedules.
-// Adding an automation = one entry here (batch-2 event taps will attach
-// run timelines to the same card ids without further wiring).
-const SENTINELS = [
-  {
-    id: 'cpp-daily-scan',
-    title: 'C++ SDK 每日扫描',
-    schedule: '每天 09:00',
-    hour: 9,
-    minute: 0,
-    language: 'cpp',
-    sdkDir: 'repos/milvus-sdk-cpp',
-    identityMaps: ['cpp-v26.json', 'cpp-v30.json'],
-    scanStateKeys: ['cpp-v26', 'cpp-v30'],
-    cursorFile: 'tmp/sdk-release-scout/daily-scan-state.json',
-    artifactsDir: 'tmp/sdk-release-scout/daily',
-    // Daily report file name inside artifactsDir, {date} = YYYY-MM-DD.
-    reportName: '{date}.md',
-  },
-  {
-    id: 'go-daily-scan',
-    title: 'Go SDK 每日扫描',
-    schedule: '每天 09:15',
-    hour: 9,
-    minute: 15,
-    language: 'go',
-    sdkDir: 'repos/milvus-sdk-go',
-    identityMaps: ['go-v26.json', 'go-v30.json'],
-    scanStateKeys: ['go', 'go-v3'],
-    cursorFile: 'tmp/sdk-release-scout/go-daily-scan-state.json',
-    artifactsDir: 'tmp/sdk-release-scout/daily',
-    reportName: 'go-{date}.md',
-  },
-  {
-    id: 'java-daily-scan',
-    title: 'Java SDK 每日扫描',
-    schedule: '每天 09:30',
-    hour: 9,
-    minute: 30,
-    language: 'java',
-    sdkDir: 'repos/milvus-sdk-java',
-    identityMaps: ['java-v26.json', 'java-v30.json'],
-    scanStateKeys: ['java-v26', 'java-v30'],
-    cursorFile: 'tmp/sdk-release-scout/java-daily-scan-state.json',
-    artifactsDir: 'tmp/sdk-release-scout/daily',
-    reportName: 'java-{date}.md',
-  },
-  {
-    id: 'python-daily-scan',
-    title: 'Python SDK 每日扫描',
-    schedule: '每天 09:45',
-    hour: 9,
-    minute: 45,
-    language: 'python',
-    sdkDir: 'repos/pymilvus',
-    identityMaps: ['python-v26.json', 'python-v30.json'],
-    scanStateKeys: ['python', 'python-v3'],
-    cursorFile: 'tmp/sdk-release-scout/python-daily-scan-state.json',
-    artifactsDir: 'tmp/sdk-release-scout/daily',
-    reportName: 'python-{date}.md',
-  },
-  {
-    id: 'rust-daily-scan',
-    title: 'Rust SDK 每日扫描',
-    schedule: '每天 10:00',
-    hour: 10,
-    minute: 0,
-    language: 'rust',
-    sdkDir: 'repos/milvus-sdk-rust',
-    identityMaps: ['rust-v26.json', 'rust-v30.json'],
-    scanStateKeys: ['rust-v26', 'rust-v30'],
-    cursorFile: 'tmp/sdk-release-scout/rust-daily-scan-state.json',
-    artifactsDir: 'tmp/sdk-release-scout/daily',
-    reportName: 'rust-{date}.md',
-  },
-  {
-    id: 'node-daily-scan',
-    title: 'Node.js SDK 每日扫描',
-    schedule: '每天 10:15',
-    hour: 10,
-    minute: 15,
-    language: 'node',
-    sdkDir: 'repos/milvus-sdk-node',
-    identityMaps: ['node-v26.json', 'node-v30.json'],
-    // v3.0.x rides the legacy bare `node` scan-state key (no node-v3 alias),
-    // mirroring config/release-tracks.json scanStateKey overrides.
-    scanStateKeys: ['node-v26', 'node'],
-    cursorFile: 'tmp/sdk-release-scout/node-daily-scan-state.json',
-    artifactsDir: 'tmp/sdk-release-scout/daily',
-    reportName: 'node-{date}.md',
-  },
+// Sentinel (cron automation) definitions — batch 17: the language facts
+// (sdkDir / scanStateKeys / identityMaps / artifactsDir / reportName / the
+// findings ledger path) come from the daily-scan profile, the single source
+// of truth shared with the daily-scan CLI (design §2.2: the third duplicated
+// config dies here). Only board-facing presentation facts stay in code.
+// Adding an automation = one entry in SENTINEL_PRESENTATION (plus a profile
+// entry when it scans a new language).
+const DAILY_SCAN_PROFILES_RELATIVE_PATH = '.claude/skills/api-reference-sync/config/daily-scan-profiles.json';
+
+const SENTINEL_PRESENTATION = [
+  { id: 'cpp-daily-scan', title: 'C++ SDK 每日扫描', schedule: '每天 09:00', hour: 9, minute: 0, language: 'cpp' },
+  { id: 'go-daily-scan', title: 'Go SDK 每日扫描', schedule: '每天 09:15', hour: 9, minute: 15, language: 'go' },
+  { id: 'java-daily-scan', title: 'Java SDK 每日扫描', schedule: '每天 09:30', hour: 9, minute: 30, language: 'java' },
+  { id: 'python-daily-scan', title: 'Python SDK 每日扫描', schedule: '每天 09:45', hour: 9, minute: 45, language: 'python' },
+  { id: 'rust-daily-scan', title: 'Rust SDK 每日扫描', schedule: '每天 10:00', hour: 10, minute: 0, language: 'rust' },
+  { id: 'node-daily-scan', title: 'Node.js SDK 每日扫描', schedule: '每天 10:15', hour: 10, minute: 15, language: 'node' },
 ];
+
+const SENTINELS = buildSentinels();
+
+function buildSentinels() {
+  const profiles = readJsonOrNull(path.join(__dirname, '..', '..', DAILY_SCAN_PROFILES_RELATIVE_PATH));
+  const languages = profiles && profiles.languages && typeof profiles.languages === 'object' ? profiles.languages : null;
+  if (!languages) return []; // profile absent/unreadable → no cards, never a broken board
+  return SENTINEL_PRESENTATION
+    .filter((definition) => languages[definition.language])
+    .map((definition) => {
+      const entry = languages[definition.language];
+      return {
+        ...definition,
+        sdkDir: typeof entry.sdkDir === 'string' ? entry.sdkDir : null,
+        identityMaps: Array.isArray(entry.identityMaps) ? entry.identityMaps : [],
+        scanStateKeys: (Array.isArray(entry.tracks) ? entry.tracks : [])
+          .map((track) => track && track.scanStateKey)
+          .filter((key) => typeof key === 'string' && key),
+        artifactsDir: (profiles.shared && profiles.shared.artifactsDir) || 'tmp/sdk-release-scout/daily',
+        reportName: entry.reportName,
+        findingsLedgerPath: (profiles.shared && profiles.shared.findingsLedgerPath) || null,
+      };
+    });
+}
 
 function readJsonOrNull(absolutePath) {
   try {
@@ -431,18 +385,58 @@ function readDailyReport(repoRoot, definition, now) {
   };
 }
 
-function buildSentinelCard(repoRoot, definition, now) {
-  const cursorAbsolute = path.join(repoRoot, definition.cursorFile);
-  let cursor = null;
-  let lastRunAt = null;
+// Newest daily report file for a sentinel: reportName with {date} → a date
+// regex, matched against the artifacts dir. The report is the run's durable
+// output (batch 17: the py cursor state files are retired, so "last ran"
+// derives from the artifact, not a private state file).
+function latestReportStat(repoRoot, definition, now) {
+  if (typeof definition.reportName !== 'string') return null;
+  const regex = new RegExp(`^${definition.reportName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace('\\{date\\}', '(\\d{4}-\\d{2}-\\d{2})')}$`);
+  let names;
   try {
-    const stat = fs.statSync(cursorAbsolute);
-    lastRunAt = new Date(stat.mtimeMs).toISOString();
-    cursor = readJsonOrNull(cursorAbsolute);
+    names = fs.readdirSync(path.join(repoRoot, definition.artifactsDir));
   } catch {
-    // cursor absent → never ran
+    return null;
   }
-  // A daily sentinel that has not moved its cursor for over 25h either missed
+  let best = null;
+  for (const name of names) {
+    const match = regex.exec(name);
+    if (!match) continue;
+    if (!best || match[1] > best.date) best = { date: match[1], name };
+  }
+  if (!best) return null;
+  try {
+    const stat = fs.statSync(path.join(repoRoot, definition.artifactsDir, best.name));
+    return { date: best.date, mtimeMs: stat.mtimeMs };
+  } catch {
+    return null;
+  }
+}
+
+// PR findings per sentinel card, folded from the daily-scan findings ledger
+// (batch 17 §5/§7): the disposed watermark replaces the retired cursor
+// lastPrNumber, and the pending count is the actionable "待处置 N 件".
+// A missing or unreadable ledger shows as nulls ("—") — tolerance, not a
+// second truth.
+function findingsFor(repoRoot, definition) {
+  if (!definition.findingsLedgerPath) return { ledgerPresent: false, watermark: null, pending: null };
+  let entries;
+  try {
+    entries = readLedger(path.join(repoRoot, definition.findingsLedgerPath));
+  } catch {
+    return { ledgerPresent: false, watermark: null, pending: null };
+  }
+  return {
+    ledgerPresent: true,
+    watermark: ledgerDisposedWatermark(entries, definition.language),
+    pending: ledgerPendingFindings(entries, definition.language).length,
+  };
+}
+
+function buildSentinelCard(repoRoot, definition, now) {
+  const reportStat = latestReportStat(repoRoot, definition, now);
+  const lastRunAt = reportStat ? new Date(reportStat.mtimeMs).toISOString() : null;
+  // A daily sentinel whose newest report is over 25h old either missed
   // a run or failed before writing — surface that instead of a green light.
   const stale = Boolean(
     lastRunAt && now.getTime() - new Date(lastRunAt).getTime() > 25 * 60 * 60 * 1000,
@@ -467,7 +461,7 @@ function buildSentinelCard(repoRoot, definition, now) {
     && (!definition.sdkDir || fs.existsSync(path.join(repoRoot, definition.sdkDir)))
     && identityPresent.length === maps.length;
   const readiness = {
-    cursor: Boolean(lastRunAt),
+    report: Boolean(lastRunAt),
     sdkClone: !definition.sdkDir || fs.existsSync(path.join(repoRoot, definition.sdkDir)),
     identityMaps: { present: identityPresent, missing: maps.filter((name) => !identityPresent.includes(name)) },
     scanState: { seeded, missing: scanKeys.filter((key) => !seeded.includes(key)) },
@@ -484,10 +478,10 @@ function buildSentinelCard(repoRoot, definition, now) {
     lastRunAt,
     nextRunAt: computeNextDailyRun(definition.hour, definition.minute, now),
     status: lastRunAt ? (stale ? 'stale' : 'ok') : 'never-run',
-    cursor: cursor ? { lastPrNumber: cursor.lastPrNumber ?? null, lastTags: cursor.lastTags ?? null } : null,
     report: readDailyReport(repoRoot, definition, now),
     artifactsDir: definition.artifactsDir,
     artifactsPresent,
+    findings: findingsFor(repoRoot, definition),
     readiness,
   };
 }

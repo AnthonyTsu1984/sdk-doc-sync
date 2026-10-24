@@ -384,7 +384,7 @@ function renderSentinels(d) {
         <b>工件</b><span>${s.artifactsPresent ? viewLink(s.artifactsDir + '/', 'tmp/sdk-release-scout/daily/') : '无'}</span>
         <b>就绪</b><span>${esc(readyDetail || '—')}</span>
       </div>
-      <div class="note">水位：web-content PR #${s.cursor?.lastPrNumber ?? '?'}（C++/Java 扫描器共用同一上游仓库的 PR 水位，两卡同值属正常）· 红线：扫描只发现不处置，立项处理是人工动作。</div>
+      <div class="note">PR 水位：已处置至 #${s.findings?.watermark ?? '—'} · 待处置 ${s.findings?.pending ?? '—'} 件（daily-scan findings ledger，mark 后才推进）· 红线：扫描只发现不处置，立项处理是人工动作。</div>
     </div>`;
   }).join('');
 }

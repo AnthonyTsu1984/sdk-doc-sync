@@ -1,0 +1,38 @@
+# deploy/configmap-backlog.yaml — S2 双 pod 种账本用的 per-language backlog。
+#
+# 数据来源（机械提取，可复算）：从主树账本
+# tmp/api-reference-sync/daily-scan/pr-findings.jsonl（批 17 扫描产物，快照日
+# 2026-10-24）用 `node deploy/lib.js extract-backlog --ledger … --language <lang>
+# --discovered-on 2026-10-24` 提取该语言 pending 条目：
+#   - python 6 条（#1184 #1188 #1191 #1198 #1199 #1207）
+#   - java   8 条（#1174 #1175 #1178 #1186 #1190 #1198 #1200 #1204）
+# 口径：discovered 事件且 languages 含目标语言、同 prNumber 的 languages 取并集
+# （#1198 是 go/java/node/python 四语联合条目）；已 disposed 的 #1173/#1181 排除；
+# discoveredOn 统一快照日 2026-10-24。字段：prNumber/languages/title/url/mergedAt。
+#
+# 消费方：deploy/configmap-scripts.yaml 的 seed-backlog.sh —— 挂载点 /opt/backlog，
+# `daily-scan.js --import-backlog --file /opt/backlog/<lang>.jsonl` 幂等入账。
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sdk-backlog
+  namespace: sdk-doc-sync
+  labels:
+    app.kubernetes.io/part-of: sdk-doc-sync
+data:
+  python.jsonl: |
+    {"prNumber":1184,"languages":["python"],"title":"Fix and reconcile pymilvus v2.6.x and v3.0.x API reference examples","url":"https://github.com/milvus-io/web-content/pull/1184","mergedAt":"2026-10-19T03:33:42Z","discoveredOn":"2026-10-24"}
+    {"prNumber":1188,"languages":["python"],"title":"Mark deprecated PyMilvus APIs in API reference","url":"https://github.com/milvus-io/web-content/pull/1188","mergedAt":"2026-10-21T02:23:51Z","discoveredOn":"2026-10-24"}
+    {"prNumber":1191,"languages":["python"],"title":"Reconcile Pymilvus v2.6.x and v3.0.x API reference","url":"https://github.com/milvus-io/web-content/pull/1191","mergedAt":"2026-10-21T10:33:23Z","discoveredOn":"2026-10-24"}
+    {"prNumber":1198,"languages":["go","java","python","node"],"title":"Fix pymilvus API reference issues and clarify hybrid_search pagination","url":"https://github.com/milvus-io/web-content/pull/1198","mergedAt":"2026-10-22T04:12:48Z","discoveredOn":"2026-10-24"}
+    {"prNumber":1199,"languages":["python"],"title":"Document pymilvus MilvusException with error codes and cross-links","url":"https://github.com/milvus-io/web-content/pull/1199","mergedAt":"2026-10-22T06:33:58Z","discoveredOn":"2026-10-24"}
+    {"prNumber":1207,"languages":["python"],"title":"Reconcile pymilvus v2.6.x and v3.0.x API reference","url":"https://github.com/milvus-io/web-content/pull/1207","mergedAt":"2026-10-23T03:16:17Z","discoveredOn":"2026-10-24"}
+  java.jsonl: |
+    {"prNumber":1174,"languages":["java"],"title":"Reconcile and align milvus-sdk-java v3.0.x API reference docs","url":"https://github.com/milvus-io/web-content/pull/1174","mergedAt":"2026-10-12T00:00:00Z","discoveredOn":"2026-10-24"}
+    {"prNumber":1175,"languages":["java"],"title":"Reconcile milvus-sdk-java v2.6.x API reference docs with SDK v2.6.25","url":"https://github.com/milvus-io/web-content/pull/1175","mergedAt":"2026-10-13T00:00:00Z","discoveredOn":"2026-10-24"}
+    {"prNumber":1178,"languages":["java"],"title":"Reconcile milvus-sdk-java API reference docs (v2.6.x, v3.0.x)","url":"https://github.com/milvus-io/web-content/pull/1178","mergedAt":"2026-10-15T00:00:00Z","discoveredOn":"2026-10-24"}
+    {"prNumber":1186,"languages":["java"],"title":"Fix and reconcile milvus-sdk-java v2.6.x and v3.0.x API reference examples","url":"https://github.com/milvus-io/web-content/pull/1186","mergedAt":"2026-10-21T03:22:52Z","discoveredOn":"2026-10-24"}
+    {"prNumber":1190,"languages":["java"],"title":"Reconcile Java SDK v2.6.x and v3.0.x API reference","url":"https://github.com/milvus-io/web-content/pull/1190","mergedAt":"2026-10-21T08:12:19Z","discoveredOn":"2026-10-24"}
+    {"prNumber":1198,"languages":["go","java","python","node"],"title":"Fix pymilvus API reference issues and clarify hybrid_search pagination","url":"https://github.com/milvus-io/web-content/pull/1198","mergedAt":"2026-10-22T04:12:48Z","discoveredOn":"2026-10-24"}
+    {"prNumber":1200,"languages":["java"],"title":"Add MilvusClientException type page to java SDK API reference","url":"https://github.com/milvus-io/web-content/pull/1200","mergedAt":"2026-10-22T07:54:28Z","discoveredOn":"2026-10-24"}
+    {"prNumber":1204,"languages":["java"],"title":"Add missing standalone type pages to Java SDK API reference","url":"https://github.com/milvus-io/web-content/pull/1204","mergedAt":"2026-10-22T10:40:48Z","discoveredOn":"2026-10-24"}

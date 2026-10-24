@@ -1,0 +1,569 @@
+# deploy/configmap-scripts.yaml — S2 双 pod 的三个运行脚本（/opt/scripts，0755）。
+#
+# 本文件是 deploy/*.sh 三个脚本的部署镜像（| 块内嵌）。改动流程：先改仓库里的
+# deploy/bootstrap.sh / supervisor.sh / seed-backlog.sh，再同步本 ConfigMap 对应
+# 块并 kubectl apply + 滚动重启（kubectl -n sdk-doc-sync rollout restart deploy）。
+# 容器 command 显式 bash 调用，块内无需保留 shebang。
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sdk-scripts
+  namespace: sdk-doc-sync
+  labels:
+    app.kubernetes.io/part-of: sdk-doc-sync
+data:
+  bootstrap.sh: |
+      # deploy/bootstrap.sh — S2 pod 引导（源文件 deploy/bootstrap.sh；本 ConfigMap 为其部署镜像）。
+      # 改脚本先改仓库源文件再同步本块；幂等 marker + fail-loud 见源文件头注。
+      # deploy/bootstrap.sh — S2 pod 引导（node:22-bookworm 单容器，跑在 milvus-cell vCluster）。
+      #
+      # 职责：装系统依赖（git/python3/ca-certificates/curl/jq）→ gh CLI（官方 tarball）
+      # → opencode（npm i -g opencode-ai）→ clone 本仓 + 同级 web-content + repos/<SDK>
+      # 到 PVC /workspace → npm ci → 渲染 opencode.json（LLM_* 用 {env:} 插值、models 键
+      # 写死）→ AGENTS.md 指针 → per-track BASE_TOKEN 导出 → 种账本 → exec supervisor。
+      #
+      # 幂等：/workspace/.bootstrap-done marker 短路重活；但 marker 命中时仍会
+      #   1) 确保工作目录齐全 2) 重渲染 opencode.json（env 可能随重启变化）
+      #   3) 重导 BASE_TOKEN（fail-loud）4) 重跑 seed-backlog（import-backlog 天然幂等）。
+      # 红线：本脚本只 clone/装环境/种账本，绝不推进 scan-state、绝不触 Feishu 写路径。
+
+      set -euo pipefail
+
+      WORKSPACE="${WORKSPACE:-/workspace}"
+      REPO="${REPO:-$WORKSPACE/feishu-markdown-bridge}"
+      REPO_URL="${REPO_URL:-https://github.com/AnthonyTsu1984/sdk-doc-sync.git}"
+      WEB_CONTENT_URL="${WEB_CONTENT_URL:-https://github.com/milvus-io/web-content.git}"
+      SDK_REPO="${SDK_REPO:?SDK_REPO env is required (e.g. pymilvus)}"
+      SDK_ORG="${SDK_ORG:-milvus-io}"
+      SDK_REPO_URL="${SDK_REPO_URL:-https://github.com/${SDK_ORG}/${SDK_REPO}.git}"
+      LANGUAGE="${LANGUAGE:?LANGUAGE env is required}"
+      MARKER="$WORKSPACE/.bootstrap-done"
+      LOG_FILE="$WORKSPACE/logs/bootstrap.log"
+      EVENTS_FILE="$WORKSPACE/logs/events.jsonl"
+
+      mkdir -p "$WORKSPACE/logs" "$WORKSPACE/runs" "$WORKSPACE/inbound"
+      exec >> >(tee -a "$LOG_FILE") 2>&1
+
+      log()  { printf '[bootstrap %s] %s\n' "$(date -Is)" "$*"; }
+      fail() { printf '[bootstrap %s] FAIL: %s\n' "$(date -Is)" "$*" >&2; exit 1; }
+
+      event() { # event <name> [key=value ...] —— JSON 事件走 lib.js（转义安全）
+        local name="$1"; shift
+        local args=(--file "$EVENTS_FILE" --event "$name")
+        local kv
+        for kv in "$@"; do
+          case "$kv" in
+            slot=*)  args+=(--slot "${kv#slot=}") ;;
+            track=*) args+=(--track "${kv#track=}") ;;
+            code=*)  args+=(--code "${kv#code=}") ;;
+            exit=*)  args+=(--exit "${kv#exit=}") ;;
+            count=*) args+=(--count "${kv#count=}") ;;
+          esac
+        done
+        node "$REPO/deploy/lib.js" emit-event "${args[@]}" 2>/dev/null || true
+      }
+
+      log "bootstrap start (language=$LANGUAGE sdk=$SDK_REPO workspace=$WORKSPACE)"
+
+      # ---------- 0. 必需 env fail-loud（secret sdk-env 的最小子集） ----------
+      for var in LLM_BASE_URL LLM_API_KEY LLM_MODEL GITHUB_TOKEN; do
+        [ -n "${!var:-}" ] || fail "$var is empty — secret sdk-env 缺键或 envFrom 未生效"
+      done
+
+      # ---------- 1. 系统依赖（marker 命中也查一遍，apt 幂等） ----------
+      if ! command -v git >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1 \
+        || ! command -v curl >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
+        log "apt-get install git python3 ca-certificates curl jq"
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq
+        apt-get install -y -qq --no-install-recommends git python3 ca-certificates curl jq
+      else
+        log "apt dependencies present, skip install"
+      fi
+
+      # ---------- 2. gh CLI（官方 tarball；GH_TOKEN=GITHUB_TOKEN 免登录） ----------
+      if ! command -v gh >/dev/null 2>&1; then
+        GH_TAG="$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/cli/cli/releases/latest | sed 's#.*/tag/##')"
+        [ -n "$GH_TAG" ] || fail "cannot resolve gh latest release tag"
+        case "$(uname -m)" in
+          x86_64) GH_ARCH=amd64 ;;
+          aarch64 | arm64) GH_ARCH=arm64 ;;
+          *) fail "unsupported arch: $(uname -m)" ;;
+        esac
+        log "install gh ${GH_TAG} (${GH_ARCH}) from official tarball"
+        curl -fsSL "https://github.com/cli/cli/releases/download/${GH_TAG}/gh_${GH_TAG#v}_linux_${GH_ARCH}.tar.gz" -o /tmp/gh.tgz
+        mkdir -p /tmp/gh-extract && tar -xzf /tmp/gh.tgz -C /tmp/gh-extract --strip-components=1
+        install -m 0755 /tmp/gh-extract/gh /usr/local/bin/gh
+        rm -rf /tmp/gh.tgz /tmp/gh-extract
+      else
+        log "gh present: $(gh --version | head -n1)"
+      fi
+      export GH_TOKEN="$GITHUB_TOKEN"
+
+      # ---------- 3. opencode（npm 全局；装后 --version 打标） ----------
+      if ! command -v opencode >/dev/null 2>&1; then
+        log "npm i -g opencode-ai"
+        npm install -g --silent opencode-ai
+      fi
+      OPENCODE_VERSION="$(opencode --version)" || fail "opencode --version failed after install"
+      log "opencode $OPENCODE_VERSION ready"
+
+      # ---------- 4. clone 三仓（幂等：在库即跳过；SDK 用浅克隆省 PVC） ----------
+      clone_if_missing() { # clone_if_missing <url> <dir>
+        local url="$1" dir="$2"
+        if [ -d "$dir/.git" ]; then
+          log "clone present: $dir"
+        else
+          log "git clone $url -> $dir"
+          git clone --quiet "$url" "$dir" || fail "git clone failed: $url"
+        fi
+      }
+      clone_if_missing "$REPO_URL" "$REPO"
+      clone_if_missing "$WEB_CONTENT_URL" "$WORKSPACE/web-content"   # profile shared.webContentDir = ../web-content（相对 repo 根）
+      clone_if_missing "$SDK_REPO_URL" "$REPO/repos/${SDK_REPO}"     # profile languages.<lang>.sdkDir = repos/<sdk>
+
+      # ---------- 5. npm ci（本仓依赖；marker 命中且 node_modules 在则跳过） ----------
+      if [ -f "$MARKER" ] && [ -d "$REPO/node_modules" ]; then
+        log "npm ci skipped (marker + node_modules present)"
+      else
+        log "npm ci in $REPO"
+        (cd "$REPO" && npm ci --no-audit --no-fund) || fail "npm ci failed"
+      fi
+
+      # ---------- 6. 渲染 opencode.json（每次启动重渲染；models 键=当时 LLM_MODEL） ----------
+      log "render opencode.json (provider=custom, {env:} interpolation)"
+      node "$REPO/deploy/lib.js" render-opencode-json > "$REPO/opencode.json" \
+        || fail "opencode.json render failed（LLM_MODEL 缺失?）"
+
+      # ---------- 7. AGENTS.md 指针（opencode 项目指令；已存在不覆盖人工内容） ----------
+      if [ ! -f "$REPO/AGENTS.md" ]; then
+        cat > "$REPO/AGENTS.md" <<'AGENTS'
+      # AGENTS.md — S2 worker 会话入口指针（bootstrap 生成）
+
+      你是本仓（feishu-markdown-bridge / sdk-doc-sync）的治理 worker 会话。一切以盘上
+      durable 状态与 canonical CLI 输出为准，勿凭记忆续接。
+
+      - 完整技能书：`.claude/skills/api-reference-sync/SKILL.md`（§Domain Workflow 1–3
+        与 §Required References 必读；其余按需考古）。
+      - 每次派出/续接都会带一份确定性简报（`buildTrackIntakeBrief` 产物）：简报就是你的
+        初始任务上下文，按简报工作指令执行。
+      - 铁律（照抄仓库治理语汇，违者产物作废）：
+        1. 执行中绝不删除 journal 重放；
+        2. 写路径只走 canonical CLI；
+        3. scan-state 只由 close-session/finalize 推进。
+      - 回合契约：一回合 = 派出/续接 → 干活 → 停在下一道门或终态。门后必停、绝不自批；
+        批准只有落成回执才生效；回合产物（journal/manifest/回执）先落规范位再结束回合。
+      - 工作空间契约：治理工件进 `tmp/api-reference-sync/`，扫描与 intake 进
+        `tmp/sdk-release-scout/`，战役 run 进 `tmp/sdk-doc-sync-runs/`。
+      AGENTS
+        log "AGENTS.md written"
+      else
+        log "AGENTS.md present, keep"
+      fi
+
+      # ---------- 8. per-track BASE_TOKEN 导出（fail-loud；BASE_TOKEN 教训） ----------
+      # 结论：release-tracks.json 机器可读、每轨带 bitable.baseToken，无需操作员补 env。
+      # 导出成 /workspace/runs/track-env/<version>.env（supervisor 按 slot eval）。
+      TRACKS="${TRACKS:?TRACKS env is required (e.g. 'v3.0.x,v2.6.x')}"
+      TRACK_ENV_DIR="$WORKSPACE/runs/track-env"
+      mkdir -p "$TRACK_ENV_DIR"
+      IFS=',' read -r -a TRACK_LIST <<< "$TRACKS"
+      for track in "${TRACK_LIST[@]}"; do
+        track="$(echo "$track" | tr -d '[:space:]')"
+        [ -n "$track" ] || continue
+        err_file="$WORKSPACE/runs/track-env/${track}.err"
+        if line="$(node "$REPO/deploy/lib.js" track-env --language "$LANGUAGE" --track "$track" 2>"$err_file")" \
+          && case "$line" in BASE_TOKEN=[A-Za-z0-9]*) true ;; *) false ;; esac; then
+          printf '%s\n' "$line" > "$TRACK_ENV_DIR/${track}.env"
+          track_key="$(sed -n 's/^trackKey=//p' "$err_file")"
+          log "BASE_TOKEN exported for $track (trackKey=${track_key:-unknown})"
+        else
+          # fail-loud：typed 占位文件 + 退出非零，绝不带着空 BASE_TOKEN 进 supervisor。
+          printf '# BASE_TOKEN_UNAVAILABLE\n%s\n' "$(cat "$err_file" 2>/dev/null || echo 'track-env invocation failed')" > "$TRACK_ENV_DIR/${track}.env"
+          event bootstrap_basetoken_failed "track=$track" "code=BASE_TOKEN_UNAVAILABLE"
+          fail "BASE_TOKEN unavailable for $LANGUAGE/$track：release-tracks.json 不可读或该轨无 bitable.baseToken（见 $TRACK_ENV_DIR/${track}.env）"
+        fi
+      done
+
+      # ---------- 9. 种账本（幂等）＋ marker ----------
+      if [ -x /opt/scripts/seed-backlog.sh ]; then
+        /opt/scripts/seed-backlog.sh || fail "seed-backlog failed"
+      else
+        fail "/opt/scripts/seed-backlog.sh missing — configmap-scripts 挂载不完整"
+      fi
+      touch "$MARKER"
+      event bootstrap_done "track=$TRACKS"
+      log "bootstrap done — exec supervisor"
+
+      # ---------- 10. 前台交棒 ----------
+      exec /opt/scripts/supervisor.sh
+  supervisor.sh: |
+      # deploy/supervisor.sh — S2 pod 主进程（源文件 deploy/supervisor.sh 的部署镜像）。
+      # ①扫描节流 ②简报+战役派出 ③门铃飞书 ④批准队列(-s 续跑) ⑤日志/事件，见源文件头注。
+      # deploy/supervisor.sh — S2 pod 主进程（bootstrap 末尾 exec 到这里）。
+      #
+      # 五件事（单进程轮询，无嵌套守护）：
+      #   ① 每 30 分钟跑 daily-scan --language $LANGUAGE（发现+账本自维护，只读哨兵）
+      #   ② 账本 pending>0 且 slot 空闲 → 起战役：buildTrackIntakeBrief 简报 +
+      #      `opencode run --format json`（四段提示词，slot=TRACKS 每轨一个）
+      #   ③ 门铃巡检：tmp/api-reference-sync/gate-presentation/ 新 index.json →
+      #      飞书卡片（BOT_* token + OPERATOR_EMAIL 求解 p2p open_id，缓存）
+      #   ④ 批准队列：/workspace/inbound/approve-<slot>.queue 首行匹配
+      #      ^APPROVE_[A-Z]+( \S+)? sha256:[0-9a-f]{64}$ → `opencode run -s <ses>` 续跑
+      #   ⑤ 全部动作 append logs/supervisor.log + logs/events.jsonl 一行 JSON 事件
+      #
+      # 红线：本进程不推进 scan-state（只由 close-session/finalize 推进）、不代替操作员
+      # 批准（门后必停）、不重写账本 fold（pending 计数走 canonical daily-scan-core）。
+      # 会话续接用 `-s <ses_…>`（--format json 事件携带 sessionID，已实测）；`-c/--continue`
+      # 只续项目目录最后一个会话，双 slot 共用 cwd 会串会话，故不用。
+
+      set -uo pipefail
+
+      WORKSPACE="${WORKSPACE:-/workspace}"
+      REPO="${REPO:-$WORKSPACE/feishu-markdown-bridge}"
+      LANGUAGE="${LANGUAGE:?LANGUAGE env is required}"
+      SDK_REPO="${SDK_REPO:?SDK_REPO env is required}"
+      TRACKS="${TRACKS:?TRACKS env is required (e.g. 'v3.0.x,v2.6.x')}"
+      POD_NAME="${POD_NAME:-${HOSTNAME:-unknown}}"
+      SCAN_INTERVAL="${SCAN_INTERVAL:-1800}"
+      POLL_INTERVAL="${POLL_INTERVAL:-20}"
+      CAMPAIGN_GRACE_SECS="${CAMPAIGN_GRACE_SECS:-900}"   # 战役停门后无批准注入的宽限期，过即让出轨道
+      LIB="$REPO/deploy/lib.js"
+      SCAN_CLI=".claude/skills/api-reference-sync/scripts/daily-scan.js"
+      LEDGER="tmp/api-reference-sync/daily-scan/pr-findings.jsonl"
+      GATE_DIR="$REPO/tmp/api-reference-sync/gate-presentation"
+      INBOUND="$WORKSPACE/inbound"
+      RUNS="$WORKSPACE/runs"
+      LOGS="$WORKSPACE/logs"
+      SUPERVISOR_LOG="$LOGS/supervisor.log"
+      EVENTS_FILE="$LOGS/events.jsonl"
+
+      mkdir -p "$LOGS" "$RUNS" "$INBOUND"
+      exec >> >(tee -a "$SUPERVISOR_LOG") 2>&1
+
+      log() { printf '[supervisor %s] %s\n' "$(date -Is)" "$*"; }
+      die() { printf '[supervisor %s] FATAL: %s\n' "$(date -Is)" "$*" >&2; exit 1; }
+
+      event() { # event <name> [key=value ...]（JSON 转义在 lib.js 内做）
+        local name="$1"; shift
+        local args=(--file "$EVENTS_FILE" --event "$name")
+        local kv
+        for kv in "$@"; do
+          case "$kv" in
+            slot=*)  args+=(--slot "${kv#slot=}") ;;
+            track=*) args+=(--track "${kv#track=}") ;;
+            code=*)  args+=(--code "${kv#code=}") ;;
+            exit=*)  args+=(--exit "${kv#exit=}") ;;
+            count=*) args+=(--count "${kv#count=}") ;;
+            detail=*) args+=(--detail "${kv#detail=}") ;;
+          esac
+        done
+        node "$LIB" emit-event "${args[@]}" 2>>"$SUPERVISOR_LOG" || log "WARN: emit-event failed ($name)"
+      }
+
+      # ---------- slot 表：TRACKS 顺序即 slot 1..N ----------
+      IFS=',' read -r -a TRACK_LIST <<< "$TRACKS"
+      N_SLOTS=0
+      declare -A SLOT_PID=() SLOT_TRACK=() SLOT_RUN=() SLOT_TRACKKEY=() SLOT_DEFER_LOG=()
+      for track in "${TRACK_LIST[@]}"; do
+        track="$(echo "$track" | tr -d '[:space:]')"
+        [ -n "$track" ] || continue
+        N_SLOTS=$((N_SLOTS + 1))
+        SLOT_TRACK[$N_SLOTS]="$track"
+      done
+      [ "$N_SLOTS" -gt 0 ] || die "TRACKS parses to zero slots: '$TRACKS'"
+
+      track_key_of() { # <version> → registryTrackKey（scanStateKey 覆写优先），失败回退派生
+        local err
+        err="$(node "$LIB" track-env --language "$LANGUAGE" --track "$1" 2>&1 >/dev/null)" || true
+        printf '%s\n' "$err" | sed -n 's/^trackKey=//p'
+      }
+
+      pending_count() { # canonical fold（daily-scan-core）；账本缺失自愈重种后重试一次
+        local ledger="$REPO/$LEDGER"
+        if [ ! -f "$ledger" ]; then
+          log "ledger missing — re-run seed-backlog (self-heal)"
+          /opt/scripts/seed-backlog.sh >>"$SUPERVISOR_LOG" 2>&1 || true
+        fi
+        [ -f "$ledger" ] || { echo 0; return 0; }
+        node "$LIB" pending-count --ledger "$ledger" --language "$LANGUAGE" 2>/dev/null || echo 0
+      }
+
+      # ---------- ① 每日扫描（30 分钟节流；只读哨兵，水位/账本自维护） ----------
+      run_scan() {
+        log "daily-scan start (language=$LANGUAGE)"
+        local out="$RUNS/last-scan.out" err="$RUNS/last-scan.err" rc
+        if (cd "$REPO" && GH_TOKEN="${GITHUB_TOKEN:-}" node "$SCAN_CLI" --language "$LANGUAGE" --json >"$out" 2>"$err"); then
+          rc=0
+        else
+          rc=$?
+        fi
+        local pending
+        pending="$(pending_count)"
+        log "daily-scan exit=$rc pending=$pending（detail: $out / $err）"
+        event scan_done "exit=$rc" "count=$pending"
+      }
+
+      # ---------- ② 起战役（slot 空闲 + 轨道未占用 + pending>0） ----------
+      active_marker() { printf '%s/active-%s' "$RUNS" "$(track_key_of "$1")"; }
+
+      dispatch_slot() { # dispatch_slot <slot>
+        local slot="$1" track="$2"
+        # slot 忙（战役/resume 在跑）绝不重复派 —— 保护 SLOT_PID 不被覆盖。
+        if [ -n "${SLOT_PID[$slot]:-}" ] && kill -0 "${SLOT_PID[$slot]}" 2>/dev/null; then
+          return 0
+        fi
+        local marker; marker="$(active_marker "$track")"
+        [ -e "$marker" ] && return 0
+        local pending; pending="$(pending_count)"
+        [ "$pending" -gt 0 ] || return 0
+
+        local track_key; track_key="$(track_key_of "$track")"
+        [ -n "$track_key" ] || { log "WARN: trackKey derivation failed for $track"; track_key="$LANGUAGE-unknown"; }
+
+        local ts rundir
+        ts="$(date +%Y%m%d-%H%M%S)"
+        rundir="$RUNS/${ts}-${track_key}"
+        mkdir -p "$rundir"
+
+        # 简报：buildTrackIntakeBrief（仓库看板同源）；失败 fail-loud 不派。
+        if ! node -e '
+            const { buildTrackIntakeBrief } = require(process.argv[1]);
+            const r = buildTrackIntakeBrief({ repoRoot: process.argv[2], language: process.argv[3], trackKey: process.argv[4] });
+            if (!r.ok) { process.stderr.write(r.error + "\n"); process.exit(1); }
+            process.stdout.write(r.text);
+          ' "$REPO/scripts/dashboard/intake-brief.js" "$REPO" "$LANGUAGE" "$track_key" > "$rundir/brief.md"; then
+          event dispatch_failed "slot=$slot" "track=$track" "code=BRIEF_FAILED"
+          log "FAIL: brief generation failed for $track_key — see node stderr above"
+          rm -rf "$rundir"
+          return 1
+        fi
+
+        # 四段提示词（镜像 scripts/dashboard/server.js buildHeadlessPrompt）：
+        # 执行会话声明 / 只读侦察可做+APPROVE_* 门必停 / --- / 简报正文。
+        {
+          printf '%s\n' '你是本战役的新执行会话（由 S2 pod supervisor 一键派出）。下面是确定性生成的战役简报——它是你的初始任务上下文；一切以盘上 durable 状态与 canonical CLI 输出为准，勿凭记忆续接。'
+          printf '%s\n' '按简报中的续接规则开始工作：只读侦察可立即进行；遇到 APPROVE_* 门禁必须停下，等待操作员以简报给出的精确 digest 行批准后再继续。'
+          printf '%s\n' '---'
+          cat "$rundir/brief.md"
+        } > "$rundir/prompt.md"
+
+        # BASE_TOKEN 必须是目标轨的 base（bootstrap 已导出 per-track env 文件）。
+        local track_env="$RUNS/track-env/${track}.env"
+        if [ ! -s "$track_env" ] || ! head -n1 "$track_env" | grep -Eq '^BASE_TOKEN=[A-Za-z0-9]+$'; then
+          event dispatch_failed "slot=$slot" "track=$track" "code=BASE_TOKEN_UNAVAILABLE"
+          log "FAIL: $track_env missing/invalid — bootstrap per-track export failed"
+          return 1
+        fi
+
+        # 派出（后台）：session 落 --format json 事件流，reap 时提取 sessionID。
+        log "dispatch slot=$slot track=$track_key run=$rundir (pending=$pending)"
+        (
+          cd "$REPO" || exit 127
+          GH_TOKEN="${GITHUB_TOKEN:-}" BASE_TOKEN="$(sed -n 's/^BASE_TOKEN=//p' "$track_env")" \
+            opencode run -m "${OPENCODE_PROVIDER_KEY:-custom}/${LLM_MODEL}" \
+            --title "S2 ${track_key} ${ts}" --format json \
+            "$(cat "$rundir/prompt.md")" > "$rundir/opencode.jsonl" 2> "$rundir/opencode.err"
+        ) &
+        SLOT_PID[$slot]=$!
+        SLOT_RUN[$slot]="$rundir"
+        SLOT_TRACKKEY[$slot]="$track_key"
+        printf '%s\n' "$rundir" > "$marker"
+        rm -f "$RUNS/parked-${track_key}"
+        event campaign_started "slot=$slot" "track=$track_key" "count=$pending"
+        return 0
+      }
+
+      # ---------- 回收：战役进程退出 → 提取 sessionID、记录、进入停门宽限 ----------
+      reap_slots() {
+        local slot pid rundir ses rc
+        for slot in $(seq 1 "$N_SLOTS"); do
+          pid="${SLOT_PID[$slot]:-}"
+          [ -n "$pid" ] || continue
+          if kill -0 "$pid" 2>/dev/null; then continue; fi
+          wait "$pid"; rc=$?
+          rundir="${SLOT_RUN[$slot]}"
+          ses=""
+          if [ -s "$rundir/opencode.jsonl" ]; then
+            ses="$(node -e '
+                const { extractSessionId } = require(process.argv[1]);
+                const fs = require("node:fs");
+                process.stdout.write(extractSessionId(fs.readFileSync(process.argv[2], "utf8")) ?? "");
+              ' "$LIB" "$rundir/opencode.jsonl")"
+          fi
+          if [ -n "$ses" ]; then
+            printf '%s\n' "$ses" > "$RUNS/slot-$slot.session"
+            log "slot=$slot campaign exit=$rc session=$ses（armed for approve resume）"
+          else
+            log "slot=$slot campaign exit=$rc — sessionID NOT captured（approve resume 不可用，见 opencode.err）"
+            event session_capture_failed "slot=$slot" "track=${SLOT_TRACKKEY[$slot]}" "exit=$rc"
+          fi
+          event campaign_exit "slot=$slot" "track=${SLOT_TRACKKEY[$slot]}" "exit=$rc"
+          # 轨道宽限：宽限期内等批准注入；过点且无队列行则让出轨道。
+          printf '%s\n' "$(( $(date +%s) ))" > "$RUNS/parked-${SLOT_TRACKKEY[$slot]}"
+          unset "SLOT_PID[$slot]"
+        done
+      }
+
+      # ---------- ②′ 宽限过点 → 让出轨道（允许再派；pending 仍>0 时新会话按盘上状态续办） ----------
+      expire_parked() {
+        local track_key marker parked
+        for slot in $(seq 1 "$N_SLOTS"); do
+          # resume 进行中的 slot 不让出
+          [ -n "${SLOT_PID[$slot]:-}" ] && continue
+          track_key="${SLOT_TRACKKEY[$slot]:-}"
+          [ -n "$track_key" ] || continue
+          parked="$RUNS/parked-${track_key}"
+          [ -f "$parked" ] || continue
+          if [ -s "$INBOUND/approve-$slot.queue" ]; then continue; fi   # 有待注入批准，继续等
+          local age=$(( $(date +%s) - "$(cat "$parked")" ))
+          if [ "$age" -ge "$CAMPAIGN_GRACE_SECS" ]; then
+            marker="$(active_marker "${SLOT_TRACK[$slot]}")"
+            rm -f "$marker" "$parked" "$RUNS/slot-$slot.session"
+            log "track=$track_key grace elapsed (${age}s) — slot=$slot released"
+            event slot_released "slot=$slot" "track=$track_key"
+            unset "SLOT_TRACKKEY[$slot]"
+          fi
+        done
+      }
+
+      # ---------- ③ 门铃巡检（新 index.json → 飞书卡片） ----------
+      gate_watch() {
+        [ -d "$GATE_DIR" ] || return 0
+        local seen="$RUNS/seen-gates.txt" f
+        while IFS= read -r f; do
+          [ -n "$f" ] || continue
+          grep -qxF "$f" "$seen" 2>/dev/null && continue
+          printf '%s\n' "$f" >> "$seen"
+          # slot/track 上下文：恰有一个在役 slot 时可归因，否则 unknown（卡片仍带精确回现行）。
+          local slot="unknown" track_key="unknown" active=0
+          for s in $(seq 1 "$N_SLOTS"); do
+            [ -n "${SLOT_PID[$s]:-}" ] || continue
+            active=$((active + 1)); slot="$s"; track_key="${SLOT_TRACKKEY[$s]}"
+          done
+          [ "$active" -eq 1 ] || { slot="unknown"; track_key="unknown"; }
+          log "gate presentation detected: $f（slot=$slot track=$track_key）"
+          if node "$LIB" notify-gate --index-file "$f" --pod "$POD_NAME" --slot "$slot" \
+              --track-key "$track_key" --language "$LANGUAGE" --open-id-cache "$RUNS/operator-openid"; then
+            event gate_notified "slot=$slot" "track=$track_key" "detail=$f"
+          else
+            event gate_notify_failed "slot=$slot" "track=$track_key" "detail=$f"
+            log "WARN: feishu notify failed for $f（BOT_*/OPERATOR_EMAIL 或网络；卡片未发出，看板仍可见 latest-index.json）"
+          fi
+        done < <(find "$GATE_DIR" -name '*.index.json' ! -name 'latest-index.json' -type f | sort)
+      }
+
+      # ---------- ④ 批准队列（首行过正则 → opencode run -s 续跑该 slot） ----------
+      # 出队纪律：peek → 校验 → 决定后才 pop。slot 忙/无 armed session 时批准行
+      # 留在队列原地等待，绝不出队作废（操作员批复是人工动作，不可静默丢弃）。
+      queue_first_line() { # queue_first_line <pop|peek> <file>
+        local mode="$1" file="$2" line
+        exec 9>>"${file}.lock"
+        flock 9
+        line="$(head -n 1 "$file" 2>/dev/null || true)"
+        if [ "$mode" = "pop" ] && [ -n "$line" ]; then
+          # 原子换文件：tmp 只装剩余行（首行由此真正出队）。
+          if ! sed '1d' "$file" > "${file}.tmp"; then
+            printf '' > "${file}.tmp"
+          fi
+          mv "${file}.tmp" "$file"
+        fi
+        exec 9>&-
+        printf '%s' "$line"
+      }
+
+      handle_approve_queues() {
+        local slot line verdict ses rundir busy
+        for slot in $(seq 1 "$N_SLOTS"); do
+          local queue="$INBOUND/approve-$slot.queue"
+          [ -s "$queue" ] || continue
+          line="$(queue_first_line peek "$queue")"
+          [ -n "$line" ] || continue
+          verdict="$(node "$LIB" validate-approve-line --line "$line" 2>/dev/null || true)"
+          if [ -z "$verdict" ]; then
+            queue_first_line pop "$queue" >/dev/null   # 正则不过 = 垃圾行，出队+typed 事件
+            event approve_line_invalid "slot=$slot" "code=APPROVE_LINE_INVALID"
+            log "WARN: queue line rejected by APPROVE regex, dropped: $(printf '%s' "$line" | head -c 80)"
+            continue
+          fi
+          busy=0
+          if [ -n "${SLOT_PID[$slot]:-}" ] && kill -0 "${SLOT_PID[$slot]}" 2>/dev/null; then
+            busy=1
+          fi
+          if [ "$busy" -eq 1 ]; then
+            event approve_deferred "slot=$slot"
+            log "slot=$slot busy — approve stays queued (peek only)"
+            continue
+          fi
+          ses="$(cat "$RUNS/slot-$slot.session" 2>/dev/null || true)"
+          if [ -z "$ses" ]; then
+            queue_first_line pop "$queue" >/dev/null
+            event approve_no_session "slot=$slot" "code=SESSION_NOT_ARMED"
+            log "WARN: approve for slot=$slot but no armed session（战役尚未派出或 sessionID 未捕获），line dropped"
+            continue
+          fi
+          queue_first_line pop "$queue" >/dev/null
+          rundir="$RUNS/$(date +%Y%m%d-%H%M%S)-resume-slot$slot"
+          mkdir -p "$rundir"
+          local track_key="${SLOT_TRACKKEY[$slot]:-unknown}"
+          log "approve resume slot=$slot session=$ses run=$rundir"
+          event approve_injected "slot=$slot" "track=$track_key"
+          (
+            cd "$REPO" || exit 127
+            GH_TOKEN="${GITHUB_TOKEN:-}" BASE_TOKEN="$(sed -n 's/^BASE_TOKEN=//p' "$RUNS/track-env/${SLOT_TRACK[$slot]}.env" 2>/dev/null)" \
+              opencode run -s "$ses" -m "${OPENCODE_PROVIDER_KEY:-custom}/${LLM_MODEL}" \
+              --title "approve slot$slot" --format json \
+              "$line" > "$rundir/opencode.jsonl" 2> "$rundir/opencode.err"
+          ) &
+          SLOT_PID[$slot]=$!
+          SLOT_RUN[$slot]="$rundir"
+          rm -f "$RUNS/parked-${track_key}"   # 批准到了，宽限期取消，轨道保持占用
+          log "approve resume dispatched slot=$slot pid=${SLOT_PID[$slot]}"
+        done
+      }
+
+      # ---------- ⑤ 主循环 ----------
+      command -v flock >/dev/null 2>&1 || die "flock not found（util-linux）——批准队列的出队纪律依赖它"
+      log "supervisor start pod=$POD_NAME language=$LANGUAGE sdk=$SDK_REPO tracks=$TRACKS slots=$N_SLOTS"
+      event supervisor_started "count=$N_SLOTS"
+      LAST_SCAN=0
+      while true; do
+        NOW="$(date +%s)"
+        if [ "$((NOW - LAST_SCAN))" -ge "$SCAN_INTERVAL" ]; then
+          run_scan
+          LAST_SCAN="$(date +%s)"
+        fi
+        reap_slots
+        expire_parked
+        gate_watch
+        handle_approve_queues
+        for slot in $(seq 1 "$N_SLOTS"); do
+          dispatch_slot "$slot" "${SLOT_TRACK[$slot]}" || true
+        done
+        sleep "$POLL_INTERVAL"
+      done
+  seed-backlog.sh: |
+      # deploy/seed-backlog.sh — 种账本（源文件 deploy/seed-backlog.sh 的部署镜像），幂等。
+      # deploy/seed-backlog.sh — 从 ConfigMap 挂载点 /opt/backlog 种 findings 账本（幂等）。
+      #
+      # 走 canonical 入口：daily-scan.js --import-backlog（batch 17 §5 窗口导入动词）。
+      # import-backlog 对已在账的 prNumber 只做 languages 并集（merged），天然幂等，
+      # bootstrap 每次启动重跑亦安全。绝不触碰 scan-state / Feishu / dry-run。
+
+      set -euo pipefail
+
+      WORKSPACE="${WORKSPACE:-/workspace}"
+      REPO="${REPO:-$WORKSPACE/feishu-markdown-bridge}"
+      LANGUAGE="${LANGUAGE:?LANGUAGE env is required}"
+      BACKLOG_DIR="${BACKLOG_DIR:-/opt/backlog}"
+      BACKLOG_FILE="$BACKLOG_DIR/${LANGUAGE}.jsonl"
+
+      if [ ! -f "$BACKLOG_FILE" ]; then
+        printf '[seed-backlog] SKIP: no backlog file for %s at %s\n' "$LANGUAGE" "$BACKLOG_FILE"
+        exit 0
+      fi
+
+      cd "$REPO"
+      printf '[seed-backlog] importing %s -> %s\n' "$BACKLOG_FILE" "tmp/api-reference-sync/daily-scan/pr-findings.jsonl"
+      node .claude/skills/api-reference-sync/scripts/daily-scan.js --import-backlog --file "$BACKLOG_FILE"
+      printf '[seed-backlog] done (idempotent merge)\n'

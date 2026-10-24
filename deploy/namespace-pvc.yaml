@@ -1,0 +1,41 @@
+# deploy/namespace-pvc.yaml — S2 双 pod 的命名空间与工作区卷。
+#
+# PVC storageClass 省略 = 用集群默认（milvus-cell vCluster 当前默认 cbs，
+# com.tencent.cloud.csi.cbs）。腾讯云 CBS 按量计费约 ¥0.35/GB/月：两块 10Gi ≈
+# ¥7/月，teardown 删 PVC 即停止计费。AccessMode RWO：每个 PVC 只被一个 pod 挂。
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sdk-doc-sync
+  labels:
+    app.kubernetes.io/part-of: sdk-doc-sync
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: workspace-python
+  namespace: sdk-doc-sync
+  labels:
+    app.kubernetes.io/part-of: sdk-doc-sync
+    app.kubernetes.io/language: python
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: workspace-java
+  namespace: sdk-doc-sync
+  labels:
+    app.kubernetes.io/part-of: sdk-doc-sync
+    app.kubernetes.io/language: java
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi

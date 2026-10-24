@@ -50,6 +50,15 @@ function renderOpencodeConfig({ baseUrlEnv = 'LLM_BASE_URL', apiKeyEnv = 'LLM_AP
   }
   return {
     $schema: 'https://opencode.ai/config.json',
+    // 无头 pod worker 的权限面：campaign 安全由 canonical CLI 的 APPROVE_* 门与
+    // digest 绑定承担，pod 本身就是沙箱——opencode 逐动作弹窗在 headless 下只会
+    // 全部 auto-reject（2026-10-24 首战实测 external_directory 拒了 ../web-content）。
+    permission: {
+      bash: 'allow',
+      edit: 'allow',
+      read: 'allow',
+      external_directory: 'allow',
+    },
     provider: {
       [OPENCODE_PROVIDER_KEY]: {
         npm: '@ai-sdk/openai-compatible',

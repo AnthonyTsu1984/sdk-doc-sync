@@ -346,3 +346,9 @@ test('normalizeLlmBaseUrl: bare gateway gains /v1, versioned URL untouched', () 
   assert.equal(normalizeLlmBaseUrl(''), '');
   assert.equal(normalizeLlmBaseUrl(undefined), undefined);
 });
+
+test('renderOpencodeConfig: headless permission block (bash/edit/read/external_directory allow)', () => {
+  const { renderOpencodeConfig } = require('../../deploy/lib.js');
+  const cfg = renderOpencodeConfig({ model: 'm1' });
+  assert.deepEqual(cfg.permission, { bash: 'allow', edit: 'allow', read: 'allow', external_directory: 'allow' });
+});

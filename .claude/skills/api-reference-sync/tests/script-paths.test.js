@@ -23,6 +23,25 @@ test('agent budget metering paths exist (slice 3-1, repo level)', () => {
   }
 });
 
+test('gate-card relay control-plane paths exist (cloud takeover 2026-10-24, repo level)', () => {
+  // 控制面云化裁定：card.action.trigger 唯一订阅者=集群内 relay pod。五文件是
+  // 该链路的 repo 单真相（configmap-relay.yaml 是生成镜像，deploy/ 下四件 +
+  // 两份 dashboard 脚本 + lib.js 的副本一致性由 tests/skills/deploy-scaffold.test.js 钉死）。
+  const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
+  for (const relative of [
+    'deploy/relay-entry.js',
+    'deploy/relay-entry.sh',
+    'deploy/relay-kubectl-fetch.sh',
+    'deploy/relay-deployment.yaml',
+    'deploy/relay-rbac.yaml',
+    'deploy/configmap-relay.yaml',
+    'scripts/dashboard/card-approve.js',
+    'scripts/dashboard/pod-approve.js',
+  ]) {
+    assert.equal(fs.existsSync(path.join(repoRoot, relative)), true, `Missing relay path: ${relative}`);
+  }
+});
+
 test('sdk-release-scout CLI path exists', () => {
   const skillRoot = path.resolve(__dirname, '..');
   assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'sdk-release-scout.js')), true);

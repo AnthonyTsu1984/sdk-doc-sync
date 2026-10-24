@@ -1841,10 +1841,15 @@ function main() {
         'im.message.receive_v1': (data) => handleRelayEvent(data).catch((error) => {
           process.stderr.write(`[notify-relay] event handling failed: ${error?.message ?? error}\n`);
         }),
-        // 呈门卡片「批准」按钮回调（事件名以 @larksuiteoapi/node-sdk d.ts 为准）
-        'card.action.trigger': (data) => handleCardActionEvent(data).catch((error) => {
-          process.stderr.write(`[card-approve] event handling failed: ${error?.message ?? error}\n`);
-        }),
+        // 呈门卡片「批准」按钮回调（事件名以 @larksuiteoapi/node-sdk d.ts 为准）。
+        // 控制面云化裁定（2026-10-24）：card.action.trigger 的唯一订阅者是集群内
+        // relay pod（deploy/relay-entry.js）——Mac 侧默认不订阅，防止 Mac server
+        // 起着也抢事件/双注入。仅本机调试批准链路时设 CARD_APPROVE_SUBSCRIBE=local。
+        ...(process.env.CARD_APPROVE_SUBSCRIBE === 'local' ? {
+          'card.action.trigger': (data) => handleCardActionEvent(data).catch((error) => {
+            process.stderr.write(`[card-approve] event handling failed: ${error?.message ?? error}\n`);
+          }),
+        } : {}),
       });
       const wsClient = new lark.WSClient({ appId, appSecret, loggerLevel: 'warn' });
       wsClient.start({ eventDispatcher: dispatcher }).then(

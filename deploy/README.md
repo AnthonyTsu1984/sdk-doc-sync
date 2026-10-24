@@ -26,7 +26,13 @@ bootstrap 装环境 + clone 三仓到 PVC，然后 exec supervisor 常驻：
 永不入库）、`configmap-scripts.yaml`（bootstrap/supervisor/seed-backlog 部署镜像）、
 `configmap-backlog.yaml`（python 6 条 / java 8 条 pending backlog 快照）、
 `deployment-python.yaml`、`deployment-java.yaml`、`lib.js`（双端共享内核，
-tests/skills/deploy-scaffold.test.js 直测）。
+tests/skills/deploy-scaffold.test.js 直测）。控制面云化（2026-10-24 裁定）新增：
+`relay-entry.js`/`relay-entry.sh`（回调常驻入口）、`relay-kubectl-fetch.sh`
+（initContainer 从 pkgs.k8s.io 官方包仓库取 kubectl：gpg 验 InRelease → SHA256
+钉 Packages → SHA256 钉 deb——dl.k8s.com egress 不通、apt flat 仓索引在该容器
+静默不加载的三轮实测修正）、`relay-rbac.yaml`（SA relay-approver 最小 exec 面）、
+`relay-deployment.yaml`（relay pod）、`configmap-relay.yaml`（六文件部署镜像，
+副本一致性测试钉死）。
 
 ---
 
@@ -139,6 +145,33 @@ node scripts/dashboard/pod-approve.js --pod java-worker --slot 2 \
 - 战役停门后若 15 分钟（`CAMPAIGN_GRACE_SECS`，可调）无批准注入，supervisor 让出
   轨道（typed 事件 `slot_released`）；pending 仍在时该轨可被重新派出——新会话按盘上
   durable 状态续办，绝不凭记忆。
+
+### 呈门回调常驻 relay（控制面云化裁定，2026-10-24）
+
+`card.action.trigger` 的**唯一订阅者**是集群内 relay pod（namespace sdk-doc-sync），
+飞书事件订阅走长连接（`WSClient`，免公网回调地址）；批准注入走**集群内**
+`kubectl exec`（SA `relay-approver`：pods get/list + pods/exec create，RoleBinding
+见 `relay-rbac.yaml`）。Mac 侧 `server.js` 默认不再订阅同一事件（仅
+`CARD_APPROVE_SUBSCRIBE=local` 才启用，本机调试用）——Mac 退场为可选观察端，
+Mac 上 `pod-approve.js --pod … --line …` 仍可手工注入。与 Mac relay 的差异
+（day one 收紧）：操作员身份（`OPERATOR_EMAIL` → batch_get_id）解析不出来=只记
+日志拒批（fail-closed），绝不降级为仅形状校验；每次批准/拒绝回发一条 p2p 文本
+回执（pod/slot/行前 60 字符/失败原因）；去重窗持久化 emptyDir
+`/relay-work/dedupe.json`（重启丢窗口可接受，5 分钟窗）。
+
+```bash
+export KUBECONFIG=~/.milvus-cell/kubeconfig
+# 三张卡按序 apply（configmap 已由 repo 文件生成，副本一致性 tests 钉死）：
+kubectl apply -f deploy/configmap-relay.yaml -f deploy/relay-rbac.yaml \
+  -f deploy/relay-deployment.yaml
+kubectl logs -n sdk-doc-sync -l app.kubernetes.io/name=relay -f   # ws connected / card-action 事件
+```
+
+代码改动流程：改 repo 源文件（`deploy/relay-entry.js`、`scripts/dashboard/
+card-approve.js`、`scripts/dashboard/pod-approve.js`、`deploy/lib.js`）→ 按
+`configmap-relay.yaml` 头注释的生成命令重生成 → apply configmap →
+`kubectl rollout restart deployment/relay -n sdk-doc-sync`。改动任何五文件之一而
+不重生成 configmap 会被 deploy-scaffold 测试拦下（内嵌块 vs repo 逐字节比对）。
 
 ### 处置回执（账本水位唯一推进路径）
 

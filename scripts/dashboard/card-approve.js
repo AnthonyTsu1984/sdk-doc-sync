@@ -85,9 +85,13 @@ function createCardApprover({
   spawnImpl = spawnSync,
   appendOutbox = defaultAppendOutbox(repoRoot),
   podApprovePath = path.join(__dirname, 'pod-approve.js'),
+  dedupeState = null,
 } = {}) {
   if (!repoRoot) throw new Error('createCardApprover requires repoRoot');
-  const seen = new Map(); // dedupeKey → firstSeen(ms)
+  // dedupeKey → firstSeen(ms)。默认内存 Map（Mac 侧语义不变）；集群 relay pod
+  // 注入持久 Map（deploy/relay-entry.js 落 emptyDir /relay-work/dedupe.json，
+  // 重启不整窗失忆）——去重语义仍只有本模块一处，注入的只是状态容器。
+  const seen = dedupeState instanceof Map ? dedupeState : new Map();
 
   function isDuplicate(key, at) {
     const first = seen.get(key);

@@ -553,7 +553,7 @@ function bashLint(label, script) {
 }
 
 test('deploy/*..sh pass bash -n', () => {
-  for (const name of ['bootstrap.sh', 'supervisor.sh', 'seed-backlog.sh']) {
+  for (const name of ['bootstrap.sh', 'supervisor.sh', 'seed-backlog.sh', 'relay-entry.sh', 'relay-kubectl-fetch.sh']) {
     bashLint(name, fs.readFileSync(path.join(REPO_ROOT, 'deploy', name), 'utf8'));
   }
 });
@@ -626,4 +626,204 @@ test('renderOpencodeConfig: headless permission block (bash/edit/read/external_d
   const { renderOpencodeConfig } = require('../../deploy/lib.js');
   const cfg = renderOpencodeConfig({ model: 'm1' });
   assert.deepEqual(cfg.permission, { bash: 'allow', edit: 'allow', read: 'allow', external_directory: 'allow' });
+});
+
+// ---------- 9. 控制面云化：configmap-relay 三副本 pin + 挂载布局 pin ----------
+//
+// 裁定（2026-10-24）：card.action.trigger 唯一订阅者=集群内 relay pod，三个 repo
+// 文件（card-approve/pod-approve/lib）随 configmap sdk-relay 挂载副本进 pod。为免
+// 双真相漂移：内嵌副本与 repo 源文件逐字节一致（这里钉死），volume items 在
+// relay-deployment.yaml 里按 repo 目录结构重映射（relay-entry.js 的相对 require
+// 与 repo 内同解——这里钉死重映射键）。
+
+const RELAY_CONFIGMAP_KEYS = [
+  ['relay-entry.js', 'deploy/relay-entry.js'],
+  ['relay-entry.sh', 'deploy/relay-entry.sh'],
+  ['relay-kubectl-fetch.sh', 'deploy/relay-kubectl-fetch.sh'],
+  ['card-approve.js', 'scripts/dashboard/card-approve.js'],
+  ['pod-approve.js', 'scripts/dashboard/pod-approve.js'],
+  ['lib.js', 'deploy/lib.js'],
+];
+
+test('configmap-relay.yaml: 六副本与 repo 源文件逐字节一致（防双真相漂移）', () => {
+  for (const [key, sourcePath] of RELAY_CONFIGMAP_KEYS) {
+    const block = readConfigMapBlock('deploy/configmap-relay.yaml', key);
+    const source = fs.readFileSync(path.join(REPO_ROOT, sourcePath), 'utf8');
+    assert.ok(block.length > 100, `${key} 块内容过短`);
+    assert.equal(block, source.replace(/\n$/, ''), `configmap-relay.yaml 的 ${key} 副本与 ${sourcePath} 漂移——按文件头命令重生成`);
+  }
+});
+
+test('configmap-relay.yaml: 头注释带再生成命令（六 --from-file 全部指向 repo 源）', () => {
+  const yaml = fs.readFileSync(path.join(REPO_ROOT, 'deploy', 'configmap-relay.yaml'), 'utf8');
+  assert.match(yaml, /(^|\n)# 再生成/);
+  assert.match(yaml, /kubectl create configmap sdk-relay -n sdk-doc-sync --dry-run=client -o yaml/);
+  for (const [key, sourcePath] of RELAY_CONFIGMAP_KEYS) {
+    assert.match(yaml, new RegExp(`--from-file=${key}=${sourcePath.replace(/\//g, '\\/')}`), `生成命令缺 ${key}`);
+  }
+});
+
+test('relay-deployment.yaml: volume items 按 repo 目录结构重映射 + SA + 镜像卡 + kubectl 供给', () => {
+  const yaml = fs.readFileSync(path.join(REPO_ROOT, 'deploy', 'relay-deployment.yaml'), 'utf8');
+  assert.match(yaml, /serviceAccountName: relay-approver/);
+  assert.match(yaml, /name: sdk-relay/);
+  for (const [key, sourcePath] of RELAY_CONFIGMAP_KEYS) {
+    assert.match(yaml, new RegExp(`key: ${key.replace(/\./g, '\\.')}\\n\\s+path: ${sourcePath.replace(/\//g, '\\/')}`), `items 重映射缺 ${key} → ${sourcePath}`);
+  }
+  assert.match(yaml, /mountPath: \/opt\/relay/);
+  assert.match(yaml, /mountPath: \/relay-work/);
+  assert.match(yaml, /emptyDir: \{\}/);
+  assert.match(yaml, /image: node:22-bookworm/);
+  // kubectl 供给：initContainer（pkgs.k8s.io 官方 apt 仓，dl.k8s.com egress 不通的
+  // 实测修正）→ 共享 emptyDir → 主容器 PATH 前置。
+  assert.match(yaml, /kubectl-installer/);
+  assert.match(yaml, /pkgs\.k8s\.io/);
+  assert.match(yaml, /mountPath: \/opt\/kubectl-bin/);
+  assert.match(yaml, /\/opt\/kubectl-bin:\/usr\/local\/sbin/);
+});
+
+test('pod-approve.js kubectl 形态带 -n（in-cluster SA 生效的前提，RBAC 面依赖它）', () => {
+  // relay pod 里 pod-approve 以 in-cluster 凭据跑 kubectl；NAMESPACE 显式进 argv
+  // （'exec', '-n', NAMESPACE, pod）+ 全程 argv 数组无 shell 拼接——形态漂移即此处红。
+  const source = fs.readFileSync(path.join(REPO_ROOT, 'scripts', 'dashboard', 'pod-approve.js'), 'utf8');
+  assert.match(source, /const NAMESPACE = 'sdk-doc-sync';/);
+  assert.match(source, /'exec', '-n', NAMESPACE, pod, '--',/);
+});
+
+// ---------- 10. relay-entry fail-closed 内核（零网络、零 /relay-work 依赖） ----------
+
+const relayEntry = require(path.join(REPO_ROOT, 'deploy', 'relay-entry.js'));
+const cardApproveModule = require(path.join(REPO_ROOT, 'scripts', 'dashboard', 'card-approve.js'));
+
+function relayFixture() {
+  const VALUE = {
+    kind: 'pod-gate-approve', pod: 'python-worker', slot: '1',
+    line: `APPROVE_WRITES sha256:${'a'.repeat(64)}`,
+    indexId: 'x/20261024-030000-APPROVE_WRITES.index.json', sentAt: '2026-10-24T03:00:00.000Z',
+  };
+  const event = { operator: { open_id: 'ou_operator' }, action: { value: VALUE } };
+  const approverCalls = [];
+  const logs = [];
+  const receipts = [];
+  const approver = {
+    handleCardAction: async (data) => {
+      approverCalls.push(data);
+      return { ok: true, deduped: false, text: `已批准 slot 1（python-worker）` };
+    },
+  };
+  const handler = relayEntry.createCardActionHandler({
+    getOperatorOpenId: () => 'ou_operator',
+    approver,
+    sendReceipt: async (verdict, extracted) => receipts.push({ verdict, extracted }),
+    log: (record) => logs.push(record),
+  });
+  return { VALUE, event, approverCalls, logs, receipts, handler };
+}
+
+test('relay fail-closed: 操作员身份未解析 → 拒批 toast，不进 approver、不发回执', async () => {
+  const { event, approverCalls, logs } = relayFixture();
+  const handler = relayEntry.createCardActionHandler({
+    getOperatorOpenId: () => null, approver: { handleCardAction: async () => { throw new Error('must not be called'); } },
+    sendReceipt: null, log: (record) => logs.push(record),
+  });
+  const reply = await handler(event);
+  assert.equal(reply.toast.type, 'error');
+  assert.match(reply.toast.content, /fail-closed/);
+  assert.match(reply.toast.content, /身份未解析/);
+  assert.equal(approverCalls.length, 0);
+  assert.equal(logs[0].outcome, 'fail-closed');
+  assert.equal(logs[0].reason, 'operator-identity-unresolved');
+});
+
+test('relay fail-closed: 包络缺 operator.open_id / 非操作员 → 都拒且不 spawn', async () => {
+  const noOperator = relayFixture();
+  const missing = await noOperator.handler({ action: { value: noOperator.VALUE } });
+  assert.equal(missing.toast.type, 'error');
+  assert.match(missing.toast.content, /operator\.open_id/);
+  assert.equal(noOperator.approverCalls.length, 0);
+
+  const stranger = relayFixture();
+  const mismatch = await stranger.handler({
+    operator: { open_id: 'ou_stranger' }, action: { value: stranger.VALUE },
+  });
+  assert.equal(mismatch.toast.type, 'error');
+  assert.match(mismatch.toast.content, /仅操作员可批准/);
+  assert.equal(stranger.approverCalls.length, 0);
+  assert.equal(stranger.logs[0].reason, 'operator-mismatch');
+});
+
+test('relay 放行：操作员按钮 → approver 接手，toast 同步 verdict，p2p 回执发出', async () => {
+  const { event, approverCalls, receipts, handler } = relayFixture();
+  const reply = await handler(event);
+  assert.equal(approverCalls.length, 1);
+  assert.equal(reply.toast.type, 'success');
+  assert.equal(reply.toast.content, '已批准 slot 1（python-worker）');
+  assert.equal(receipts.length, 1);
+  assert.equal(receipts[0].verdict.ok, true);
+  assert.equal(receipts[0].extracted.operatorOpenId, 'ou_operator');
+  // 失败 verdict → error toast；回执发送抛错被吞（只记日志），toast 不受影响
+  const failingLogs = [];
+  const failHandler = relayEntry.createCardActionHandler({
+    getOperatorOpenId: () => 'ou_operator',
+    approver: { handleCardAction: async () => ({ ok: false, deduped: false, text: '批准注入失败（python-worker slot 1）：kubectl exec exited 1' }) },
+    sendReceipt: async () => { throw new Error('feishu down'); },
+    log: (record) => failingLogs.push(record),
+  });
+  const failReply = await failHandler(event);
+  assert.equal(failReply.toast.type, 'error');
+  assert.match(failReply.toast.content, /kubectl exec exited 1/);
+  assert.equal(failingLogs.filter((record) => record.outcome === 'receipt-send-failed').length, 1);
+});
+
+test('buildReceiptText/truncateLine: pod/slot/行前 60 字符/失败原因；垃圾 value 如实 ? 不编', () => {
+  // 截断边界钉死：60 字符原样，61 字符截 60 + 省略号
+  assert.equal(relayEntry.truncateLine('A'.repeat(60)), 'A'.repeat(60));
+  assert.equal(relayEntry.truncateLine('A'.repeat(61)), `${'A'.repeat(60)}…`);
+  const extracted = { operatorOpenId: 'ou_operator', value: { pod: 'python-worker', slot: '2', line: `APPROVE_WRITES sha256:${'a'.repeat(64)}` } };
+  const okText = relayEntry.buildReceiptText({ ok: true, deduped: false, text: '已批准' }, extracted);
+  assert.match(okText, /呈门回执 · 已批准 · pod python-worker · slot 2/);
+  // 87 字符回现行 → 前 60（"APPROVE_WRITES sha256:" 22 字符 + 38 个 a）+ 省略号
+  assert.match(okText, /行: APPROVE_WRITES sha256:a{38}…/);
+  const failText = relayEntry.buildReceiptText({ ok: false, deduped: false, text: '批准注入失败（python-worker slot 2）：kubectl exec exited 1' }, extracted);
+  assert.match(failText, /已拒绝/);
+  assert.match(failText, /原因: .+kubectl exec exited 1/);
+  // 垃圾/缺失 value：'?' 占位，绝不编 pod/slot
+  const junk = relayEntry.buildReceiptText({ ok: false, deduped: false, text: 'x' }, { operatorOpenId: null, value: null });
+  assert.match(junk, /pod \? · slot \?/);
+  assert.doesNotMatch(junk, /行: /);
+});
+
+test('dedupe 持久化：persist→load round-trip；旧键载入即剪枝；坏文件=空窗起步', () => {
+  const work = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'relay-dedupe-')));
+  const file = path.join(work, 'dedupe.json');
+  const now = 10_000_000;
+  const map = new Map([['python-worker:1:young', now - 60_000], ['python-worker:2:old', now - 10 * 60_000]]);
+  assert.equal(relayEntry.persistDedupeState(file, map), true);
+  const loaded = relayEntry.loadDedupeState(file, { now, windowMs: cardApproveModule.DEDUPE_WINDOW_MS });
+  assert.deepEqual([...loaded.keys()], ['python-worker:1:young']); // 窗外旧键不带回来
+  // 坏文件/缺文件 → 空 Map（重启丢窗口可接受，裁定原文）
+  fs.writeFileSync(file, '{not json');
+  assert.equal(relayEntry.loadDedupeState(file, { now }).size, 0);
+  assert.equal(relayEntry.loadDedupeState(path.join(work, 'absent.json'), { now }).size, 0);
+});
+
+// ---------- 11. relay yaml dry-run（kubectl apply --dry-run=client） ----------
+//
+// 注：本文件其余测试零集群依赖；此测试是任务书显式验证门。kubectl 缺失=skip；
+// server 不可达=降级 kubectl create --dry-run=client --validate=ignore（纯本地解码）。
+
+test('relay 三卡 kubectl apply --dry-run=client 通过（或离线解码降级）', () => {
+  const files = ['deploy/configmap-relay.yaml', 'deploy/relay-rbac.yaml', 'deploy/relay-deployment.yaml']
+    .map((relative) => path.join(REPO_ROOT, relative));
+  const probe = spawnSync('kubectl', ['version', '--client'], { encoding: 'utf8' });
+  if (probe.error) {
+    test.skip('kubectl not installed on this host');
+    return;
+  }
+  const env = { ...process.env, KUBECONFIG: process.env.KUBECONFIG || path.join(os.homedir(), '.milvus-cell', 'kubeconfig') };
+  let result = spawnSync('kubectl', ['apply', '--dry-run=client', '-f', files[0], '-f', files[1], '-f', files[2]], { encoding: 'utf8', env, timeout: 60_000 });
+  if (result.status !== 0 && /connection to the server|refused|i\/o timeout|unable to connect/i.test(`${result.stderr}${result.stdout}`)) {
+    result = spawnSync('kubectl', ['create', '--dry-run=client', '--validate=ignore', '-f', files[0], '-f', files[1], '-f', files[2], '-o', 'yaml'], { encoding: 'utf8', env, timeout: 60_000, maxBuffer: 32 * 1024 * 1024 });
+  }
+  assert.equal(result.status, 0, `kubectl dry-run failed: ${result.stderr || result.stdout}`);
 });

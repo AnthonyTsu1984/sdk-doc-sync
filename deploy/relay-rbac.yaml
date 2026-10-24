@@ -1,0 +1,47 @@
+# deploy/relay-rbac.yaml — relay pod 的集群内批准注入权限（控制面云化裁定
+# 2026-10-24）。最小面：只允许在 sdk-doc-sync namespace 内 get/list pods 与
+# create pods/exec——这正是 scripts/dashboard/pod-approve.js 的 kubectl 调用面
+# （kubectl exec -n sdk-doc-sync <pod> -- sh -c …，参数已自带 -n，in-cluster SA
+# 凭据由 kubelet 自动挂载，kubectl 自动识别，无需 kubeconfig）。不授予任何
+# secret/configmap/写资源权限。
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: relay-approver
+  namespace: sdk-doc-sync
+  labels:
+    app.kubernetes.io/part-of: sdk-doc-sync
+    app.kubernetes.io/name: relay
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: relay-approver
+  namespace: sdk-doc-sync
+  labels:
+    app.kubernetes.io/part-of: sdk-doc-sync
+    app.kubernetes.io/name: relay
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: relay-approver
+  namespace: sdk-doc-sync
+  labels:
+    app.kubernetes.io/part-of: sdk-doc-sync
+    app.kubernetes.io/name: relay
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: relay-approver
+subjects:
+  - kind: ServiceAccount
+    name: relay-approver
+    namespace: sdk-doc-sync

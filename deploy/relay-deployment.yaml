@@ -1,0 +1,120 @@
+# deploy/relay-deployment.yaml — 呈门卡片回调常驻 relay pod（控制面云化裁定
+# 2026-10-24）。card.action.trigger 的唯一订阅者；长连接出站（免公网回调地址）；
+# 批准注入走集群内 kubectl exec（SA relay-approver，见 relay-rbac.yaml）。
+#
+# 三张卡（apply 顺序）：configmap-relay.yaml → relay-rbac.yaml → 本文件。
+# configmap sdk-relay 的 volume items 按 repo 目录结构重映射到 /opt/relay——
+# relay-entry.js 的相对 require（../scripts/dashboard/card-approve.js、./lib.js）
+# 与 repo 内同解，card-approve/pod-approve 一行不改；副本一致性由
+# tests/skills/deploy-scaffold.test.js 钉死。
+#
+# command 选型（写明）：bash /opt/relay/deploy/relay-entry.sh 而非 node 直起——
+# 引导脚本要先备好 kubectl 再 exec node；kubectl 缺失硬退交 kube 重启。
+#
+# kubectl 供给（2026-10-24 实测修正，三轮）：本 vCluster egress 对 dl.k8s.com
+# （官方 curl 装法）不通；registry.k8s.io/kubectl 镜像可拉但是无 shell 的
+# distroless 拷不出自身二进制；pkgs.k8s.io 通但 apt 的 flat 仓 Packages 索引在
+# 容器内静默不加载（debug pod 两轮干净态复现）。落点：initContainer
+# （node:22-bookworm，节点已缓存秒起）跑 relay-kubectl-fetch.sh——gpg 验
+# InRelease → SHA256 钉 Packages → SHA256 钉 deb（信任链与 apt 等价）——把
+# kubectl deb 解包进共享 emptyDir；主容器 PATH 前置该目录；relay-entry.sh 的
+# dl.k8s.com curl 装法保留为 fallback（可达的环境两路皆通）。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: relay
+  namespace: sdk-doc-sync
+  labels:
+    app.kubernetes.io/part-of: sdk-doc-sync
+    app.kubernetes.io/name: relay
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: relay
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: relay
+        app.kubernetes.io/part-of: sdk-doc-sync
+    spec:
+      serviceAccountName: relay-approver
+      initContainers:
+        # minor 钉 v1.36（server v1.36.0 在官方 skew ±1 minor 内），补丁版取该仓
+        # amd64 最新；全版本钉死设 KUBECTL_DEB_VERSION。与主容器 fallback 的
+        # KUBECTL_VERSION 各自独立（一条走 pkgs.k8s.io、一条走 dl.k8s.com release）。
+        - name: kubectl-installer
+          image: node:22-bookworm
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "/opt/relay/deploy/relay-kubectl-fetch.sh"]
+          env:
+            - name: K8S_MINOR
+              value: v1.36
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: relay-code
+              mountPath: /opt/relay
+              readOnly: true
+            - name: kubectl-bin
+              mountPath: /opt/kubectl-bin
+      containers:
+        - name: relay
+          image: node:22-bookworm
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "/opt/relay/deploy/relay-entry.sh"]
+          env:
+            # kubectl 版本钉死（与 initContainer 镜像 tag 同步；fallback curl 装法用）。
+            - name: KUBECTL_VERSION
+              value: v1.36.4
+            # initContainer 拷出的 kubectl 优先（PATH 前置），curl fallback 兜底。
+            - name: PATH
+              value: /opt/kubectl-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          envFrom:
+            - secretRef:
+                name: sdk-env
+          # 无 LLM 调用：纯 WS 长连接 + kubectl exec 转发，资源面收窄。
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: relay-code
+              mountPath: /opt/relay
+              readOnly: true
+            - name: work
+              mountPath: /relay-work
+            - name: kubectl-bin
+              mountPath: /opt/kubectl-bin
+              readOnly: true
+      volumes:
+        - name: relay-code
+          configMap:
+            name: sdk-relay
+            defaultMode: 0755
+            items:
+              # repo 局部镜像：相对 require 与 repo 内同解（relay-entry.js 头注释）。
+              - key: relay-entry.js
+                path: deploy/relay-entry.js
+              - key: relay-entry.sh
+                path: deploy/relay-entry.sh
+              - key: relay-kubectl-fetch.sh
+                path: deploy/relay-kubectl-fetch.sh
+              - key: lib.js
+                path: deploy/lib.js
+              - key: card-approve.js
+                path: scripts/dashboard/card-approve.js
+              - key: pod-approve.js
+                path: scripts/dashboard/pod-approve.js
+        - name: work
+          emptyDir: {}
+        - name: kubectl-bin
+          emptyDir: {}

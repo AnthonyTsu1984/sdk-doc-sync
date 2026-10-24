@@ -252,3 +252,40 @@ test('defaultAppendOutbox: 写 tmp/dashboard-events/notify-outbox.jsonl（与回
   assert.equal(record.kind, 'card-approved');
   assert.equal(record.line, LINE);
 });
+
+// ---------- dedupeState 注入（控制面云化：relay pod 持久化语义，2026-10-24） ----------
+//
+// deploy/relay-entry.js 把 /relay-work/dedupe.json 读回的 Map 注入进来——重启不整
+// 窗失忆；去重语义仍只有本模块一处，注入的只是状态容器。Mac 侧不传，行为不变。
+
+test('createCardApprover: dedupeState 注入——预置键命中去重窗；新键写回同一 Map；非 Map 回退新 Map', async () => {
+  const repo = tmpRepo('dedupe-state');
+  const shared = new Map([[`python-worker:1:${LINE}`, 1_001_000]]); // 读回的持久状态
+  let nowMs = 1_100_000; // 距预置键 99s，窗内
+  const outbox = [];
+  const { spawnImpl } = spySpawn(okReceipt());
+  const approver = cardApprove.createCardApprover({
+    operatorOpenId: OPERATOR, repoRoot: repo, now: () => nowMs, spawnImpl,
+    appendOutbox: (records) => outbox.push(...records), dedupeState: shared,
+  });
+  const repeat = await approver.handleCardAction({ operator: { open_id: OPERATOR }, action: { value: VALUE } });
+  assert.equal(repeat.ok, true);
+  assert.equal(repeat.deduped, true);
+  assert.match(repeat.text, /去重窗命中/);
+  // 新键落进注入的同一容器（relay 收尾把它 persist 回 /relay-work/dedupe.json）
+  const otherLine = `APPROVE_ROLLBACK rb-1 sha256:${'c'.repeat(64)}`;
+  nowMs += 60_000;
+  await approver.handleCardAction({
+    operator: { open_id: OPERATOR },
+    action: { value: { ...VALUE, line: otherLine } },
+  });
+  assert.equal(shared.size, 2);
+  assert.ok(shared.has(`python-worker:1:${otherLine}`));
+  // 非 Map → 回退内部新 Map（Mac 侧默认语义不变）
+  const fallback = cardApprove.createCardApprover({
+    operatorOpenId: OPERATOR, repoRoot: tmpRepo('dedupe-fallback'), now: fixedNow(), spawnImpl,
+    appendOutbox: null, dedupeState: 'not-a-map',
+  });
+  const fresh = await fallback.handleCardAction({ operator: { open_id: OPERATOR }, action: { value: VALUE } });
+  assert.equal(fresh.deduped, false);
+});

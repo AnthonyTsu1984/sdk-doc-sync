@@ -222,6 +222,279 @@ test('buildGateCardText: carries pod/slot/track, exact reply lines and the Mac-s
   assert.match(text, /或看板处理/);
 });
 
+// ---------- 5c. 呈门卡片 v2：内容三件套 + 批准按钮 ----------
+
+const hexFix = (char) => `sha256:${char.repeat(64)}`;
+
+function v2IndexFixture(overrides = {}) {
+  return {
+    schema: 2,
+    gate: 'APPROVE_WRITES',
+    title: 'APPROVE_WRITES — 2 单元',
+    sessionPath: 'tmp/api-reference-sync/campaign-plans/python-v30-sync/sync-session.json',
+    digest: hexFix('a'),
+    generatedAt: '2026-10-24T03:00:00.000Z',
+    replyLines: [`APPROVE_WRITES ${hexFix('a')}`],
+    source: { origin: 'pr-intake', prs: [
+      { number: 1184, url: 'https://github.com/milvus-io/pymilvus/pull/1184', title: 'first' },
+      { number: 1188, url: 'https://github.com/milvus-io/pymilvus/pull/1188', title: 'second' },
+    ] },
+    impact: {
+      total: 12, create: 3, update: 9, other: 0,
+      documents: Array.from({ length: 12 }, (_, i) => ({
+        title: `文档${i}`, action: i < 3 ? 'CREATE' : 'UPDATE', unitId: `u${i}`,
+      })),
+    },
+    ...overrides,
+  };
+}
+
+test('buildGateCard: PR 链接数/截断（>5 条尾部"等 N 条"）', () => {
+  const { buildGateCard } = require(path.join(REPO_ROOT, 'deploy', 'lib.js'));
+  const bodyOf = (source) => buildGateCard({ index: v2IndexFixture({ source }), pod: 'python-worker', slot: '1', trackKey: 'python-v3', language: 'python', indexId: 'k/x.index.json' })
+    .elements[0].text.content;
+  // 2 条 → 两个可点链接，无"等"
+  const small = bodyOf(v2IndexFixture().source);
+  assert.equal((small.match(/\[#\d+\]\(https:\/\/github\.com\/[^)]+\)/g) || []).length, 2);
+  assert.doesNotMatch(small, /等 \d+ 条/);
+  // 7 条 → 5 个链接 + 尾部"等 7 条"
+  const big = bodyOf({
+    origin: 'pr-intake',
+    prs: Array.from({ length: 7 }, (_, i) => ({ number: 1180 + i, url: `https://github.com/x/pull/${1180 + i}`, title: null })),
+  });
+  assert.equal((big.match(/\[#\d+\]\(/g) || []).length, 5);
+  assert.match(big, /等 7 条/);
+});
+
+test('buildGateCard: 仓库扫描 → tag 迁移行；来源缺位不编造', () => {
+  const { buildGateCard } = require(path.join(REPO_ROOT, 'deploy', 'lib.js'));
+  const render = (index) => buildGateCard({ index, pod: 'p', slot: '1', trackKey: 'k', language: 'python', indexId: 'i' })
+    .elements[0].text.content;
+  assert.match(render(v2IndexFixture({ source: { origin: 'repo-scan', baselineTag: 'v2.6.17', targetTag: 'v2.6.18' } })),
+    /来源 仓库扫描：v2\.6\.17 → v2\.6\.18/);
+  assert.match(render(v2IndexFixture({ source: { origin: 'repo-scan', baselineTag: null, targetTag: null } })),
+    /来源 仓库扫描：版本信息未登记/);
+  assert.doesNotMatch(render(v2IndexFixture({ source: null })), /来源 /);
+});
+
+test('buildGateCard: 动作分解行 + 清单截断 + 无分类诚实降级', () => {
+  const { buildGateCard } = require(path.join(REPO_ROOT, 'deploy', 'lib.js'));
+  const render = (impact) => buildGateCard({ index: v2IndexFixture({ impact }), pod: 'p', slot: '1', trackKey: 'k', language: 'python', indexId: 'i' })
+    .elements[0].text.content;
+  // 动作面行：文档 12 篇 · CREATE 3 · UPDATE 9
+  assert.match(render(v2IndexFixture().impact), /动作面：文档 12 篇 · CREATE 3 · UPDATE 9/);
+  // 清单最多 10 条 + 尾行"… 等共 N 篇（全清单见工件）"
+  const truncated = render(v2IndexFixture().impact);
+  assert.equal((truncated.match(/ —— (CREATE|UPDATE|待分类)$/gm) || []).length, 10);
+  assert.match(truncated, /… 等共 12 篇（全清单见工件）/);
+  // impact null → "待 dry-run 细化"，绝不编数
+  const degraded = render(null);
+  assert.match(degraded, /动作面：待 dry-run 细化/);
+  assert.doesNotMatch(degraded, /CREATE \d+/);
+  // 部分未分类 → "其他 N"如实出现，未分类行标"待分类"
+  const partial = render({ total: 3, create: 1, update: 1, other: 1, documents: [
+    { title: 'a', action: 'CREATE', unitId: 'a' },
+    { title: 'b', action: 'UPDATE', unitId: 'b' },
+    { title: 'c', action: null, unitId: 'c' },
+  ] });
+  assert.match(partial, /CREATE 1 · UPDATE 1 · 其他 1/);
+  assert.match(partial, /c —— 待分类/);
+});
+
+test('buildGateCard: pod 行、会话短名（固定位置）、digest 行', () => {
+  const { buildGateCard, sessionShortName } = require(path.join(REPO_ROOT, 'deploy', 'lib.js'));
+  const card = buildGateCard({ index: v2IndexFixture(), pod: 'python-worker', slot: '1', trackKey: 'python-v3', language: 'python', indexId: 'k/x.index.json' });
+  const bodyLines = card.elements[0].text.content.split('\n');
+  assert.match(card.header.title.content, /呈门 · 写入批准 · python slot 1（python-v3）/);
+  // pod 归属行 + 紧随其后的会话短形态行（固定位置：pod 行的下一行）
+  const podLineAt = bodyLines.findIndex((line) => line.startsWith('pod: python-worker ·'));
+  assert.notEqual(podLineAt, -1, 'pod 归属行缺失');
+  assert.match(bodyLines[podLineAt], /pod: python-worker · slot: 1 · 轨道: python-v3 · 语言: python · 门: APPROVE_WRITES/);
+  assert.equal(bodyLines[podLineAt + 1], '会话: python-v30-sync · digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+  assert.equal(sessionShortName('tmp/x/java-v26-sync/sync-session.json'), 'java-v26-sync');
+  assert.equal(sessionShortName('a/b/sync-session.json'), 'b');
+  assert.equal(sessionShortName('a/b/campaign'), 'campaign');
+});
+
+test('buildGateCard: 每 replyLine 一个 primary 按钮，value 载荷全字符串', () => {
+  const { buildGateCard } = require(path.join(REPO_ROOT, 'deploy', 'lib.js'));
+  const render = (replyLines) => buildGateCard({ index: v2IndexFixture({ replyLines }), pod: 'python-worker', slot: '2', trackKey: 'python', language: 'python', indexId: 'k/20261024-030000-APPROVE_WRITES.index.json' });
+  // 单行 → 「批准」
+  const single = render([`APPROVE_WRITES ${hexFix('a')}`]);
+  const singleActions = single.elements.filter((element) => element.tag === 'action');
+  assert.equal(singleActions.length, 1);
+  assert.equal(singleActions[0].actions[0].tag, 'button');
+  assert.equal(singleActions[0].actions[0].type, 'primary');
+  assert.equal(singleActions[0].actions[0].text.content, '批准');
+  // 多行 → 「批准 N」逐行一个
+  const multi = render([`APPROVE_DOCUMENT u1 ${hexFix('1')}`, `APPROVE_DOCUMENT u2 ${hexFix('2')}`, `APPROVE_DOCUMENT u3 ${hexFix('3')}`]);
+  const multiActions = multi.elements.filter((element) => element.tag === 'action');
+  assert.equal(multiActions.length, 3);
+  assert.deepEqual(multiActions.map((element) => element.actions[0].text.content), ['批准 1', '批准 2', '批准 3']);
+  // value 载荷（card-approve.js 消费端按同一形状解析）
+  const value = multiActions[1].actions[0].value;
+  assert.equal(value.kind, 'pod-gate-approve');
+  assert.equal(value.pod, 'python-worker');
+  assert.equal(value.slot, '2');
+  assert.equal(value.line, `APPROVE_DOCUMENT u2 ${hexFix('2')}`);
+  assert.equal(value.indexId, 'k/20261024-030000-APPROVE_WRITES.index.json');
+  assert.doesNotThrow(() => Date.parse(value.sentAt));
+  for (const entry of Object.values(value)) assert.equal(typeof entry, 'string');
+  // 尾注：打回指引保留
+  const note = single.elements.find((element) => element.tag === 'note');
+  assert.match(note.elements[0].content, /打回请回复本消息：打回 <原因>/);
+});
+
+test('六门中文映射：GATE_LABELS_ZH 全覆盖且卡片标题使用中文名', () => {
+  const { GATE_LABELS_ZH, gateLabelZh } = require(path.join(REPO_ROOT, 'deploy', 'lib.js'));
+  const { GATE_NAMES } = require(path.join(REPO_ROOT, '.claude/skills/api-reference-sync/src/sdk-doc-sync/gate-registry.js'));
+  assert.deepEqual(Object.keys(GATE_LABELS_ZH).sort(), [...GATE_NAMES].sort());
+  for (const label of Object.values(GATE_LABELS_ZH)) {
+    assert.match(label, /批准$/);
+  }
+  assert.equal(gateLabelZh('APPROVE_WRITES'), '写入批准');
+  assert.equal(gateLabelZh('NOT_A_GATE'), 'NOT_A_GATE'); // 未登记门名原样透传，不编
+  const { buildGateCard } = require(path.join(REPO_ROOT, 'deploy', 'lib.js'));
+  const card = buildGateCard({ index: v2IndexFixture({ gate: 'APPROVE_GROUPING' }), pod: 'p', slot: '1', trackKey: 'k', language: 'go', indexId: 'i' });
+  assert.match(card.header.title.content, /呈门 · 分组批准 ·/);
+});
+
+test('sessionPath→track 反解表：真实 sessionKey 样本 + TRACKS 顺序固定回退 + unknown', () => {
+  const { deriveGateAttribution } = require(path.join(REPO_ROOT, 'deploy', 'lib.js'));
+  const pythonSlots = [
+    { slot: 1, track: 'v3.0.x', trackKey: 'python-v3' },
+    { slot: 2, track: 'v2.6.x', trackKey: 'python' },
+  ];
+  const keyOf = (sessionPath) => sessionPath.split('/').join('-').replace(/[^A-Za-z0-9._-]/g, '-');
+  const artifact = (sessionPath) =>
+    `tmp/api-reference-sync/gate-presentation/${keyOf(sessionPath)}/20261024-030000-APPROVE_WRITES.index.json`;
+  // 真实 sessionKey 样本（sessionKeyOf 规则派生；go-v30 为既有测试同款路径）
+  const cases = [
+    ['tmp/api-reference-sync/campaign-plans/python-v30-sync/sync-session.json', pythonSlots, 1],
+    ['tmp/api-reference-sync/campaign-plans/python-sync/sync-session.json', pythonSlots, 2],
+    ['tmp/api-reference-sync/campaign-plans/go-v30-sync/sync-session.json', pythonSlots, 1],
+  ];
+  for (const [sessionPath, slots, expectedSlot] of cases) {
+    assert.equal(deriveGateAttribution(artifact(sessionPath), slots).slot, expectedSlot, sessionPath);
+  }
+  // java 双槽：java-v26（裸 key 消歧由长 key 优先保证）
+  const javaSlots = [
+    { slot: 1, track: 'v3.0.x', trackKey: 'java-v30' },
+    { slot: 2, track: 'v2.6.x', trackKey: 'java-v26' },
+  ];
+  assert.equal(deriveGateAttribution(artifact('tmp/api-reference-sync/campaign-plans/java-v26-sync/sync-session.json'), javaSlots).slot, 2);
+  assert.equal(deriveGateAttribution(artifact('tmp/api-reference-sync/campaign-plans/java-v30-sync/sync-session.json'), javaSlots).slot, 1);
+  // 长 key 优先：python-v30 路径绝不被裸 python 吞掉
+  assert.equal(deriveGateAttribution(artifact('tmp/api-reference-sync/campaign-plans/python-v30-sync/sync-session.json'), pythonSlots).trackKey, 'python-v3');
+  // SLOT_TRACKKEY 空（pod 重启清场）→ TRACKS 顺序固定映射（slot1=v3.0.x、slot2=v2.6.x）
+  const noKeys = [{ slot: 1, track: 'v3.0.x', trackKey: '' }, { slot: 2, track: 'v2.6.x', trackKey: '' }];
+  assert.equal(deriveGateAttribution('gate-presentation/wherever-v30/x.index.json', noKeys).slot, 1);
+  assert.equal(deriveGateAttribution('gate-presentation/wherever-v26/x.index.json', noKeys).slot, 2);
+  // 落空 → unknown（如实，绝不猜）
+  const unknown = deriveGateAttribution('gate-presentation/no-version-here/x.index.json', noKeys);
+  assert.deepEqual(unknown, { slot: 'unknown', trackKey: 'unknown' });
+  // CLI 面：supervisor gate_watch 消费的同一入口
+  const { execFileSync } = require('node:child_process');
+  const out = execFileSync(process.execPath, [
+    path.join(REPO_ROOT, 'deploy', 'lib.js'), 'gate-slot',
+    '--artifact', artifact('tmp/api-reference-sync/campaign-plans/python-v30-sync/sync-session.json'),
+    '--tracks', 'v3.0.x,v2.6.x', '--track-keys', 'python-v3,python',
+  ], { encoding: 'utf8' });
+  assert.equal(out.trim(), 'slot=1 trackKey=python-v3');
+});
+
+test('notifyGate: message_id 返回 + sent-cards.jsonl 按 replyLine 逐行入账', async () => {
+  const { notifyGate } = require(path.join(REPO_ROOT, 'deploy', 'lib.js'));
+  const work = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'notify-gate-')));
+  const indexFile = path.join(work, 'x.index.json');
+  fs.writeFileSync(indexFile, JSON.stringify(v2IndexFixture({ replyLines: [`APPROVE_DOCUMENT u1 ${hexFix('1')}`, `APPROVE_DOCUMENT u2 ${hexFix('2')}`] })));
+  const sentCards = path.join(work, 'sent-cards.jsonl');
+  const seenBodies = [];
+  const fetchImpl = async (url, init) => {
+    const body = JSON.parse(init.body);
+    if (String(url).includes('/tenant_access_token/')) {
+      return { json: async () => ({ code: 0, tenant_access_token: 't' }) };
+    }
+    if (String(url).includes('/users/batch_get_id')) {
+      return { json: async () => ({ code: 0, data: { user_list: [{ user_id: 'ou_operator' }] } }) };
+    }
+    seenBodies.push(body);
+    return { json: async () => ({ code: 0, data: { message_id: 'om_card_1' } }) };
+  };
+  const envBackup = {
+    FEISHU_HOST: process.env.FEISHU_HOST, BOT_APP_ID: process.env.BOT_APP_ID,
+    BOT_APP_SECRET: process.env.BOT_APP_SECRET, OPERATOR_EMAIL: process.env.OPERATOR_EMAIL,
+  };
+  Object.assign(process.env, { FEISHU_HOST: 'https://feishu.example', BOT_APP_ID: 'a', BOT_APP_SECRET: 'b', OPERATOR_EMAIL: 'op@example' });
+  try {
+    const result = await notifyGate({
+      indexFile, pod: 'python-worker', slot: '1', trackKey: 'python-v3', language: 'python',
+      cachePath: path.join(work, 'openid'), indexId: 'k/x.index.json', sentCardsPath: sentCards, fetchImpl,
+    });
+    assert.equal(result.messageId, 'om_card_1');
+    assert.equal(result.mode, 'interactive');
+    // 首选 interactive 卡片（带按钮），一次发送成功不再降级文本
+    assert.equal(seenBodies.length, 1);
+    assert.equal(seenBodies[0].msg_type, 'interactive');
+    const sentCard = JSON.parse(seenBodies[0].content);
+    const buttons = sentCard.elements.filter((element) => element.tag === 'action');
+    assert.equal(buttons.length, 2);
+    // 入账：每条 replyLine 一行，共享 messageId/sentAt
+    const records = fs.readFileSync(sentCards, 'utf8').split('\n').filter(Boolean).map(JSON.parse);
+    assert.equal(records.length, 2);
+    for (const [position, record] of records.entries()) {
+      assert.deepEqual(Object.keys(record).sort(), ['digest', 'indexId', 'line', 'messageId', 'pod', 'sentAt', 'slot', 'track']);
+      assert.equal(record.messageId, 'om_card_1');
+      assert.equal(record.pod, 'python-worker');
+      assert.equal(record.slot, '1');
+      assert.equal(record.track, 'python-v3');
+      assert.equal(record.indexId, 'k/x.index.json');
+      assert.equal(record.line, `APPROVE_DOCUMENT u${position + 1} ${hexFix(String(position + 1))}`);
+      assert.equal(record.digest, hexFix('a'));
+      assert.doesNotThrow(() => Date.parse(record.sentAt));
+    }
+  } finally {
+    Object.assign(process.env, envBackup);
+  }
+});
+
+test('notifyGate: 卡片发送失败降级纯文本仍取到 message_id；响应缺 message_id 时 typed fail-loud', async () => {
+  const { notifyGate } = require(path.join(REPO_ROOT, 'deploy', 'lib.js'));
+  const work = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'notify-gate-degrade-')));
+  const indexFile = path.join(work, 'x.index.json');
+  fs.writeFileSync(indexFile, JSON.stringify(v2IndexFixture()));
+  const sentCards = path.join(work, 'sent-cards.jsonl');
+  const mode = { next: 'text-no-id' };
+  const fetchImpl = async (url, init) => {
+    if (String(url).includes('/tenant_access_token/')) return { json: async () => ({ code: 0, tenant_access_token: 't' }) };
+    if (String(url).includes('/users/batch_get_id')) return { json: async () => ({ code: 0, data: { user_list: [{ user_id: 'ou_operator' }] } }) };
+    const msgType = JSON.parse(init.body).msg_type;
+    if (mode.next === 'text-no-id') {
+      // 卡片被拒（如版本不支持 interactive）→ 文本成功但不给 message_id
+      return { json: async () => (msgType === 'interactive' ? { code: 99901, msg: 'no card' } : { code: 0, data: {} }) };
+    }
+    return { json: async () => (msgType === 'interactive' ? { code: 99901, msg: 'no card' } : { code: 0, data: { message_id: 'om_text_1' } }) };
+  };
+  const envBackup = {
+    FEISHU_HOST: process.env.FEISHU_HOST, BOT_APP_ID: process.env.BOT_APP_ID,
+    BOT_APP_SECRET: process.env.BOT_APP_SECRET, OPERATOR_EMAIL: process.env.OPERATOR_EMAIL,
+  };
+  Object.assign(process.env, { FEISHU_HOST: 'https://feishu.example', BOT_APP_ID: 'a', BOT_APP_SECRET: 'b', OPERATOR_EMAIL: 'op@example' });
+  try {
+    await assert.rejects(
+      notifyGate({ indexFile, pod: 'p', slot: '1', trackKey: 'k', language: 'python', cachePath: null, sentCardsPath: sentCards, fetchImpl }),
+      (error) => error.code === 'FEISHU_MESSAGE_ID_MISSING',
+    );
+    mode.next = 'text-with-id';
+    const result = await notifyGate({ indexFile, pod: 'p', slot: '1', trackKey: 'k', language: 'python', cachePath: null, sentCardsPath: sentCards, fetchImpl });
+    assert.equal(result.mode, 'text');
+    assert.equal(result.messageId, 'om_text_1');
+    assert.equal(fs.readFileSync(sentCards, 'utf8').split('\n').filter(Boolean).length, 1);
+  } finally {
+    Object.assign(process.env, envBackup);
+  }
+});
+
 // ---------- 6. track-env：registryTrackKey 派生 + fail-loud ----------
 
 const fixtureRegistry = {
@@ -288,15 +561,17 @@ test('deploy/*..sh pass bash -n', () => {
 test('configmap-scripts.yaml embedded blocks are present and pass bash -n', () => {
   const yaml = fs.readFileSync(path.join(REPO_ROOT, 'deploy', 'configmap-scripts.yaml'), 'utf8');
   for (const name of ['bootstrap.sh', 'supervisor.sh', 'seed-backlog.sh']) {
-    // 部署镜像块：键行后跟 6 空格缩进内容；提取后必须仍是可解析 bash（防手改 ConfigMap 漂移）。
+    // 部署镜像块：键行后跟 4 空格缩进内容（kubectl --from-file 的原生缩进——
+    // 2026-10-24 实测；旧断言写 6 空格，与生成器输出一直对不上，提取恒为空）。
+    // 提取后必须仍是可解析 bash（防手改 ConfigMap 漂移）。
     const keyLine = `  ${name}: |`;
     const start = yaml.indexOf(`\n${keyLine}\n`);
     assert.notEqual(start, -1, `configmap-scripts.yaml 缺 ${name} 块`);
     const blockLines = [];
     for (const line of yaml.slice(start + 1).split('\n').slice(1)) {
       if (line.trim() === '') { blockLines.push(''); continue; }
-      if (!line.startsWith('      ')) break; // 下一个键
-      blockLines.push(line.slice(6));
+      if (!line.startsWith('    ')) break; // 下一个键
+      blockLines.push(line.slice(4));
     }
     while (blockLines.length && blockLines[blockLines.length - 1] === '') blockLines.pop();
     const block = blockLines.join('\n');

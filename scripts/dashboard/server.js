@@ -26,6 +26,7 @@ const gateWatch = require('./gate-watch.js');
 const changeRequest = require('./change-request.js');
 const gateDispatch = require('./gate-dispatch.js');
 const relay = require('./notify-relay.js');
+const cardApprove = require('./card-approve.js');
 const usage = require('./usage-ledger.js');
 
 const execFileAsync = promisify(execFile);
@@ -939,6 +940,34 @@ function outboxEventsFrom(events) {
   });
 }
 
+// ---------- card button callback (呈门卡片 v2: card.action.trigger) ----------
+//
+// 呈门卡片的「批准」按钮回调：事件名以本机 @larksuiteoapi/node-sdk d.ts 为准
+// （'card.action.trigger'，EventDispatcher 注释；open.feishu.cn 文档页 JS 渲染
+// 抓不到正文）。决策逻辑全部在 scripts/dashboard/card-approve.js（独立可搬迁
+// 模块），这里只做身份解析与响应包装。响应保守用 toast 形态——文档不可达，
+// 飞书对无法识别的回调响应会优雅忽略，不阻塞批准本身（偏差已记录）。
+
+let cardApprover = null;
+
+async function handleCardActionEvent(data) {
+  // Approver 建一次（去重窗是模块内内存态，重建即失忆）。操作员身份解析失败
+  // 时以 null 建闸，降级为仅严格形状校验——notify-relay 同一纪律（identity
+  // 解析不阻塞批准面，行本身仍须过 APPROVE 正则 + pod 内二次正则）。
+  if (!cardApprover) {
+    let operatorOpenId = null;
+    try {
+      operatorOpenId = await notifyState.notifier.resolveOpenId();
+    } catch {
+      operatorOpenId = null;
+    }
+    cardApprover = cardApprove.createCardApprover({ operatorOpenId, repoRoot: REPO_ROOT, appendOutbox: appendOutboxRecords });
+  }
+  const verdict = await cardApprover.handleCardAction(data);
+  process.stdout.write(`[card-approve] ${verdict.ok ? 'accepted' : 'rejected'}${verdict.deduped ? ' (deduped)' : ''}: ${verdict.text}\n`);
+  return { toast: { type: verdict.ok ? 'success' : 'error', content: verdict.text } };
+}
+
 async function handleRelayEvent(data) {
   // Raw receipt line first: without it a console-side delivery gap (missing
   // p2p scope, unpublished event subscription) is indistinguishable from a
@@ -1811,6 +1840,10 @@ function main() {
       const dispatcher = new lark.EventDispatcher({ loggerLevel: 'warn' }).register({
         'im.message.receive_v1': (data) => handleRelayEvent(data).catch((error) => {
           process.stderr.write(`[notify-relay] event handling failed: ${error?.message ?? error}\n`);
+        }),
+        // 呈门卡片「批准」按钮回调（事件名以 @larksuiteoapi/node-sdk d.ts 为准）
+        'card.action.trigger': (data) => handleCardActionEvent(data).catch((error) => {
+          process.stderr.write(`[card-approve] event handling failed: ${error?.message ?? error}\n`);
         }),
       });
       const wsClient = new lark.WSClient({ appId, appSecret, loggerLevel: 'warn' });

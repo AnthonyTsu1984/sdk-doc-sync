@@ -40,7 +40,13 @@ const path = require('node:path');
 const { GATE_NAMES, gateReplyLine, isGateName } = require('./gate-registry');
 const { sortApprovalUnits } = require('./campaign-approval');
 
-const PRESENTATION_SCHEMA = 1;
+// Schema 2 (呈门卡片 v2, 2026-10-24): adds optional `source` (dispatch-origin
+// passthrough: pr-intake PR list / repo-scan tag range) and `impact` (derived
+// document action split) to the schema-1 shape. Backward compatible: both
+// fields are nullable and every consumer must tolerate their absence — legacy
+// schema-1 indexes on disk remain valid input to checkPresentationIndex.
+const PRESENTATION_SCHEMA = 2;
+const PRESENTATION_SCHEMA_LEGACY = [1];
 const PRESENTATION_INPUT_INVALID = 'PRESENTATION_INPUT_INVALID';
 const PRESENTATION_DIGEST_MISSING = 'PRESENTATION_DIGEST_MISSING';
 const PRESENTATION_REPLY_LINE_MISMATCH = 'PRESENTATION_REPLY_LINE_MISMATCH';
@@ -97,6 +103,148 @@ function sessionKeyOf(sessionPath) {
 
 function toPosixRelative(sessionPath) {
   return sessionPath.split(path.sep).join('/');
+}
+
+// ---------- source passthrough (呈门三件套之一：来源面) ----------
+//
+// source.json 是 supervisor 派单时的账本快照，这里只透传、只验形，绝不加工：
+//   pr-intake  → { origin:'pr-intake', prs:[{number,url,title}] }
+//   repo-scan  → { origin:'repo-scan', baselineTag, targetTag }（占位形态，
+//                字段允许 null —— daily-scan 尚无仓库扫描来源，接入时在此分叉）
+
+function validSource(value) {
+  if (!isObject(value)) return false;
+  if (value.origin === 'pr-intake') {
+    return Array.isArray(value.prs) && value.prs.every((pr) => isObject(pr)
+      && Number.isInteger(pr.number) && pr.number >= 0
+      && nonEmptyString(pr.url)
+      && (pr.title === null || typeof pr.title === 'string'));
+  }
+  if (value.origin === 'repo-scan') {
+    return (value.baselineTag === null || nonEmptyString(value.baselineTag))
+      && (value.targetTag === null || nonEmptyString(value.targetTag));
+  }
+  return false;
+}
+
+// ---------- impact derivation (呈门三件套之一：动作面) ----------
+//
+// 求证结论（2026-10-24，读盘实证，字段名是真实产出字段）：
+//   dry-run 全量回执 (bin/sdk-doc-sync.js --json):
+//     writeApprovalPresentation[] = { stableId, action, title, documentLink,
+//     recordLink }，action = plan.action；plans[] = { action, stableId,
+//     metadata.reason }。资源计划的 stableId 带 resource: 前缀。
+//   bounded summary (createBoundedSummary):
+//     diff[] = { type, slug, stableId, symbol, reason }，type ∈
+//     {CREATE, DEPRECATE, UPDATE, SKIP, ORPHAN}。
+//   分组提案（candidate-spec 阶段，grouping-proposal.js schema 钉死）:
+//     units[] = { id, sourceStableId, actionIntent, decision, risks }，
+//     actionIntent ∈ {CREATE, UPDATE, DEPRECATE, BACKFILL, REBUILD, NO_ACTION}。
+//   gate manifest（APPROVE_DOCUMENT 等）: units 只有 reviewUnitId/label/
+//     journalDigest —— 没有动作分类，impact 如实降级为 null（绝不编数）。
+//
+// 动作映射是**显示语义**，绝不参与 digest 绑定：CREATE 桶收 CREATE/BACKFILL
+// （BACKFILL 是补文档空缺的 create，sync-planner 注释实证），UPDATE 桶收
+// UPDATE/COPY_PATCH/REBUILD/DEPRECATE。映射不到的两类动作进 other 桶。
+
+const RESOURCE_STABLE_ID_PREFIX = 'resource:';
+
+const IMPACT_ACTION_BY_PLAN = Object.freeze({
+  CREATE: 'CREATE',
+  BACKFILL: 'CREATE',
+  UPDATE: 'UPDATE',
+  COPY_PATCH: 'UPDATE',
+  REBUILD: 'UPDATE',
+  DEPRECATE: 'UPDATE',
+});
+
+const IMPACT_ACTION_BY_DIFF_TYPE = Object.freeze({
+  CREATE: 'CREATE',
+  UPDATE: 'UPDATE',
+  DEPRECATE: 'UPDATE',
+});
+
+const IMPACT_ACTION_BY_INTENT = Object.freeze({
+  CREATE: 'CREATE',
+  BACKFILL: 'CREATE',
+  UPDATE: 'UPDATE',
+  REBUILD: 'UPDATE',
+  DEPRECATE: 'UPDATE',
+});
+
+function isDocumentStableId(stableId) {
+  return nonEmptyString(stableId) && !stableId.startsWith(RESOURCE_STABLE_ID_PREFIX);
+}
+
+function impactFromRows(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const documents = rows
+    .filter((row) => nonEmptyString(row.unitId))
+    .map((row) => ({ title: nonEmptyString(row.title) ? row.title : row.unitId, action: row.action ?? null, unitId: row.unitId }));
+  if (documents.length === 0) return null;
+  // 至少一行有分类才成 impact；全部待分类 = 工件没有分类数据，如实降级 null。
+  if (documents.every((row) => row.action === null)) return null;
+  return {
+    total: documents.length,
+    create: documents.filter((row) => row.action === 'CREATE').length,
+    update: documents.filter((row) => row.action === 'UPDATE').length,
+    other: documents.filter((row) => row.action === null).length,
+    documents,
+  };
+}
+
+function impactFromDryRun(dryRun) {
+  const presentation = Array.isArray(dryRun?.writeApprovalPresentation)
+    ? dryRun.writeApprovalPresentation.filter((entry) => isObject(entry) && isDocumentStableId(entry?.stableId))
+    : [];
+  if (presentation.length > 0) {
+    return impactFromRows(presentation.map((entry) => ({
+      title: entry.title,
+      action: IMPACT_ACTION_BY_PLAN[entry.action] ?? null,
+      unitId: entry.stableId,
+    })));
+  }
+  const plans = Array.isArray(dryRun?.plans) ? dryRun.plans : [];
+  const documentPlans = plans.filter((plan) => isObject(plan)
+    && plan.action !== 'NOOP' && isDocumentStableId(plan?.stableId));
+  if (documentPlans.length > 0) {
+    return impactFromRows(documentPlans.map((plan) => ({
+      title: plan.stableId,
+      action: IMPACT_ACTION_BY_PLAN[plan.action] ?? null,
+      unitId: plan.stableId,
+    })));
+  }
+  // bounded summary 末档：diff[] 的 type 分类（SKIP/ORPHAN 不进文档清单）。
+  const diff = Array.isArray(dryRun?.diff) ? dryRun.diff : [];
+  return impactFromRows(diff
+    .filter((row) => isObject(row) && IMPACT_ACTION_BY_DIFF_TYPE[row?.type] !== undefined)
+    .map((row) => ({
+      title: nonEmptyString(row.symbol) ? row.symbol : (nonEmptyString(row.slug) ? row.slug : null),
+      action: IMPACT_ACTION_BY_DIFF_TYPE[row.type],
+      unitId: nonEmptyString(row.stableId) ? row.stableId : row.slug,
+    })));
+}
+
+function impactFromManifest(manifest) {
+  const rawUnits = Array.isArray(manifest?.units) ? manifest.units : [];
+  return impactFromRows(rawUnits.map((unit) => {
+    if (!isObject(unit)) return { unitId: null };
+    const unitId = nonEmptyString(unit.reviewUnitId)
+      ? unit.reviewUnitId
+      : (nonEmptyString(unit.id) ? unit.id : unit.sourceStableId);
+    const intent = unit.actionIntent;
+    return {
+      title: nonEmptyString(unit.label) ? unit.label : (nonEmptyString(unit.title) ? unit.title : null),
+      action: intent !== undefined && intent !== null ? (IMPACT_ACTION_BY_INTENT[intent] ?? null) : null,
+      unitId,
+    };
+  }));
+}
+
+function deriveImpact({ fromDryrun, manifest }) {
+  if (fromDryrun !== undefined && fromDryrun !== null) return impactFromDryRun(fromDryrun);
+  if (manifest !== undefined && manifest !== null) return impactFromManifest(manifest);
+  return null;
 }
 
 // ---------- input shaping ----------
@@ -175,7 +323,14 @@ function manifestUnitsFromInput(manifest, gate) {
     throw new PresentationError(PRESENTATION_INPUT_INVALID, 'gate manifest requires a units array', { field: 'units' });
   }
   const units = rawUnits.map((unit) => {
-    if (!isObject(unit) || !nonEmptyString(unit.reviewUnitId)) {
+    // 呈门 v2：--manifest 也直接吃分组提案/candidate-spec 形态的单元
+    // （grouping-proposal.js：{id, sourceStableId, actionIntent,…}）——id 即
+    // 呈现层的 reviewUnitId。APPROVE_DOCUMENT 仍只认 reviewUnitId（其绑定
+    // 语义是执行日志，不允许别名）。
+    const reviewUnitId = nonEmptyString(unit?.reviewUnitId)
+      ? unit.reviewUnitId
+      : (gate !== 'APPROVE_DOCUMENT' && nonEmptyString(unit?.id) ? unit.id : unit?.reviewUnitId);
+    if (!isObject(unit) || !nonEmptyString(reviewUnitId)) {
       throw new PresentationError(
         PRESENTATION_UNIT_INCOMPLETE,
         'every gate manifest unit requires a non-empty reviewUnitId',
@@ -190,10 +345,10 @@ function manifestUnitsFromInput(manifest, gate) {
     else if (nonEmptyString(unit.journal)) journal = unit.journal;
     const links = Array.isArray(unit.links) ? unit.links.filter(nonEmptyString) : [];
     const row = {
-      reviewUnitId: unit.reviewUnitId,
+      reviewUnitId,
       label: nonEmptyString(unit.label)
         ? unit.label
-        : (nonEmptyString(unit.documentStableId) ? unit.documentStableId : unit.reviewUnitId),
+        : (nonEmptyString(unit.documentStableId) ? unit.documentStableId : reviewUnitId),
       journal,
       journalDigest,
       unitBatchDigest: nonEmptyString(unit.batchDigest) ? unit.batchDigest : null,
@@ -393,6 +548,23 @@ function buildPresentationIndex(input = {}) {
     }
   }
 
+  // source 三件套透传（呈门 v2）：给了就必须合法 —— 一个坏 source 会让卡片
+  // 显示编造的来源，宁可 typed 拒绝。未给 = null（消费端容错缺字段）。
+  let source = null;
+  if (input.source !== undefined && input.source !== null) {
+    if (!validSource(input.source)) {
+      throw new PresentationError(
+        PRESENTATION_INPUT_INVALID,
+        'source must be {origin:"pr-intake",prs:[{number,url,title}]} or {origin:"repo-scan",baselineTag,targetTag} (tags nullable)',
+        { field: 'source' },
+      );
+    }
+    source = input.source;
+  }
+  // impact 动作面（呈门 v2）：从输入工件推导；工件没有分类数据时如实为
+  // null（卡片显示"待 dry-run 细化"），绝不编数。
+  const impact = deriveImpact({ fromDryrun: hasDryrun ? input.fromDryrun : null, manifest: hasManifest ? input.manifest : null });
+
   const sortedUnits = sortApprovalUnits(units);
   const replyLines = deriveReplyLines({ gate, digest, units: sortedUnits });
 
@@ -437,6 +609,8 @@ function buildPresentationIndex(input = {}) {
     generatedAt,
     digest,
     replyLines,
+    source,
+    impact,
     units: sortedUnits.map((unit) => ({
       reviewUnitId: unit.reviewUnitId,
       label: unit.label,
@@ -450,6 +624,41 @@ function buildPresentationIndex(input = {}) {
 }
 
 // ---------- human card (dark tone of the last dwf-era latest.html) ----------
+
+// 来源面 headline（board 卡片与飞书卡片共用同一口径）：pr-intake 列 PR 号，
+// repo-scan 列 tag 迁移；字段缺位如实显示，绝不编造。
+function sourceHeadline(source) {
+  if (!validSource(source)) return null;
+  if (source.origin === 'repo-scan') {
+    return source.baselineTag && source.targetTag
+      ? `来源 仓库扫描：${source.baselineTag} → ${source.targetTag}`
+      : '来源 仓库扫描：版本信息未登记';
+  }
+  const total = source.prs.length;
+  if (total === 0) return '来源 PR intake：无待办 PR';
+  const head = source.prs.slice(0, 5).map((pr) => `#${pr.number}`).join(' ');
+  return total > 5 ? `来源 PR intake：${head} 等 ${total} 条` : `来源 PR intake：${head}`;
+}
+
+function impactHeadline(impact) {
+  if (!impact) return null;
+  const parts = [`文档 ${impact.total} 篇`, `CREATE ${impact.create}`, `UPDATE ${impact.update}`];
+  if (impact.other > 0) parts.push(`其他 ${impact.other}`);
+  return parts.join(' · ');
+}
+
+function renderSourceHtml(source) {
+  const headline = sourceHeadline(source);
+  if (headline === null) return '';
+  if (source?.origin === 'pr-intake' && Array.isArray(source.prs) && source.prs.length > 0) {
+    const links = source.prs.slice(0, 5)
+      .map((pr) => `<a href="${esc(pr.url)}">#${pr.number}</a>`)
+      .join(' ');
+    const suffix = source.prs.length > 5 ? ` 等 ${source.prs.length} 条` : '';
+    return `<div>${esc('来源 PR intake：')} ${links}${esc(suffix)}</div>`;
+  }
+  return `<div>${esc(headline)}</div>`;
+}
 
 function esc(value) {
   return String(value)
@@ -511,6 +720,12 @@ function renderCardHtml(index) {
 
   const notesLine = index.notes ? `<div style="margin-top:4px">${esc(index.notes)}</div>` : '';
 
+  // 呈门 v2 三件套（来源面 + 动作面）：工件没有对应数据时如实降级，绝不编数。
+  const sourceLine = renderSourceHtml(index.source);
+  const impactLine = index.impact
+    ? `<div>动作面: ${esc(impactHeadline(index.impact))}</div>`
+    : '<div>动作面: 待 dry-run 细化</div>';
+
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>${esc(index.title)}</title></head>
 <body style="font-family:-apple-system,sans-serif;background:#16181d;color:#e8eaed;max-width:960px;margin:32px auto;padding:0 24px">
@@ -518,6 +733,7 @@ function renderCardHtml(index) {
 <p style="color:#9aa4b2;font-size:13px;line-height:1.7">
 <div>session: <code>${esc(index.sessionPath)}</code></div>
 <div>generated: ${esc(index.generatedAt)}</div>
+${sourceLine}${impactLine}
 ${digestLine}${notesLine}
 </p>
 <h2 style="font-size:15px;margin-top:20px">批准回行（逐字复制到会话）</h2>
@@ -535,6 +751,7 @@ ${unitRows}
 
 module.exports = {
   PRESENTATION_SCHEMA,
+  PRESENTATION_SCHEMA_LEGACY,
   PRESENTATION_INPUT_INVALID,
   PRESENTATION_DIGEST_MISSING,
   PRESENTATION_REPLY_LINE_MISMATCH,
@@ -547,6 +764,9 @@ module.exports = {
   GATE_NAMES,
   PresentationError,
   sessionKeyOf,
+  sourceHeadline,
+  impactHeadline,
+  deriveImpact,
   buildPresentationIndex,
   renderCardHtml,
 };

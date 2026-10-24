@@ -38,7 +38,7 @@ const DEFAULT_OUT_RELATIVE = 'tmp/api-reference-sync/gate-presentation';
 
 const VALUE_FLAGS = new Set([
   '--from-dryrun', '--manifest', '--session', '--title', '--notes',
-  '--out-dir', '--repo-root',
+  '--out-dir', '--repo-root', '--source',
 ]);
 const BOOLEAN_FLAGS = new Set(['--check-only', '--json', '--help']);
 
@@ -115,6 +115,9 @@ function printHelp() {
     '  --session <file>       the sync session this presentation is bound to (required; repo-relative or absolute)',
     '  --title <text>         human title (default "<GATE> — N 单元")',
     '  --notes <text>         free-form operator context line',
+    '  --source <file>        dispatch source snapshot (rundir/source.json):',
+    '                         {origin:"pr-intake",prs:[{number,url,title}]} or',
+    '                         {origin:"repo-scan",baselineTag,targetTag} — passed through to index.source',
     '  --out-dir <dir>        output root (default tmp/api-reference-sync/gate-presentation)',
     '  --check-only           build + validate, write nothing',
     '  --json                 print the index.json object to stdout',
@@ -163,6 +166,11 @@ function runCli({ argv = process.argv.slice(2), now = new Date() } = {}) {
     input.fromDryrun = readJsonFile(path.resolve(repoRoot, args['--from-dryrun']), presentation.PRESENTATION_INPUT_INVALID, `dry-run receipt ${args['--from-dryrun']}`);
   } else {
     input.manifest = readJsonFile(path.resolve(repoRoot, args['--manifest']), presentation.PRESENTATION_INPUT_INVALID, `gate manifest ${args['--manifest']}`);
+  }
+  // 呈门 v2 来源三件套：supervisor 派单落 rundir/source.json，prompt 指引执行
+  // 会话在此透传。文件缺位不致命（source=null，卡片不显示来源行）。
+  if (args['--source'] !== undefined) {
+    input.source = readJsonFile(path.resolve(repoRoot, args['--source']), presentation.PRESENTATION_INPUT_INVALID, `source snapshot ${args['--source']}`);
   }
 
   let index;

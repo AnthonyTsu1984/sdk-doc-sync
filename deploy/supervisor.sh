@@ -6,7 +6,8 @@
 #   ② 账本 pending>0 且 slot 空闲 → 起战役：buildTrackIntakeBrief 简报 +
 #      `opencode run --format json`（四段提示词，slot=TRACKS 每轨一个）
 #   ③ 门铃巡检：tmp/api-reference-sync/gate-presentation/ 新 index.json →
-#      飞书卡片（BOT_* token + OPERATOR_EMAIL 求解 p2p open_id，缓存）
+#      飞书卡片（BOT_* token + OPERATOR_EMAIL 求解 p2p open_id，缓存；slot/track
+#      从工件路径确定性反解，message_id 落 runs/sent-cards.jsonl 入账）
 #   ④ 批准队列：/workspace/inbound/approve-<slot>.queue 首行匹配
 #      ^APPROVE_[A-Z]+( \S+)? sha256:[0-9a-f]{64}$ → `opencode run -s <ses>` 续跑
 #   ⑤ 全部动作 append logs/supervisor.log + logs/events.jsonl 一行 JSON 事件
@@ -55,6 +56,7 @@ event() { # event <name> [key=value ...]（JSON 转义在 lib.js 内做）
       exit=*)  args+=(--exit "${kv#exit=}") ;;
       count=*) args+=(--count "${kv#count=}") ;;
       detail=*) args+=(--detail "${kv#detail=}") ;;
+      messageId=*) args+=(--message-id "${kv#messageId=}") ;;
     esac
   done
   node "$LIB" emit-event "${args[@]}" 2>>"$SUPERVISOR_LOG" || log "WARN: emit-event failed ($name)"
@@ -138,11 +140,29 @@ dispatch_slot() { # dispatch_slot <slot>
     return 1
   fi
 
+  # 来源三件套之一（呈门卡片 v2）：派单时从账本提取本轨 pending PR 清单落
+  # rundir/source.json，呈门时经 gate-presentation --source 透传到卡片。
+  # repo-scan 形态占位（daily-scan 只有 PR 账本）：接入仓库扫描来源时在此分叉，
+  # 写 {origin:"repo-scan",baselineTag:<tag>,targetTag:<tag>}。
+  if ! node -e '
+      const fs = require("node:fs");
+      const { extractBacklogEntries } = require(process.argv[1]);
+      const lines = fs.readFileSync(process.argv[2], "utf8").split("\n").filter((line) => line.trim());
+      const events = lines.map((line) => JSON.parse(line));
+      const prs = extractBacklogEntries(events, process.argv[3])
+        .map((entry) => ({ number: entry.prNumber, url: entry.url, title: entry.title }));
+      fs.writeFileSync(process.argv[4], `${JSON.stringify({ origin: "pr-intake", prs })}\n`);
+    ' "$LIB" "$REPO/$LEDGER" "$LANGUAGE" "$rundir/source.json" 2>>"$SUPERVISOR_LOG"; then
+    printf '%s\n' '{"origin":"pr-intake","prs":[]}' > "$rundir/source.json"
+    log "WARN: source.json extraction failed — wrote empty pr-intake snapshot for $track_key"
+  fi
+
   # 四段提示词（镜像 scripts/dashboard/server.js buildHeadlessPrompt）：
   # 执行会话声明 / 只读侦察可做+APPROVE_* 门必停 / --- / 简报正文。
   {
     printf '%s\n' '你是本战役的新执行会话（由 S2 pod supervisor 一键派出）。下面是确定性生成的战役简报——它是你的初始任务上下文；一切以盘上 durable 状态与 canonical CLI 输出为准，勿凭记忆续接。'
     printf '%s\n' '按简报中的续接规则开始工作：只读侦察可立即进行；遇到 APPROVE_* 门禁必须停下，等待操作员以简报给出的精确 digest 行批准后再继续。'
+    printf '%s\n' "呈门产出（.claude/skills/api-reference-sync/scripts/gate-presentation.js）必须带 --source $rundir/source.json —— 卡片的来源三件套由它透传。"
     printf '%s\n' '---'
     cat "$rundir/brief.md"
   } > "$rundir/prompt.md"
@@ -227,24 +247,33 @@ expire_parked() {
 }
 
 # ---------- ③ 门铃巡检（新 index.json → 飞书卡片） ----------
+#
+# 归因（呈门 v2，规格 3）：从工件路径确定性反解，旧"检测瞬间恰在跑的 slot"
+# 启发式（active==1）已删除——实测错配/unknown。反解逻辑单源在 deploy/lib.js
+# deriveGateAttribution（纯函数，tests/skills/deploy-scaffold.test.js 直测反解
+# 表）：工件路径含 gate-presentation/<sessionKey>/ 前缀（sessionKey 由
+# sessionPath 经 sessionKeyOf 派生），长 trackKey 优先反查，查不到回退 TRACKS
+# 顺序固定映射（slot1=v3.0.x、slot2=v2.6.x，与派单顺序一致），再落空=unknown。
 gate_watch() {
   [ -d "$GATE_DIR" ] || return 0
-  local seen="$RUNS/seen-gates.txt" f
+  local seen="$RUNS/seen-gates.txt" f slot track_key index_id notify_out msg_id keys
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     grep -qxF "$f" "$seen" 2>/dev/null && continue
     printf '%s\n' "$f" >> "$seen"
-    # slot/track 上下文：恰有一个在役 slot 时可归因，否则 unknown（卡片仍带精确回现行）。
-    local slot="unknown" track_key="unknown" active=0
-    for s in $(seq 1 "$N_SLOTS"); do
-      [ -n "${SLOT_PID[$s]:-}" ] || continue
-      active=$((active + 1)); slot="$s"; track_key="${SLOT_TRACKKEY[$s]}"
-    done
-    [ "$active" -eq 1 ] || { slot="unknown"; track_key="unknown"; }
-    log "gate presentation detected: $f（slot=$slot track=$track_key）"
-    if node "$LIB" notify-gate --index-file "$f" --pod "$POD_NAME" --slot "$slot" \
-        --track-key "$track_key" --language "$LANGUAGE" --open-id-cache "$RUNS/operator-openid"; then
-      event gate_notified "slot=$slot" "track=$track_key" "detail=$f"
+    keys="$(for s in $(seq 1 "$N_SLOTS"); do printf '%s,' "${SLOT_TRACKKEY[$s]:-}"; done)"
+    keys="${keys%,}"
+    attribution="$(node "$LIB" gate-slot --artifact "$f" --tracks "$TRACKS" --track-keys "$keys" 2>>"$SUPERVISOR_LOG")" \
+      || attribution="slot=unknown trackKey=unknown"
+    slot="${attribution#slot=}"; slot="${slot%% *}"
+    track_key="${attribution#*trackKey=}"
+    index_id="${f#"$GATE_DIR"/}"
+    log "gate presentation detected: $f（slot=$slot track=$track_key 归因=工件路径确定性反解）"
+    if notify_out="$(node "$LIB" notify-gate --index-file "$f" --pod "$POD_NAME" --slot "$slot" \
+        --track-key "$track_key" --language "$LANGUAGE" --open-id-cache "$RUNS/operator-openid" \
+        --index-id "$index_id" --sent-cards "$RUNS/sent-cards.jsonl" 2>>"$SUPERVISOR_LOG")"; then
+      msg_id="$(printf '%s\n' "$notify_out" | sed -n 's/^messageId=//p')"
+      event gate_notified "slot=$slot" "track=$track_key" "detail=$f" "messageId=$msg_id"
     else
       event gate_notify_failed "slot=$slot" "track=$track_key" "detail=$f"
       log "WARN: feishu notify failed for $f（BOT_*/OPERATOR_EMAIL 或网络；卡片未发出，看板仍可见 latest-index.json）"

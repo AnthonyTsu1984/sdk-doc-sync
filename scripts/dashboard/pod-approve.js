@@ -34,13 +34,15 @@ function usage(exitCode = 0) {
     'pod-approve.js — inject an APPROVE_* line into an S2 worker pod queue',
     '',
     'Usage:',
-    '  node scripts/dashboard/pod-approve.js --pod <python-worker|java-worker> --slot <n> --line "<APPROVE_… sha256:…>"',
+    '  node scripts/dashboard/pod-approve.js --pod <python-worker|java-worker> --slot <n> --line "<APPROVE_… sha256:…>" [--json]',
     '  node scripts/dashboard/pod-approve.js --list [--pod <name>]',
     '',
     'Options:',
     '  --pod <name>    target pod (python-worker / java-worker)',
     '  --slot <n>      slot number (1 = first TRACKS entry, 2 = second)',
     '  --line <text>   the exact gate reply line, e.g. "APPROVE_WRITES sha256:<64-hex>"',
+    '  --json          machine face: one line {"ok":…,"pod":…,"slot":…,"line":…,"note":…}',
+    '                  (成功注入或任何 typed 失败都输出这一行；默认文本输出不变)',
     '  --list          tail the last 20 events.jsonl lines of the worker pod(s)',
     '  --help          this text',
     '',
@@ -52,7 +54,12 @@ function usage(exitCode = 0) {
   process.exit(exitCode);
 }
 
-function fail(message) {
+function fail(message, { json = false, payload = null } = {}) {
+  if (json) {
+    // --json 机器面：一行 {ok:false,…}，card-approve.js 消费这一行分支。
+    process.stdout.write(`${JSON.stringify({ ok: false, pod: payload?.pod ?? null, slot: payload?.slot ?? null, line: payload?.line ?? null, note: message })}\n`);
+    process.exit(1);
+  }
   process.stderr.write(`pod-approve: ${message}\n`);
   process.exit(1);
 }
@@ -109,6 +116,7 @@ function listEvents(podFilter) {
 function main() {
   const argv = process.argv.slice(2);
   if (argv.includes('--help') || argv.length === 0) usage(argv.includes('--help') ? 0 : 64);
+  const jsonMode = argv.includes('--json');
 
   if (argv.includes('--list')) {
     const podAt = argv.indexOf('--pod');
@@ -121,15 +129,21 @@ function main() {
 
   const readValue = (flag) => {
     const at = argv.indexOf(flag);
-    if (at === -1 || at + 1 >= argv.length) fail(`${flag} is required（see --help）`);
+    if (at === -1 || at + 1 >= argv.length) {
+      fail(`${flag} is required（see --help）`, { json: jsonMode });
+    }
     return argv[at + 1];
   };
   const pod = readValue('--pod');
   const slot = readValue('--slot');
   const line = readValue('--line');
 
-  if (!POD_NAME_RE.test(pod)) fail(`--pod looks invalid: ${pod}（expected dns-1035 name, e.g. python-worker）`);
-  if (!SLOT_RE.test(slot)) fail(`--slot must be a positive integer (got ${JSON.stringify(slot)})`);
+  if (!POD_NAME_RE.test(pod)) {
+    fail(`--pod looks invalid: ${pod}（expected dns-1035 name, e.g. python-worker）`, { json: jsonMode, payload: { pod, slot, line } });
+  }
+  if (!SLOT_RE.test(slot)) {
+    fail(`--slot must be a positive integer (got ${JSON.stringify(slot)})`, { json: jsonMode, payload: { pod, slot, line } });
+  }
   if (!KNOWN_PODS.includes(pod)) {
     process.stderr.write(`pod-approve: WARN: ${pod} 不在已知清单 [${KNOWN_PODS.join(', ')}]——继续尝试（集群里可能有同名 pod）\n`);
   }
@@ -137,10 +151,18 @@ function main() {
   // 本地校验（与 pod 内 supervisor/第二次校验同一正则，deploy/lib.js 单源）。
   const verdict = validateApproveLine(line);
   if (!verdict.ok) {
-    fail(`APPROVE_LINE_INVALID: ${JSON.stringify(line)}\n  形态必须匹配 ${APPROVE_LINE_RE}\n  回现行请从呈门卡片/index.json 的 replyLines 逐字复制；重规划/重扫后旧 digest 作废，须重新走门。`);
+    fail(
+      `APPROVE_LINE_INVALID: ${JSON.stringify(line)}\n  形态必须匹配 ${APPROVE_LINE_RE}\n  回现行请从呈门卡片/index.json 的 replyLines 逐字复制；重规划/重扫后旧 digest 作废，须重新走门。`,
+      { json: jsonMode, payload: { pod, slot, line } },
+    );
   }
 
   const queued = appendLine({ pod, slot, line: verdict.line });
+  if (jsonMode) {
+    // card-approve.js 消费的机器面：只此一行。
+    process.stdout.write(`${JSON.stringify({ ok: true, pod, slot, line: verdict.line, note: queued || 'queued' })}\n`);
+    return;
+  }
   process.stdout.write([
     '—— pod-approve 回执 ——',
     `pod:    ${pod}`,

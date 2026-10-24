@@ -92,11 +92,35 @@ $K exec deploy/python-worker -- sh -c 'cat /workspace/feishu-markdown-bridge/tmp
 
 战役 worker 停在 APPROVE_* 门 → supervisor 检出新
 `gate-presentation/<sessionKey>/*-<gate>.index.json` → 用 `BOT_*` 走飞书 IM 发卡片
-给 `OPERATOR_EMAIL` 求解出的 p2p open_id（`/workspace/runs/operator-openid` 缓存），
-卡片含 pod 名 / slot / 轨道 / 会话路径 / digest / **精确回现行**，尾注
-"回信批准由 Mac 侧注入，或看板处理"。
+给 `OPERATOR_EMAIL` 求解出的 p2p open_id（`/workspace/runs/operator-openid` 缓存）。
+卡片（呈门 v2）内容三件套：
 
-操作员从卡片（或 latest-index.json 的 `replyLines`）**逐字复制**回现行，Mac 上：
+- **来源**：派单时 supervisor 从账本提取本轨 pending PR 清单落 `rundir/source.json`，
+  呈门时经 `gate-presentation --source` 透传——`来源 PR intake：#1184 #1188`（可点
+  链接，>5 条尾部"等 N 条"）；仓库扫描来源为 `{origin:"repo-scan",baselineTag,targetTag}`
+  占位形态，渲染 `来源 仓库扫描：<baseline> → <target>`。
+- **动作面**：`文档 N 篇 · CREATE x · UPDATE y` + 清单（≤10 条 `标题 —— 动作`，超出
+  尾部"… 等共 N 篇（全清单见工件）"）。工件没有分类数据时如实显示"待 dry-run 细化"，
+  绝不编数。
+- **pod 归属**：pod 名、slot、轨道、语言；会话标识只用工件自带 sessionPath 的短形态
+  （去 sync-session.json 后缀的目录名）。每条精确回现行配一个 primary「批准」按钮
+  （多行时 `批准 1/2/…`），回传事件 `card.action.trigger` 由看板
+  `scripts/dashboard/card-approve.js` 接住：操作员身份比对 → 形状校验 → 5 分钟去重窗
+  → spawn `pod-approve.js --json` 注入。尾注保留"打回请回复本消息：打回 <原因>"。
+
+**slot 归因（确定性，v2 重写）**：从工件路径反解——路径含
+`gate-presentation/<sessionKey>/`（sessionKey 由 sessionPath 派生），先按
+`SLOT_TRACKKEY` 长 key 反查（`python-v3` 先于裸 `python`，防 `python-v30-*` 被裸
+key 吞掉）；查不到回退 **TRACKS 顺序固定映射：slot 1 = 第 1 轨（v3.0.x）、
+slot 2 = 第 2 轨（v2.6.x），与派单顺序一致**（`deploy/lib.js deriveGateAttribution`
+单源）。落空才 unknown。旧"检测瞬间恰在跑的 slot"启发式已删除（实测错配）。
+
+**message_id 入账**：`notifyGate` 把发出消息的 message_id 返回并按 replyLine 逐行
+落 `/workspace/runs/sent-cards.jsonl`（{messageId,pod,slot,track,indexId,line,digest,sentAt}；
+事件 `gate_notified` 同带 messageId）——将来撤回/更新卡片靠它，现只入账不撤回。
+
+无按钮环境（卡片发送失败降级为纯文本，或复制回信）：操作员从卡片（或
+latest-index.json 的 `replyLines`）**逐字复制**回现行，Mac 上：
 
 ```bash
 node scripts/dashboard/pod-approve.js --pod python-worker --slot 1 \

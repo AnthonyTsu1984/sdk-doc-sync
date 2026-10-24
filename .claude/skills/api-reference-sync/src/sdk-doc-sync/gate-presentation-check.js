@@ -35,6 +35,7 @@ const {
   PRESENTATION_SESSION_UNBOUND,
   PRESENTATION_UNIT_INCOMPLETE,
   PRESENTATION_SCHEMA,
+  PRESENTATION_SCHEMA_LEGACY,
   sessionKeyOf,
 } = require('./gate-presentation');
 
@@ -54,8 +55,10 @@ function checkPresentationIndex(index) {
     report(PRESENTATION_INPUT_INVALID, 'presentation index must be an object');
     return { valid: false, errors };
   }
-  if (index.schema !== PRESENTATION_SCHEMA) {
-    report(PRESENTATION_INPUT_INVALID, `$.schema must be ${PRESENTATION_SCHEMA}`, { path: '$.schema' });
+  // Backward compatible (呈门 v2): schema-1 indexes on disk stay valid; only
+  // unknown schemas are rejected.
+  if (index.schema !== PRESENTATION_SCHEMA && !PRESENTATION_SCHEMA_LEGACY.includes(index.schema)) {
+    report(PRESENTATION_INPUT_INVALID, `$.schema must be ${PRESENTATION_SCHEMA} (or legacy ${PRESENTATION_SCHEMA_LEGACY.join('/')})`, { path: '$.schema' });
   }
   if (!isGateName(index.gate)) {
     report(PRESENTATION_INPUT_INVALID, `$.gate must be a registered gate (${GATE_NAMES.join(', ')})`, { path: '$.gate' });
@@ -75,6 +78,31 @@ function checkPresentationIndex(index) {
     report(PRESENTATION_SESSION_UNBOUND, '$.sessionPath is required — an unbound gate presentation cannot be approved', { path: '$.sessionPath' });
   } else if (sessionKeyOf(index.sessionPath) !== index.sessionKey) {
     report(PRESENTATION_INPUT_INVALID, '$.sessionKey must equal sessionKeyOf($.sessionPath)', { path: '$.sessionKey' });
+  }
+
+  // 呈门 v2 additions: source/impact are optional and consumers tolerate their
+  // absence, but when present they must carry the honest shapes (a tampered
+  // source cannot be allowed to display invented provenance).
+  if (index.source !== null && index.source !== undefined) {
+    const source = index.source;
+    const sourceOk = isObject(source) && (
+      (source.origin === 'pr-intake' && Array.isArray(source.prs))
+      || (source.origin === 'repo-scan' && 'baselineTag' in source && 'targetTag' in source)
+    );
+    if (!sourceOk) {
+      report(PRESENTATION_INPUT_INVALID, '$.source must be a pr-intake or repo-scan dispatch record', { path: '$.source' });
+    }
+  }
+  if (index.impact !== null && index.impact !== undefined) {
+    const impact = index.impact;
+    const impactOk = isObject(impact)
+      && Number.isInteger(impact.total) && impact.total >= 0
+      && Number.isInteger(impact.create) && impact.create >= 0
+      && Number.isInteger(impact.update) && impact.update >= 0
+      && Array.isArray(impact.documents);
+    if (!impactOk) {
+      report(PRESENTATION_INPUT_INVALID, '$.impact must be {total, create, update, documents[]}', { path: '$.impact' });
+    }
   }
 
   const gate = typeof index.gate === 'string' && isGateName(index.gate) ? index.gate : null;

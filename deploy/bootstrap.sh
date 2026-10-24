@@ -77,7 +77,7 @@ if ! command -v gh >/dev/null 2>&1; then
   log "install gh ${GH_TAG} (${GH_ARCH}) from official tarball"
   curl -fsSL "https://github.com/cli/cli/releases/download/${GH_TAG}/gh_${GH_TAG#v}_linux_${GH_ARCH}.tar.gz" -o /tmp/gh.tgz
   mkdir -p /tmp/gh-extract && tar -xzf /tmp/gh.tgz -C /tmp/gh-extract --strip-components=1
-  install -m 0755 /tmp/gh-extract/gh /usr/local/bin/gh
+  install -m 0755 /tmp/gh-extract/bin/gh /usr/local/bin/gh
   rm -rf /tmp/gh.tgz /tmp/gh-extract
 else
   log "gh present: $(gh --version | head -n1)"

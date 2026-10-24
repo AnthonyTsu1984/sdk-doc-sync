@@ -714,3 +714,529 @@ test('presentationMatchesCard: write-gate vocabulary (APPROVE_WRITE ↔ APPROVE_
   assert.equal(gateWatch.presentationMatchesCard(null, card), false);
   assert.equal(gateWatch.presentationMatchesCard(artifact, { sessionPath: 'x' }), false, 'card without nextGate never matches');
 });
+
+// ---------- relay v2 slice B: presentation index.json consumption ----------
+
+const PRESENT_SESSION = 'tmp/sdk-doc-sync-runs/node-v30/review-session.json';
+const WRITES_DIGEST = `sha256:${'1'.repeat(64)}`;
+const WRITES_LINE = `APPROVE_WRITES ${WRITES_DIGEST}`;
+const PRES_OUT_DIR = gateWatch.GATE_PRESENTATION_RELATIVE_DIR;
+
+function indexObject({ gate = 'APPROVE_WRITES', digest = WRITES_DIGEST, replyLines = null, sessionPath = PRESENT_SESSION, generatedAt = '2026-10-20T01:00:00.000Z', units = [] } = {}) {
+  const lines = replyLines ?? (gate === 'APPROVE_DOCUMENT' ? [] : [`${gate} ${digest}`]);
+  return {
+    schema: 1,
+    sessionKey: gateWatch.presentationSessionKey(sessionPath),
+    sessionPath,
+    gate,
+    title: `${gate} — 批准门`,
+    generatedAt,
+    digest: gate === 'APPROVE_DOCUMENT' ? null : digest,
+    replyLines: lines,
+    units,
+    notes: '',
+  };
+}
+
+function presentationFixture() {
+  const root = fs.realpathSync(fs.mkdtempSync(nodePath.join(os.tmpdir(), 'gate-pres-')));
+  return { root, outDir: nodePath.join(root, PRES_OUT_DIR) };
+}
+
+function writeIndexFile({ root, stamp, index, mtimeMs }) {
+  const sessionDir = nodePath.join(root, PRES_OUT_DIR, index.sessionKey);
+  fs.mkdirSync(sessionDir, { recursive: true });
+  const file = nodePath.join(sessionDir, `${stamp}-${index.gate}.index.json`);
+  fs.writeFileSync(file, JSON.stringify(index, null, 2));
+  fs.utimesSync(file, new Date(mtimeMs), new Date(mtimeMs));
+  return file;
+}
+
+test('presentationSessionKey mirrors the producer derivation (injective, fs-safe)', () => {
+  assert.equal(gateWatch.presentationSessionKey(PRESENT_SESSION), 'tmp-sdk-doc-sync-runs-node-v30-review-session.json');
+  assert.equal(gateWatch.presentationSessionKey(''), null);
+  assert.equal(gateWatch.presentationSessionKey(null), null);
+});
+
+test('parsePresentationIndex: consumer-side admission — shape only, no re-derivation', () => {
+  assert.equal(gateWatch.parsePresentationIndex(JSON.stringify(indexObject())).gate, 'APPROVE_WRITES');
+  assert.equal(gateWatch.parsePresentationIndex('not json'), null);
+  assert.equal(gateWatch.parsePresentationIndex('[]'), null);
+  assert.equal(gateWatch.parsePresentationIndex(JSON.stringify({ ...indexObject(), sessionPath: '' })), null);
+  assert.equal(gateWatch.parsePresentationIndex(JSON.stringify({ ...indexObject(), replyLines: 'x' })), null);
+  assert.equal(gateWatch.parsePresentationIndex(JSON.stringify({ ...indexObject(), digest: 'sha256:short' })), null);
+  // Admission is deliberately SHAPE-only: an unregistered APPROVE_* name still
+  // parses here and is dropped downstream (no campaign category, no card
+  // match) — the registered-gate truth stays with the producer's validator.
+  const unregistered = gateWatch.parsePresentationIndex(JSON.stringify({ ...indexObject(), gate: 'APPROVE_TYPO' }));
+  assert.equal(unregistered.gate, 'APPROVE_TYPO');
+  const document = gateWatch.parsePresentationIndex(JSON.stringify(indexObject({ gate: 'APPROVE_DOCUMENT', digest: null, replyLines: [`APPROVE_DOCUMENT u1 ${WRITES_DIGEST}`] })));
+  assert.equal(document.digest, null, 'DOCUMENT gate legitimately carries digest=null');
+});
+
+test('latestIndexEntryFrom: mtime newest wins; atomic-write tmp siblings never qualify', () => {
+  const entries = [
+    { name: '20261020-010000-APPROVE_WRITES.index.json', mtimeMs: 1000 },
+    { name: '20261021-010000-APPROVE_WRITES.index.json', mtimeMs: 2000 },
+    { name: '20261022-010000-APPROVE_WRITES.index.json.tmp-4242-1760000000000', mtimeMs: 9000 },
+    { name: '20261019-010000-APPROVE_WRITES.html', mtimeMs: 9500 },
+  ];
+  assert.equal(gateWatch.latestIndexEntryFrom(entries).name, '20261021-010000-APPROVE_WRITES.index.json');
+  assert.equal(gateWatch.latestIndexEntryFrom([]), null);
+  assert.equal(gateWatch.latestIndexEntryFrom(null), null);
+});
+
+test('readLatestPresentationIndex: newest index wins, tmp sibling ignored, absent dir → null', () => {
+  const { root } = presentationFixture();
+  writeIndexFile({ root, stamp: '20261020-010000', index: indexObject({ gate: 'APPROVE_WRITES' }), mtimeMs: 1_000_000 });
+  writeIndexFile({
+    root, stamp: '20261021-010000', mtimeMs: 2_000_000,
+    index: indexObject({ gate: 'APPROVE_DOCUMENT', digest: null, replyLines: [`APPROVE_DOCUMENT u1 ${WRITES_DIGEST}`] }),
+  });
+  // atomic-write leftover: newer mtime, must be ignored
+  const sessionDir = nodePath.join(root, PRES_OUT_DIR, gateWatch.presentationSessionKey(PRESENT_SESSION));
+  const tmpSibling = nodePath.join(sessionDir, '20261022-010000-APPROVE_DOCUMENT.index.json.tmp-99-1');
+  fs.writeFileSync(tmpSibling, '{"garbage":true}');
+  fs.utimesSync(tmpSibling, new Date(3_000_000), new Date(3_000_000));
+
+  const read = gateWatch.readLatestPresentationIndex(root, PRESENT_SESSION);
+  assert.equal(read.parsed.gate, 'APPROVE_DOCUMENT');
+  assert.match(read.path, /20261021-010000-APPROVE_DOCUMENT\.index\.json$/);
+  assert.ok(read.path.startsWith(`${PRES_OUT_DIR}/`), 'index path is repo-relative');
+
+  assert.equal(gateWatch.readLatestPresentationIndex(root, 'tmp/other/session.json'), null);
+  assert.equal(gateWatch.readLatestPresentationIndex(nodePath.join(root, 'nowhere'), PRESENT_SESSION), null);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('attachPresentationToCard: index-backed attach stamps gatePresentationIndex + UI view', () => {
+  const { root } = presentationFixture();
+  const index = indexObject({
+    units: [{ reviewUnitId: 'review:u1', label: 'u1', journal: null, journalDigest: null, unitBatchDigest: null, links: ['https://example.com/docx/A'] }],
+  });
+  writeIndexFile({ root, stamp: '20261020-010000', index, mtimeMs: 1_000_000 });
+
+  const card = {
+    sessionPath: PRESENT_SESSION,
+    sessionKey: `main::${PRESENT_SESSION}`,
+    language: 'node',
+    nextGate: { gate: 'APPROVE_WRITE' }, // machine vocabulary
+  };
+  const lkg = new Map();
+  gateWatch.attachPresentationToCard(card, { repoRoot: root, lkg, now: 5_000_000 });
+  assert.equal(card.gatePresentationIndex.path.includes('20261020-010000-APPROVE_WRITES.index.json'), true);
+  assert.equal(card.gatePresentationIndex.parsed.digest, WRITES_DIGEST);
+  assert.equal(card.gatePresentation.digest, WRITES_DIGEST, 'UI view carries the digest as before');
+  assert.deepEqual(card.gatePresentation.links, [{ unitId: 'review:u1', url: 'https://example.com/docx/A' }]);
+  assert.equal(typeof card.gatePresentation.generatedAt, 'string');
+
+  // Mismatch (another session) drops the attachment entirely.
+  const other = { sessionPath: 'tmp/sdk-doc-sync-runs/other/review-session.json', nextGate: { gate: 'APPROVE_WRITE' } };
+  gateWatch.attachPresentationToCard(other, { repoRoot: root, lkg, now: 5_000_000 });
+  assert.equal(other.gatePresentation, null);
+  assert.equal(other.gatePresentationIndex, null);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('attachPresentationToCard: legacy latest.html fallback and grace window survive slice B', () => {
+  // Separate fixture roots: a PARSEABLE latest.html that mismatches short-
+  // circuits without the LKG (old semantics kept), so the grace-window case
+  // needs a root where both reads blip.
+  const legacy = presentationFixture();
+  fs.mkdirSync(nodePath.join(legacy.root, PRES_OUT_DIR), { recursive: true });
+  fs.writeFileSync(nodePath.join(legacy.root, PRES_OUT_DIR, 'latest.html'), [
+    '<html><body>',
+    '<h1>APPROVE_DOCUMENT — gate materials</h1>',
+    `<p>bound digest: <code>${WRITES_DIGEST}</code></p>`,
+    `<p>session: <code>${PRESENT_SESSION}</code></p>`,
+    '<p>generated: 2026-10-12T13:46:15.441Z</p>',
+    '</body></html>',
+  ].join('\n'));
+
+  const card = { sessionPath: PRESENT_SESSION, nextGate: { gate: 'APPROVE_DOCUMENT' } };
+  gateWatch.attachPresentationToCard(card, { repoRoot: legacy.root, lkg: new Map(), now: 1_000 });
+  assert.equal(card.gatePresentation.gate, 'APPROVE_DOCUMENT', 'legacy HTML still attaches');
+  assert.equal(card.gatePresentationIndex, null, 'legacy attach binds nothing to an index');
+
+  const mismatched = { sessionPath: PRESENT_SESSION, nextGate: { gate: 'APPROVE_WRITE' } };
+  gateWatch.attachPresentationToCard(mismatched, { repoRoot: legacy.root, lkg: new Map(), now: 1_000 });
+  assert.equal(mismatched.gatePresentation, null, 'fresh-but-mismatched parse drops without LKG');
+
+  const blipRoot = presentationFixture();
+  const lkg = new Map();
+  const parsedIndex = indexObject();
+  lkg.set(PRESENT_SESSION, { kind: 'index', path: `${PRES_OUT_DIR}/k/20261020-010000-APPROVE_WRITES.index.json`, parsed: parsedIndex, at: 900 });
+  const blip = { sessionPath: PRESENT_SESSION, nextGate: { gate: 'APPROVE_WRITE' } };
+  gateWatch.attachPresentationToCard(blip, { repoRoot: blipRoot.root, lkg, now: 60_000 });
+  assert.equal(blip.gatePresentationIndex.parsed, parsedIndex);
+  assert.equal(blip.gatePresentation.digest, WRITES_DIGEST);
+
+  const expired = { sessionPath: PRESENT_SESSION, nextGate: { gate: 'APPROVE_WRITE' } };
+  gateWatch.attachPresentationToCard(expired, { repoRoot: blipRoot.root, lkg, now: 61_001 + 60_000 });
+  assert.equal(expired.gatePresentation, null, 'grace window closes');
+  fs.rmSync(legacy.root, { recursive: true, force: true });
+  fs.rmSync(blipRoot.root, { recursive: true, force: true });
+});
+
+// ---------- relay v2 slice B: campaign-gate events ----------
+
+function campaignCardFixture(overrides = {}) {
+  return {
+    sessionKey: `main::${PRESENT_SESSION}`,
+    sessionPath: PRESENT_SESSION,
+    language: 'node', track: 'v3.0.x', checkoutLabel: '主检出',
+    health: 'active', updatedAt: '2026-10-20T00:00:00.000Z',
+    nextGate: { gate: 'APPROVE_WRITE' },
+    workers: [{ sessionId: 'sess_board', status: 'idle' }],
+    ...overrides,
+  };
+}
+
+const INDEX_ID = `${PRES_OUT_DIR}/tmp-sdk-doc-sync-runs-node-v30-review-session.json/20261020-010000-APPROVE_WRITES.index.json`;
+
+test('deriveEvents: index-backed write gate emits a relay-actionable 写门 event', () => {
+  const payload = basePayload();
+  payload.campaigns = [campaignCardFixture({
+    gatePresentationIndex: { path: INDEX_ID, parsed: indexObject() },
+  })];
+  const events = gateWatch.deriveEvents({ payload, dispatchLines: [], now: new Date('2026-10-20T01:10:00.000Z') });
+  const rich = events.filter((event) => event.category === '写门');
+  assert.equal(rich.length, 1, 'rich event replaces the generic 战役门 echo');
+  assert.equal(events.some((event) => event.category === '战役门'), false);
+  assert.deepEqual(rich[0], {
+    key: 'gate:main::tmp/sdk-doc-sync-runs/node-v30/review-session.json:APPROVE_WRITES',
+    category: '写门',
+    line: 'node v3.0.x（主检出） 停在 APPROVE_WRITES——回复本通知发送「批准」即可批准本门',
+    since: '2026-10-20T01:00:00.000Z',
+    sessionPath: PRESENT_SESSION,
+    sessionKey: `main::${PRESENT_SESSION}`,
+    gate: 'APPROVE_WRITES',
+    reviewUnitId: null,
+    replyLine: WRITES_LINE,
+    digest: WRITES_DIGEST,
+    indexId: INDEX_ID,
+    language: 'node',
+    sessionId: 'sess_board',
+  });
+});
+
+test('deriveEvents: multi-unit acceptance gate emits one event per unit (single-meaning replies)', () => {
+  const payload = basePayload();
+  const u1 = `APPROVE_DOCUMENT review:node:u1 sha256:${'2'.repeat(64)}`;
+  const u2 = `APPROVE_DOCUMENT review:node:u2 sha256:${'3'.repeat(64)}`;
+  payload.campaigns = [campaignCardFixture({
+    nextGate: { gate: 'APPROVE_DOCUMENT' },
+    workers: [{ sessionId: 'sess_board', status: 'idle' }, { sessionId: 'sess_second', status: 'idle' }],
+    gatePresentationIndex: {
+      path: INDEX_ID,
+      parsed: indexObject({ gate: 'APPROVE_DOCUMENT', digest: null, replyLines: [u1, u2] }),
+    },
+  })];
+  const events = gateWatch.deriveEvents({ payload, dispatchLines: [] });
+  const acceptance = events.filter((event) => event.category === '验收门');
+  assert.equal(acceptance.length, 2);
+  assert.ok(acceptance.every((event) => event.key.includes('review:node:')), 'unit id rides the key');
+  assert.deepEqual(acceptance.map((event) => event.replyLine), [u1, u2]);
+  assert.equal(acceptance[0].sessionId, null, 'two idle workers → no ambiguous session binding');
+  assert.match(acceptance[0].line, /（review:node:u1）/);
+  assert.match(acceptance[0].line, /批准该单元/);
+});
+
+test('deriveEvents: running worker keeps the legacy generic 战役门 echo (no actionable event)', () => {
+  const payload = basePayload();
+  payload.campaigns = [campaignCardFixture({
+    workers: [{ sessionId: 'sess_board', status: 'running' }],
+    gatePresentationIndex: { path: INDEX_ID, parsed: indexObject() },
+  })];
+  const events = gateWatch.deriveEvents({ payload, dispatchLines: [] });
+  assert.equal(events.filter((event) => event.category === '写门').length, 0);
+  const generic = events.find((event) => event.category === '战役门');
+  assert.ok(generic, 'generic echo still surfaces');
+  assert.match(generic.line, /worker 执行中/);
+  assert.equal(generic.replyLine, undefined, 'generic events bind no reply line');
+});
+
+test('deriveEvents: merged campaign gate rides 战役门 as an actionable rich event; unindexed card stays generic', () => {
+  const payload = basePayload();
+  payload.campaigns = [
+    campaignCardFixture({
+      sessionPath: 'tmp/sdk-doc-sync-runs/camp/review-session.json',
+      sessionKey: 'main::tmp/sdk-doc-sync-runs/camp/review-session.json',
+      nextGate: { gate: 'APPROVE_CAMPAIGN' },
+      gatePresentationIndex: {
+        path: `${PRES_OUT_DIR}/camp/x.index.json`,
+        parsed: indexObject({ gate: 'APPROVE_CAMPAIGN', digest: WRITES_DIGEST, sessionPath: 'tmp/sdk-doc-sync-runs/camp/review-session.json' }),
+      },
+    }),
+    campaignCardFixture({ gatePresentationIndex: null }),
+  ];
+  const events = gateWatch.deriveEvents({ payload, dispatchLines: [] });
+  const campaign = events.find((event) => event.category === '战役门' && event.replyLine);
+  assert.ok(campaign, 'APPROVE_CAMPAIGN is the namesake category, now with a binding');
+  assert.equal(campaign.gate, 'APPROVE_CAMPAIGN');
+  assert.equal(campaign.replyLine, `APPROVE_CAMPAIGN ${WRITES_DIGEST}`);
+  const generic = events.find((event) => event.category === '战役门' && !event.replyLine);
+  assert.ok(generic, 'card without an index keeps the generic board-pointer event');
+});
+
+test('formatMessage: rich events render plain text — no digest, no link, category shown', () => {
+  const text = gateWatch.formatMessage([
+    { key: 'k', category: '写门', line: 'node v3.0.x（主检出） 停在 APPROVE_WRITES——回复本通知发送「批准」即可批准本门', dwellMs: null, escalated: false },
+  ], { generatedAt: '2026-10-20T01:00:00.000Z' });
+  assert.match(text, /【写门】/);
+  assert.ok(!/sha256:/.test(text), 'digest stays out of the message body');
+  assert.ok(!/https?:\/\//.test(text));
+});
+
+// ---------- notify-relay v2: campaign-gate approve/reject ----------
+
+const CAMPAIGN_EVENT = {
+  key: 'gate:main::tmp/sdk-doc-sync-runs/node-v30/review-session.json:APPROVE_WRITES',
+  category: '写门',
+  sessionPath: PRESENT_SESSION,
+  sessionKey: `main::${PRESENT_SESSION}`,
+  gate: 'APPROVE_WRITES',
+  reviewUnitId: null,
+  replyLine: WRITES_LINE,
+  digest: WRITES_DIGEST,
+  indexId: INDEX_ID,
+  language: 'node',
+  sessionId: 'sess_board',
+};
+
+const CAMPAIGN_ENTRY = JSON.stringify({
+  v: 1, kind: 'sent', messageId: 'om_campaign', sentAt: '2026-10-20T01:05:00.000Z',
+  events: [CAMPAIGN_EVENT],
+});
+
+const CAMPAIGN_PAYLOAD = { campaigns: [campaignCardFixture()] };
+const indexReRead = () => indexObject();
+
+test('parseCommand/parseRejectCommand: 打回|reject|拒绝 prefix grammar, remainder verbatim', () => {
+  assert.equal(relay.parseCommand('打回 重新规划'), 'reject');
+  assert.equal(relay.parseCommand('reject replan'), 'reject');
+  assert.equal(relay.parseCommand('拒绝 这个批次'), 'reject');
+  assert.equal(relay.parseCommand('打回'), 'unknown', 'bare prefix is not a command');
+  assert.equal(relay.parseCommand('打回   '), 'unknown', 'whitespace-only remainder is not a reason');
+  assert.deepEqual(relay.parseRejectCommand('打回 重新规划，注意 digest 对不上'), { reason: '重新规划，注意 digest 对不上' });
+  assert.deepEqual(relay.parseRejectCommand('reject line one\nline two'), { reason: 'line one\nline two' }, 'multiline reasons are legitimate');
+  assert.equal(relay.parseRejectCommand('批准'), null);
+});
+
+test('helpText: documents the new gate classes, reject syntax, and per-unit notifications', () => {
+  const help = relay.helpText();
+  assert.match(help, /打回 <原因>/);
+  assert.match(help, /写门\/验收门\/战役门/);
+  assert.match(help, /每单元一条通知/);
+  assert.ok(!/不经消息通道/.test(help), 'the v1 "board-only" clause is gone');
+});
+
+test('planCampaignApprove: happy path re-reads the index and takes the line FROM it', () => {
+  const plan = relay.planCampaignApprove({ event: CAMPAIGN_EVENT, payload: CAMPAIGN_PAYLOAD, presentationIndexOf: indexReRead });
+  assert.equal(plan.ok, true);
+  assert.equal(plan.kind, 'campaign');
+  assert.equal(plan.line, WRITES_LINE, 'the injected line is the re-read index member');
+  assert.equal(plan.sessionId, 'sess_board', 'event-carried session binding wins');
+  assert.equal(plan.digest, WRITES_DIGEST);
+  assert.equal(plan.indexId, INDEX_ID);
+  assert.match(plan.reply, /已受理/);
+});
+
+test('planCampaignApprove: stale index (digest moved) refuses and invalidates the doorbell key', () => {
+  const plan = relay.planCampaignApprove({
+    event: CAMPAIGN_EVENT, payload: CAMPAIGN_PAYLOAD,
+    presentationIndexOf: () => indexObject({ digest: `sha256:${'9'.repeat(64)}` }),
+  });
+  assert.equal(plan.ok, false);
+  assert.equal(plan.code, 'STALE_PRESENTATION');
+  assert.equal(plan.invalidateKey, CAMPAIGN_EVENT.key);
+  assert.match(plan.reply, /已变化/);
+
+  const lineMoved = relay.planCampaignApprove({
+    event: CAMPAIGN_EVENT, payload: CAMPAIGN_PAYLOAD,
+    presentationIndexOf: () => indexObject({ replyLines: [`APPROVE_WRITES ${'8'.repeat(64)}`] }),
+  });
+  assert.equal(lineMoved.code, 'STALE_PRESENTATION', 'a changed reply line is equally stale');
+
+  const rebound = relay.planCampaignApprove({
+    event: CAMPAIGN_EVENT, payload: CAMPAIGN_PAYLOAD,
+    presentationIndexOf: () => indexObject({ sessionPath: 'tmp/other/session.json' }),
+  });
+  assert.equal(rebound.code, 'STALE_PRESENTATION', 'a re-bound session is stale too');
+});
+
+test('planCampaignApprove: unreadable/absent index and missing binding point to the board', () => {
+  const unreadable = relay.planCampaignApprove({ event: CAMPAIGN_EVENT, payload: CAMPAIGN_PAYLOAD, presentationIndexOf: () => null });
+  assert.equal(unreadable.code, 'ARTIFACT_UNREADABLE');
+  assert.match(unreadable.reply, /看板/);
+
+  const noReader = relay.planCampaignApprove({ event: CAMPAIGN_EVENT, payload: CAMPAIGN_PAYLOAD, presentationIndexOf: undefined });
+  assert.equal(noReader.code, 'ARTIFACT_UNREADABLE');
+});
+
+test('planCampaignApprove: worker resolution — event binding, single-idle fallback, refusal', () => {
+  // no event sessionId → exactly-one idle worker on the card
+  const fallback = relay.planCampaignApprove({
+    event: { ...CAMPAIGN_EVENT, sessionId: undefined },
+    payload: CAMPAIGN_PAYLOAD,
+    presentationIndexOf: indexReRead,
+  });
+  assert.equal(fallback.sessionId, 'sess_board');
+
+  // two idle workers and no event binding → refuse to guess
+  const ambiguousPayload = { campaigns: [campaignCardFixture({
+    workers: [{ sessionId: 'sess_a', status: 'idle' }, { sessionId: 'sess_b', status: 'idle' }],
+  })] };
+  const ambiguous = relay.planCampaignApprove({
+    event: { ...CAMPAIGN_EVENT, sessionId: undefined },
+    payload: ambiguousPayload,
+    presentationIndexOf: indexReRead,
+  });
+  assert.equal(ambiguous.ok, false);
+  assert.equal(ambiguous.code, 'NO_WORKER_SESSION');
+  assert.match(ambiguous.reply, /看板/);
+
+  // card vanished from the payload but the event carries its binding → still resolvable
+  const cardless = relay.planCampaignApprove({ event: CAMPAIGN_EVENT, payload: { campaigns: [] }, presentationIndexOf: indexReRead });
+  assert.equal(cardless.sessionId, 'sess_board');
+});
+
+test('planCampaignApprove: multi-unit acceptance approve is single-meaning per event', () => {
+  const u1Line = `APPROVE_DOCUMENT review:node:u1 sha256:${'2'.repeat(64)}`;
+  const documentEvent = {
+    ...CAMPAIGN_EVENT,
+    category: '验收门',
+    gate: 'APPROVE_DOCUMENT',
+    digest: null,
+    reviewUnitId: 'review:node:u1',
+    replyLine: u1Line,
+  };
+  const plan = relay.planCampaignApprove({
+    event: documentEvent,
+    payload: CAMPAIGN_PAYLOAD,
+    presentationIndexOf: () => indexObject({
+      gate: 'APPROVE_DOCUMENT', digest: null,
+      replyLines: [u1Line, `APPROVE_DOCUMENT review:node:u2 sha256:${'3'.repeat(64)}`],
+    }),
+  });
+  assert.equal(plan.ok, true);
+  assert.equal(plan.line, u1Line, 'only the referenced unit line is injected');
+
+  const u2Line = `APPROVE_DOCUMENT review:node:u2 sha256:${'3'.repeat(64)}`;
+  const crossUnit = relay.planCampaignApprove({
+    event: { ...documentEvent, reviewUnitId: 'review:node:u2', replyLine: u2Line },
+    payload: CAMPAIGN_PAYLOAD,
+    presentationIndexOf: () => indexObject({
+      gate: 'APPROVE_DOCUMENT', digest: null,
+      replyLines: [u1Line, u2Line],
+    }),
+  });
+  assert.equal(crossUnit.ok, true, 'the u2 event resolves against the same index');
+  assert.equal(crossUnit.line, u2Line);
+
+  // A u1-bound event can never inject the u2 line: the replyLine and the unit
+  // binding must agree (single meaning per reply).
+  const mismatchedUnit = relay.planCampaignApprove({
+    event: { ...documentEvent, replyLine: u2Line },
+    payload: CAMPAIGN_PAYLOAD,
+    presentationIndexOf: () => indexObject({ gate: 'APPROVE_DOCUMENT', digest: null, replyLines: [u1Line, u2Line] }),
+  });
+  assert.equal(mismatchedUnit.ok, false);
+  assert.equal(mismatchedUnit.code, 'STALE_PRESENTATION');
+});
+
+test('planCampaignReject: write gate → write mode; acceptance event → comments mode with its unit', () => {
+  const write = relay.planCampaignReject({ event: CAMPAIGN_EVENT, payload: CAMPAIGN_PAYLOAD, reason: '批次范围错了，重排' });
+  assert.equal(write.ok, true);
+  assert.equal(write.mode, 'write');
+  assert.equal(write.unitId, null);
+  assert.equal(write.sessionId, 'sess_board');
+  assert.equal(write.reason, '批次范围错了，重排');
+  assert.match(write.reply, /已受理/);
+
+  const acceptance = relay.planCampaignReject({
+    event: { ...CAMPAIGN_EVENT, category: '验收门', gate: 'APPROVE_DOCUMENT', digest: null, reviewUnitId: 'review:node:u1', replyLine: `APPROVE_DOCUMENT review:node:u1 sha256:${'2'.repeat(64)}` },
+    payload: CAMPAIGN_PAYLOAD,
+    reason: '第二段评论没吸收',
+  });
+  assert.equal(acceptance.mode, 'comments');
+  assert.equal(acceptance.unitId, 'review:node:u1');
+});
+
+test('planCampaignReject: unsupported category, empty/overlong reason', () => {
+  const rollback = relay.planCampaignReject({ event: { ...CAMPAIGN_EVENT, category: '战役门' }, payload: CAMPAIGN_PAYLOAD, reason: 'x' });
+  assert.equal(rollback.ok, false);
+  assert.equal(rollback.code, 'REJECT_UNSUPPORTED');
+  assert.match(rollback.reply, /到任务看板/);
+
+  const overlong = relay.planCampaignReject({ event: CAMPAIGN_EVENT, payload: CAMPAIGN_PAYLOAD, reason: 'x'.repeat(2001) });
+  assert.equal(overlong.code, 'REASON_INVALID');
+  assert.match(overlong.reply, /上限 2000 字符/);
+});
+
+test('handleIncoming: campaign approve and reject produce the v2 action shapes; grouping stays v1', () => {
+  const deps = {
+    operatorOpenId: OPERATOR,
+    outboxLines: [CAMPAIGN_ENTRY, GROUPING_ENTRY],
+    payload: { ...CAMPAIGN_PAYLOAD, intakes: relayPayload().intakes },
+    dispatchLines: NODE_DISPATCH_LINES,
+    manifestDigestOf: DIGEST_STUB,
+    presentationIndexOf: indexReRead,
+    formatStatus: () => ({ text: 'S', events: [] }),
+  };
+
+  const approve = relay.handleIncoming({ ...deps, incoming: incomingMessage({ rootId: 'om_campaign' }) });
+  assert.equal(approve.action.type, 'resume-campaign');
+  assert.equal(approve.action.sessionId, 'sess_board');
+  assert.equal(approve.action.line, WRITES_LINE);
+  assert.equal(approve.action.indexId, INDEX_ID);
+  assert.equal(approve.action.digest, WRITES_DIGEST);
+  assert.equal(approve.action.outboxMessageId, 'om_campaign');
+  assert.match(approve.reply, /已受理/);
+
+  const reject = relay.handleIncoming({ ...deps, incoming: incomingMessage({ rootId: 'om_campaign', text: '打回 批次范围错了' }) });
+  assert.equal(reject.action.type, 'reject-campaign');
+  assert.equal(reject.action.reason, '批次范围错了');
+  assert.equal(reject.action.mode, 'write');
+  assert.equal(reject.action.sessionKey, CAMPAIGN_EVENT.sessionKey);
+  assert.equal(reject.action.outboxMessageId, 'om_campaign');
+
+  // v1 grouping path untouched: same entry set, grouping message still resolves.
+  const grouping = relay.handleIncoming({ ...deps, incoming: incomingMessage({ rootId: 'om_notice' }) });
+  assert.equal(grouping.action.type, 'resume');
+  assert.equal(grouping.action.line, `APPROVE_GROUPING sha256:${'a'.repeat(64)}`);
+});
+
+test('handleIncoming: legacy generic 战役门 event keeps the board pointer (code pinned)', () => {
+  const legacyEntry = JSON.stringify({
+    v: 1, kind: 'sent', messageId: 'om_generic', sentAt: '2026-10-20T01:05:00.000Z',
+    events: [{ key: 'gate:main::x:APPROVE_ROLLBACK', category: '战役门' }],
+  });
+  const decision = relay.handleIncoming({
+    operatorOpenId: OPERATOR,
+    outboxLines: [legacyEntry],
+    payload: CAMPAIGN_PAYLOAD,
+    dispatchLines: [],
+    manifestDigestOf: DIGEST_STUB,
+    presentationIndexOf: indexReRead,
+    incoming: incomingMessage({ rootId: 'om_generic' }),
+  });
+  assert.match(decision.reply, /看板/);
+  const plan = relay.planApprove({ entry: JSON.parse(legacyEntry), payload: CAMPAIGN_PAYLOAD, dispatchLines: [] });
+  assert.equal(plan.code, 'NOT_SINGLE_GROUPING', 'the pinned v1 refusal code stands for unbindable messages');
+
+  const multi = relay.handleIncoming({
+    operatorOpenId: OPERATOR,
+    outboxLines: [JSON.stringify({
+      v: 1, kind: 'sent', messageId: 'om_multi', sentAt: '2026-10-20T01:05:00.000Z',
+      events: [CAMPAIGN_EVENT, { key: 'sentinel:cpp:stale', category: '哨兵停摆' }],
+    })],
+    payload: CAMPAIGN_PAYLOAD,
+    dispatchLines: [],
+    manifestDigestOf: DIGEST_STUB,
+    presentationIndexOf: indexReRead,
+    incoming: incomingMessage({ rootId: 'om_multi' }),
+  });
+  assert.match(multi.reply, /多项事件/);
+  assert.equal(multi.action, null);
+});

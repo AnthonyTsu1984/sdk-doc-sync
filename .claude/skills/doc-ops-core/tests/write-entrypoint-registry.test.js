@@ -95,7 +95,14 @@ test('tracked entrypoint registry covers the complete frozen inventory with hone
   //     discovery only — writes the local daily report, scout artifacts and
   //     the findings ledger under tmp/, never advances scan-state nor writes
   //     Feishu/Bitable), 110→111.
-  assert.equal(discovered.length, 111);
+  //   - +2 read-only canonical gate-presentation producers (relay v2 slices A/B
+  //     2026-10-24: scripts/gate-presentation.js + gate-presentation-check.js —
+  //     re-introduced on purpose. The 10-23 retirement removed the dwf-era
+  //     orphans, but bin/sdk-review-session.js's recipe line still references
+  //     the script and the reply-to-approve trust chain needs a per-session
+  //     index.json artifact whose digests arrive only from canonical inputs;
+  //     both write only local presentation artifacts under tmp/), 111→113.
+  assert.equal(discovered.length, 113);
   assert.deepEqual(result, { valid: true, errors: [] });
   const canonical = registry.entries.find((entry) => entry.path.endsWith('/sdk-doc-sync.js'));
   assert.equal(canonical.classification, 'canonical-governed');

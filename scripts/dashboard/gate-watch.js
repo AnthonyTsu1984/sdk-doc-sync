@@ -11,6 +11,22 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ROLLBACK_MANIFESTS_RELATIVE_DIR = 'tmp/api-reference-sync/rollback-manifests';
+// Canonical gate-presentation output root (relay v2 slice A producer): the
+// per-session index.json files live under <root>/<sessionKey>/, the board
+// mirrors under <root>/latest.html + latest-index.json.
+const GATE_PRESENTATION_RELATIVE_DIR = 'tmp/api-reference-sync/gate-presentation';
+
+// Relay-actionable category per gate (line vocabulary). 写门/验收门/战役门 are
+// the slice-B p2p-approvable channels; rollback rides the campaign channel
+// (existing ruling — the session machine's APPROVE_ROLLBACK has always
+// surfaced there), and the merged campaign gate is the category's namesake.
+const GATE_CATEGORY_BY_LINE_GATE = Object.freeze({
+  APPROVE_WRITES: '写门',
+  APPROVE_DOCUMENT: '验收门',
+  APPROVE_ACCEPTANCE: '验收门',
+  APPROVE_ROLLBACK: '战役门',
+  APPROVE_CAMPAIGN: '战役门',
+});
 
 // 2026-10-01 two-gate ruling: rotate conversations at 42% context usage. For
 // headless workers the board approximates context with the latest turn's
@@ -115,6 +131,171 @@ function presentationMatchesCard(parsed, card) {
   return parsed.sessionPath === card.sessionPath;
 }
 
+// ---------- presentation index.json (relay v2 slice B consumption) ----------
+//
+// The producer (.claude/skills/api-reference-sync/.../gate-presentation.js)
+// writes `<sessionKey>/<YYYYMMDD-HHMMSS>-<gate>.index.json` machine truth next
+// to each human card. The index REPLACES scraped HTML as the approval binding:
+// its replyLines are the only lines a consumer may act on, and its digest is
+// carried (never computed). Shape checks here are consumer-side admission
+// only — the producer's own validator (gate-presentation-check.js) is the
+// re-derivation authority.
+
+// Mirror of the producer's sessionKeyOf (gate-presentation.js): injective,
+// filesystem-safe — two sessions can never share an output directory.
+function presentationSessionKey(sessionPath) {
+  if (typeof sessionPath !== 'string' || sessionPath.trim() === '') return null;
+  return sessionPath.split(path.sep).join('/').replace(/[^A-Za-z0-9._-]/g, '-');
+}
+
+// Consumer-side admission: an index that does not carry gate + session +
+// string replyLines (and a null-or-sha256 digest) is not a binding surface.
+function parsePresentationIndex(raw) {
+  if (typeof raw !== 'string') return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  if (typeof parsed.gate !== 'string' || !/^APPROVE_[A-Z_]+$/.test(parsed.gate)) return null;
+  if (typeof parsed.sessionPath !== 'string' || parsed.sessionPath.trim() === '') return null;
+  if (!Array.isArray(parsed.replyLines) || parsed.replyLines.some((line) => typeof line !== 'string' || line === '')) return null;
+  if (parsed.digest !== null && parsed.digest !== undefined
+    && (typeof parsed.digest !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(parsed.digest))) return null;
+  return parsed;
+}
+
+// Newest *.index.json by mtime. Atomic-write tmp siblings are named
+// `<stem>.index.json.tmp-<pid>-<ms>` — they never END with `.index.json`, and
+// the explicit `.tmp-` guard keeps that contract obvious.
+function latestIndexEntryFrom(entries) {
+  let best = null;
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (!entry || typeof entry.name !== 'string') continue;
+    if (!entry.name.endsWith('.index.json')) continue;
+    if (entry.name.includes('.tmp-')) continue;
+    const mtimeMs = typeof entry.mtimeMs === 'number' ? entry.mtimeMs : 0;
+    if (!best || mtimeMs > best.mtimeMs) best = { name: entry.name, mtimeMs };
+  }
+  return best;
+}
+
+// Read the newest presentation index bound to a session. Returns
+// { path (repo-relative posix), parsed, mtimeMs } or null. IO lives here (the
+// same allowance as pendingRollbackGateFor): the server calls it during card
+// enrichment, tests call it against fixture roots.
+function readLatestPresentationIndex(repoRoot, sessionPath, dir = GATE_PRESENTATION_RELATIVE_DIR) {
+  const key = presentationSessionKey(sessionPath);
+  if (!key || !repoRoot) return null;
+  const sessionDir = path.join(repoRoot, dir, key);
+  let dirents;
+  try {
+    dirents = fs.readdirSync(sessionDir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const entries = [];
+  for (const dirent of dirents) {
+    if (!dirent.isFile()) continue;
+    let mtimeMs = 0;
+    try {
+      mtimeMs = fs.statSync(path.join(sessionDir, dirent.name)).mtimeMs;
+    } catch {
+      mtimeMs = 0;
+    }
+    entries.push({ name: dirent.name, mtimeMs });
+  }
+  const latest = latestIndexEntryFrom(entries);
+  if (!latest) return null;
+  const absolute = path.join(sessionDir, latest.name);
+  let raw = null;
+  try {
+    raw = fs.readFileSync(absolute, 'utf8');
+  } catch {
+    return null;
+  }
+  const parsed = parsePresentationIndex(raw);
+  if (!parsed) return null;
+  const relative = path.relative(repoRoot, absolute).split(path.sep).join('/');
+  return { path: relative, parsed, mtimeMs: latest.mtimeMs };
+}
+
+// UI-compat view of an index: the same shape the legacy HTML scraper produced
+// ({gate, digest, sessionPath, generatedAt, links:[{unitId, url}]}) so the
+// board page keeps rendering links/digest unchanged when the attachment is
+// index-backed.
+function presentationViewFromIndex(index) {
+  if (!index || typeof index !== 'object') return null;
+  const links = [];
+  for (const unit of Array.isArray(index.units) ? index.units : []) {
+    for (const link of Array.isArray(unit?.links) ? unit.links : []) {
+      links.push({ unitId: unit?.reviewUnitId ?? null, url: link });
+    }
+  }
+  return {
+    gate: index.gate,
+    digest: index.digest ?? null,
+    sessionPath: index.sessionPath,
+    generatedAt: typeof index.generatedAt === 'string' ? index.generatedAt : null,
+    links,
+  };
+}
+
+function readFileOrNull(absolutePath) {
+  try {
+    return fs.readFileSync(absolutePath, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+// Attach the current gate's presentation to a campaign card — slice B: the
+// per-session index.json is preferred (it is the approval binding); the
+// legacy latest.html scraper remains the fallback so pre-index artifacts keep
+// attaching. Matching semantics unchanged: gate kind (line vocabulary) +
+// session path must both agree, any mismatch drops the attachment. A parse
+// blip mid-rewrite still rides the last-known-good grace window.
+//
+// `lkg` is the caller-owned Map (card.sessionPath -> {kind, path?, parsed,
+// at}) so the server keeps one LKG store across recomputes.
+function attachPresentationToCard(card, { repoRoot, lkg = new Map(), graceMs = 60_000, now = Date.now(), dir = GATE_PRESENTATION_RELATIVE_DIR } = {}) {
+  card.gatePresentation = null;
+  card.gatePresentationIndex = null;
+  if (!card.nextGate || !card.nextGate.gate || !repoRoot) return card;
+
+  const indexRead = readLatestPresentationIndex(repoRoot, card.sessionPath, dir);
+  if (indexRead && presentationMatchesCard(indexRead.parsed, card)) {
+    lkg.set(card.sessionPath, { kind: 'index', path: indexRead.path, parsed: indexRead.parsed, at: now });
+    card.gatePresentationIndex = { path: indexRead.path, parsed: indexRead.parsed };
+    card.gatePresentation = presentationViewFromIndex(indexRead.parsed);
+    return card;
+  }
+
+  // Legacy fallback: the global latest.html mirror (pre-index producers).
+  const parsed = parseGatePresentation(readFileOrNull(path.join(repoRoot, dir, 'latest.html')));
+  if (parsed) {
+    if (presentationMatchesCard(parsed, card)) {
+      lkg.set(card.sessionPath, { kind: 'html', parsed, at: now });
+      card.gatePresentation = parsed;
+    }
+    return card;
+  }
+
+  // Both reads blipped (mid-rewrite): serve the last known good match briefly.
+  const last = lkg.get(card.sessionPath);
+  if (last && now - last.at < graceMs && presentationMatchesCard(last.parsed, card)) {
+    if (last.kind === 'index') {
+      card.gatePresentationIndex = { path: last.path, parsed: last.parsed };
+      card.gatePresentation = presentationViewFromIndex(last.parsed);
+    } else {
+      card.gatePresentation = last.parsed;
+    }
+  }
+  return card;
+}
+
 // Re-notify a still-pending event at most every 2h (dwell escalation).
 const ESCALATE_AFTER_MS = 2 * 60 * 60 * 1000;
 // Quiet window 22:00–07:59 local: sweeps still record resolve bookkeeping but
@@ -162,6 +343,54 @@ function cardLabel(card) {
 // dwell is measured from (gate presentation, worker dispatch, sentinel last
 // run) — not "when the notifier first noticed", which would understate waits
 // across restarts.
+// Relay-actionable gate events (slice B): when the card carries an attached
+// presentation INDEX (the approval binding) and no worker is running (the
+// worker is parked AT the gate), the gate becomes approvable from the p2p
+// chat — one event per reply line, carrying everything a reply needs to bind
+// WITHOUT trusting message text: the index path, the verbatim replyLine, the
+// carried digest, and (when exactly one idle board worker holds the session)
+// the sessionId binding. Multi-unit acceptance gates emit one event per unit
+// (key contains the reviewUnitId) so a reply binds a single meaning.
+// Cards without an index binding — or with a worker mid-turn — keep the
+// legacy generic 战役门 event (board pointer, no reply binding).
+function presentationGateEvents(card, { sessionKey, running }) {
+  if (running) return [];
+  const attached = card.gatePresentationIndex;
+  const index = attached?.parsed ?? null;
+  const indexPath = attached?.path ?? null;
+  if (!index || !indexPath) return [];
+  if (!presentationMatchesCard(index, card)) return [];
+  const lineGate = GATE_LINE_BY_MACHINE_GATE[card.nextGate.gate] ?? card.nextGate.gate;
+  const category = GATE_CATEGORY_BY_LINE_GATE[lineGate] ?? null;
+  if (!category) return []; // e.g. a stray grouping-gate chip — not a campaign channel gate
+  const lines = Array.isArray(index.replyLines) ? index.replyLines.filter((line) => typeof line === 'string' && line !== '') : [];
+  if (lines.length === 0) return [];
+  const idleWorkers = (card.workers || []).filter((w) => w && w.status === 'idle' && w.sessionId);
+  const boundSessionId = idleWorkers.length === 1 ? idleWorkers[0].sessionId : null;
+  const perUnit = index.gate === 'APPROVE_DOCUMENT';
+  const emitted = perUnit
+    ? lines.map((line) => {
+      const match = /^APPROVE_DOCUMENT (\S+) sha256:/.exec(line);
+      return { line, unitId: match ? match[1] : null };
+    })
+    : [{ line: lines[0], unitId: card.nextGate.reviewUnitId ?? null }];
+  return emitted.map(({ line, unitId }) => ({
+    key: `gate:${sessionKey}:${lineGate}${unitId ? `:${unitId}` : ''}`,
+    category,
+    line: `${cardLabel(card)} 停在 ${lineGate}${unitId ? `（${unitId}）` : ''}——回复本通知发送「批准」即可批准${unitId ? '该单元' : '本门'}`,
+    since: typeof index.generatedAt === 'string' ? index.generatedAt : (card.updatedAt ?? null),
+    sessionPath: card.sessionPath ?? null,
+    sessionKey,
+    gate: lineGate,
+    reviewUnitId: unitId ?? null,
+    replyLine: line,
+    digest: index.digest ?? null,
+    indexId: indexPath,
+    language: card.language ?? null,
+    sessionId: boundSessionId,
+  }));
+}
+
 function campaignEvents(payload, nowMs) {
   const events = [];
   for (const card of payload?.campaigns || []) {
@@ -198,6 +427,11 @@ function campaignEvents(payload, nowMs) {
       // "停在 X" alone reads as "waiting for the operator" and has repeatedly
       // sent the operator to re-approve during execution. Surface the worker.
       const running = (card.workers || []).some((w) => w && w.status === 'running');
+      const rich = presentationGateEvents(card, { sessionKey, running });
+      if (rich.length > 0) {
+        events.push(...rich);
+        continue;
+      }
       events.push({
         key: `gate:${sessionKey}:${gate}`,
         category: '战役门',
@@ -378,14 +612,23 @@ module.exports = {
   LOST_WORKER_MIN_AGE_MS,
   LOST_WORKER_MAX_AGE_MS,
   ROLLBACK_MANIFESTS_RELATIVE_DIR,
+  GATE_PRESENTATION_RELATIVE_DIR,
+  GATE_CATEGORY_BY_LINE_GATE,
   inQuietWindow,
   pendingRollbackGateFor,
   CONTEXT_LIMIT_TOKENS,
   parseGatePresentation,
   GATE_LINE_BY_MACHINE_GATE,
   presentationMatchesCard,
+  presentationSessionKey,
+  parsePresentationIndex,
+  latestIndexEntryFrom,
+  readLatestPresentationIndex,
+  presentationViewFromIndex,
+  attachPresentationToCard,
   CONTEXT_ROTATION_FRACTION,
   workerContextEvents,
+  presentationGateEvents,
   deriveEvents,
   decideSends,
   formatMessage,

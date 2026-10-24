@@ -513,6 +513,20 @@
       "basis": "no external mutation signature found"
     },
     {
+      "path": ".claude/skills/api-reference-sync/scripts/gate-presentation-check.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "gate-presentation-check",
+      "basis": "validator half of the gate-presentation pair (gate-registry consumers): reads a gate presentation index.json, re-derives every reply line through gate-registry.gateReplyLine and prints a typed report; writes nothing"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/gate-presentation.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "gate-presentation",
+      "basis": "canonical gate card producer (relay v2 slice A): reads a dry-run receipt or gate manifest, carries its digest verbatim, and writes the presentation card + index.json + board mirrors under tmp/api-reference-sync/gate-presentation/ (local artifacts only; never writes Feishu/Bitable, never advances scan-state, never computes a digest)"
+    },
+    {
       "path": ".claude/skills/api-reference-sync/scripts/generate-cli-docs.js",
       "skill": "api-reference-sync",
       "classification": "read-only",

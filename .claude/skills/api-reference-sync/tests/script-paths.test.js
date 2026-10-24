@@ -42,6 +42,20 @@ test('daily-scan CLI, kernel and profile paths exist (batch 17)', () => {
   }
 });
 
+test('gate-presentation producer, validator and kernel paths exist (relay v2 slice A)', () => {
+  const skillRoot = path.resolve(__dirname, '..');
+  for (const relative of [
+    'scripts/gate-presentation.js',
+    'scripts/gate-presentation-check.js',
+    'src/sdk-doc-sync/gate-presentation.js',
+    'src/sdk-doc-sync/gate-presentation-check.js',
+    'src/sdk-doc-sync/gate-registry.js',
+    'tests/gate-presentation.test.js',
+  ]) {
+    assert.equal(fs.existsSync(path.join(skillRoot, relative)), true, `Missing gate-presentation path: ${relative}`);
+  }
+});
+
 test('sdk-doc-sync planning helper scripts exist', () => {
   const skillRoot = path.resolve(__dirname, '..');
   for (const script of [
@@ -142,6 +156,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/feishu-block-safety.test.js',
     '.claude/skills/api-reference-sync/tests/feishu-client.test.js',
     '.claude/skills/api-reference-sync/tests/finalize-acceptance-cli.test.js',
+    '.claude/skills/api-reference-sync/tests/gate-presentation.test.js',
     '.claude/skills/api-reference-sync/tests/golden-replay.test.js',
     '.claude/skills/api-reference-sync/tests/grouping-proposal.test.js',
     '.claude/skills/api-reference-sync/tests/identity-reconciliation.test.js',

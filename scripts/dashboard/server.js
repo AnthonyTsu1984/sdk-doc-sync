@@ -24,6 +24,7 @@ const { buildScoutFindings } = require('./scout-findings.js');
 const { buildIntakeBrief, buildTrackIntakeBrief } = require('./intake-brief.js');
 const gateWatch = require('./gate-watch.js');
 const changeRequest = require('./change-request.js');
+const gateDispatch = require('./gate-dispatch.js');
 const relay = require('./notify-relay.js');
 const usage = require('./usage-ledger.js');
 
@@ -188,39 +189,49 @@ function mergeNextGate(payload) {
   return payload;
 }
 
-// Last known good presentation per session — the artifact file is rewritten
-// at every 呈门 and a read landing mid-rewrite sees a truncated page (parse
-// fails). Serving the previous parse for a short grace window keeps the card
-// stable across regeneration blips; a genuine mismatch still drops it.
+// Last known good presentation per session — kept across recomputes; the 60s
+// grace default itself lives in gate-watch.attachPresentationToCard.
 const PRESENTATION_GRACE_MS = 60_000;
 const lastKnownPresentation = new Map();
 
-// Show the operator what the current gate approves: the canonical
-// presentation artifact's link list rides along when its gate kind and
-// session match the card — any mismatch drops it (the digest line stays the
-// only binding). Gate-kind comparison goes through the line vocabulary
-// (APPROVE_WRITE state-machine name ↔ APPROVE_WRITES artifact name).
+// Show the operator what the current gate approves. Slice B: the whole
+// attachment move (per-session index.json preferred, legacy latest.html
+// scraper as fallback, LKG grace window on read blips) lives in
+// gate-watch.attachPresentationToCard; the server keeps the module-level LKG
+// store and the repo root. An index-backed attachment ALSO stamps
+// card.gatePresentationIndex = {path, parsed} — the approval binding the
+// endpoints and the relay hand to gate-dispatch.
 function attachGatePresentation(card) {
-  card.gatePresentation = null;
-  if (!card.nextGate || !card.nextGate.gate) return;
-  let html = null;
+  gateWatch.attachPresentationToCard(card, {
+    repoRoot: REPO_ROOT,
+    lkg: lastKnownPresentation,
+    now: Date.now(),
+  });
+}
+
+// Re-read a presentation index at EXECUTION time (the planner's stale check
+// is only as good as this read being fresh). Path-scoped: only the canonical
+// presentation tree is a binding surface, and the resolved file must stay
+// inside it.
+function readPresentationIndexByPath(relativePath) {
+  if (typeof relativePath !== 'string') return null;
+  const prefix = `${gateWatch.GATE_PRESENTATION_RELATIVE_DIR}/`;
+  if (!relativePath.startsWith(prefix) || relativePath.includes('..')) return null;
+  const absolute = path.resolve(REPO_ROOT, relativePath);
+  if (!absolute.startsWith(path.join(REPO_ROOT, gateWatch.GATE_PRESENTATION_RELATIVE_DIR))) return null;
   try {
-    html = fs.readFileSync(path.join(REPO_ROOT, 'tmp/api-reference-sync/gate-presentation/latest.html'), 'utf8');
+    return gateWatch.parsePresentationIndex(fs.readFileSync(absolute, 'utf8'));
   } catch {
-    // momentarily unreadable — fall through to the grace window below
+    return null;
   }
-  const parsed = html ? gateWatch.parseGatePresentation(html) : null;
-  if (parsed) {
-    if (gateWatch.presentationMatchesCard(parsed, card)) {
-      lastKnownPresentation.set(card.sessionPath, { parsed, at: Date.now() });
-      card.gatePresentation = parsed;
-    }
-    return;
-  }
-  const lkg = lastKnownPresentation.get(card.sessionPath);
-  if (lkg && Date.now() - lkg.at < PRESENTATION_GRACE_MS && gateWatch.presentationMatchesCard(lkg.parsed, card)) {
-    card.gatePresentation = lkg.parsed;
-  }
+}
+
+function campaignKeyOf(card) {
+  return card.sessionKey ?? `main::${card.sessionPath}`;
+}
+
+function checkoutRootForCard(card) {
+  return (checkoutsState.find((c) => c.id === card.checkout) || checkoutsState[0]).root;
 }
 
 // ---------- session spawn (opt-in, one-click headless → desktop surface) ----------
@@ -697,11 +708,10 @@ function lastIntakeDispatch(workerKey) {
 
 // The exact approval grammar the campaign gates accept; L1 still enforces
 // semantics and digest binding downstream — this is shape-only pre-validation.
-const APPROVE_LINE_RE = /^APPROVE_(GROUPING|WRITES|DOCUMENT|ROLLBACK|ACCEPTANCE)(?: [^\s]+)? sha256:[a-f0-9]{64}$/;
-
-function validateApproveLine(line) {
-  return APPROVE_LINE_RE.test(String(line || '').trim());
-}
+// Slice B: the regex and validator moved verbatim into gate-dispatch.js (one
+// truth for the HTTP endpoints and the message relay); re-exported here for
+// the established test/import surface.
+const validateApproveLine = gateDispatch.validateApproveLine;
 
 // ---------- doorbell notifications (batch 14: --notify opt-in) ----------
 //
@@ -896,21 +906,36 @@ function relayStatus() {
   };
 }
 
-// Outbox event records join back to the intake card for digest staleness —
-// one mapper shared by the doorbell sweep and the relay's status snapshots.
+// Outbox event records join back to the bound artifact so a reply can act
+// without trusting message text — one mapper shared by the doorbell sweep and
+// the relay's status snapshots. 分组门 keeps the v1 intake join; slice-B
+// campaign-gate events pass their full binding through verbatim (index path,
+// replyLine, digest, session, unit, bound worker); anything else degrades to
+// the bare {key, category} pointer.
+const CAMPAIGN_EVENT_FIELDS = [
+  'sessionPath', 'sessionKey', 'gate', 'reviewUnitId', 'replyLine',
+  'digest', 'indexId', 'language', 'sessionId', 'line',
+];
+
 function outboxEventsFrom(events) {
   return (Array.isArray(events) ? events : []).map((event) => {
-    if (event.category !== '分组门') return { key: event.key, category: event.category };
-    const card = (currentPayload?.intakes || []).find(
-      (candidate) => `grouping:${candidate.manifestPath}` === event.key,
-    );
-    return {
-      key: event.key,
-      category: event.category,
-      manifestPath: card?.manifestPath ?? null,
-      digest: card?.digest ?? null,
-      language: card?.language ?? null,
-    };
+    if (event.category === '分组门') {
+      const card = (currentPayload?.intakes || []).find(
+        (candidate) => `grouping:${candidate.manifestPath}` === event.key,
+      );
+      return {
+        key: event.key,
+        category: event.category,
+        manifestPath: card?.manifestPath ?? null,
+        digest: card?.digest ?? null,
+        language: card?.language ?? null,
+      };
+    }
+    const record = { key: event.key, category: event.category };
+    for (const field of CAMPAIGN_EVENT_FIELDS) {
+      if (event[field] !== undefined) record[field] = event[field];
+    }
+    return record;
   });
 }
 
@@ -953,6 +978,7 @@ async function handleRelayEvent(data) {
     payload: currentPayload,
     dispatchLines: readIntakeDispatchLines(),
     manifestDigestOf: manifestDigestFromRepo,
+    presentationIndexOf: readPresentationIndexByPath,
     formatStatus: relayStatus,
   });
   if (!decision.reply) return;
@@ -964,6 +990,91 @@ async function handleRelayEvent(data) {
     const { sessionId, workerKey, line, outboxMessageId } = decision.action;
     dispatchResumeTurn({ key: workerKey, sessionId, checkoutRoot: checkoutRootForWorkerKey(workerKey), line });
     appendOutboxRecords([{ v: 1, kind: 'approved', messageId: outboxMessageId, at: new Date().toISOString(), line }]);
+  }
+  if (decision.action?.type === 'resume-campaign') {
+    const { sessionId, line, indexId, digest, eventKey, sessionKey, outboxMessageId } = decision.action;
+    const card = (currentPayload?.campaigns || []).find((candidate) => campaignKeyOf(candidate) === sessionKey) || null;
+    // The relay's plan is advisory UX; THIS is the authoritative gate: re-read
+    // the index, then run the same planner the HTTP approve endpoint runs.
+    const plan = gateDispatch.planCampaignGateDecision({
+      intent: 'approve',
+      card,
+      sessionId,
+      line,
+      presentationIndex: readPresentationIndexByPath(indexId),
+      bindingRequired: true,
+      notifyBinding: { key: eventKey, digest, replyLine: line },
+      checkoutRoot: card ? checkoutRootForCard(card) : null,
+      sessionRecentlyActiveOf: card
+        ? (candidateSessionId) => sessionRecentlyActive(checkoutRootForCard(card), candidateSessionId)
+        : null,
+    });
+    if (plan.ok) {
+      dispatchResumeTurn({
+        key: campaignKeyOf(card),
+        sessionId: plan.action.sessionId,
+        checkoutRoot: plan.action.checkoutRoot,
+        line: plan.action.line,
+      });
+      appendOutboxRecords([{
+        v: 1,
+        kind: 'approved',
+        messageId: outboxMessageId,
+        at: new Date().toISOString(),
+        line,
+        indexId,
+        digest,
+      }]);
+    } else {
+      decision.reply = plan.message;
+      if (plan.invalidateKey) {
+        appendNotifyRecords([{ key: plan.invalidateKey, at: new Date().toISOString(), kind: 'resolve' }]);
+      }
+    }
+  }
+  if (decision.action?.type === 'reject-campaign') {
+    const { sessionId, reason, mode, unitId, sessionKey, outboxMessageId } = decision.action;
+    const card = (currentPayload?.campaigns || []).find((candidate) => campaignKeyOf(candidate) === sessionKey) || null;
+    const plan = gateDispatch.planCampaignGateDecision({
+      intent: 'reject',
+      card,
+      sessionId,
+      reason,
+      rejectMode: mode,
+      targetUnitId: unitId,
+      checkoutRoot: card ? checkoutRootForCard(card) : null,
+      sessionRecentlyActiveOf: card
+        ? (candidateSessionId) => sessionRecentlyActive(checkoutRootForCard(card), candidateSessionId)
+        : null,
+    });
+    if (plan.ok) {
+      const cardKey = campaignKeyOf(card);
+      const stored = workerRegistry.storedWorkerEntry(spawnedWorkers, cardKey, plan.action.sessionId);
+      // Same reject-in-flight semantics as the HTTP rotate path: an injected
+      // REJECT supersedes the on-disk presentation until a newer one lands.
+      if (stored) {
+        stored.directive = { kind: 'reject', mode: plan.action.mode, at: new Date().toISOString() };
+        persistWorkerRegistry();
+      }
+      dispatchResumeTurn({
+        key: cardKey,
+        sessionId: plan.action.sessionId,
+        checkoutRoot: plan.action.checkoutRoot,
+        line: plan.action.prompt,
+      });
+      appendOutboxRecords([{
+        v: 1,
+        kind: 'approved',
+        messageId: outboxMessageId,
+        at: new Date().toISOString(),
+        line: plan.action.prompt,
+      }]);
+    } else {
+      decision.reply = plan.message;
+      if (plan.invalidateKey) {
+        appendNotifyRecords([{ key: plan.invalidateKey, at: new Date().toISOString(), kind: 'resolve' }]);
+      }
+    }
   }
   try {
     const result = await notifyState.notifier.replyText(incoming.messageId, decision.reply);
@@ -1411,48 +1522,46 @@ async function handler(req, res) {
         sendJson(res, 404, { error: `没有战役会话匹配 ${target}` });
         return;
       }
-      if (card.rejectInFlight) {
-        sendJson(res, 409, { error: '该门已打回、新会话重规划中——先等它重呈新写门；对新门再提打回或修改' });
-        return;
-      }
       const cardKey = card.sessionKey ?? `main::${card.sessionPath}`;
-      const worker = (card.workers || []).find((w) => w.sessionId === sessionId);
-      if (!worker) {
-        sendJson(res, 404, { error: '该会话不是看板派出的 worker（修改要求仅注入看板派出的会话）' });
+      const cardRoot = checkoutRootForCard(card);
+      // Guard chain (rejectInFlight → board-worker membership → idle →
+      // sibling → transcript recency) plus prompt composition now live in
+      // gate-dispatch — shared verbatim with the message relay.
+      const plan = gateDispatch.planCampaignGateDecision({
+        intent: 'reject',
+        card,
+        sessionId,
+        rejectMode: isWriteReject ? 'write' : (isCommentsReject ? 'comments' : 'changes'),
+        reason,
+        targetUnitId: unitId ?? null,
+        checkoutRoot: cardRoot,
+        sessionRecentlyActiveOf: (candidateSessionId) => sessionRecentlyActive(cardRoot, candidateSessionId),
+      });
+      if (!plan.ok) {
+        sendJson(res, plan.status, { error: plan.message });
         return;
       }
-      if (worker.status !== 'idle') {
-        sendJson(res, 409, { error: 'worker 正在运行——等它停在门禁后再提修改要求' });
-        return;
-      }
-      if ((card.workers || []).some((w) => w.sessionId !== sessionId && w.status === 'running')) {
-        sendJson(res, 409, { error: '该战役另一个 worker 正在执行——等它停门后再注入（防双写）' });
-        return;
-      }
-      const cardRoot = (checkoutsState.find((c) => c.id === card.checkout) || checkoutsState[0]).root;
-      const busy = sessionRecentlyActive(cardRoot, worker.sessionId);
-      if (busy) {
-        sendJson(res, 409, { error: `该会话 ${Math.round(busy / 1000)} 秒前仍有转录写入——疑似上一回合未结束，稍候再试` });
-        return;
-      }
-      const prompt = isCommentsReject
-        ? changeRequest.composeRejectWithCommentsPrompt({ sessionPath: card.sessionPath, unitId: unitId || null })
-        : isWriteReject
-          ? changeRequest.composeRejectWritePrompt({ sessionPath: card.sessionPath, reason })
-          : changeRequest.composeRequestChangesPrompt({ sessionPath: card.sessionPath, unitId, reason });
       // Same reject-in-flight semantics as the rotate path: an injected
       // REJECT also supersedes the on-disk presentation until a newer one
       // lands. Idle card.workers entries ARE the registry's stored objects,
       // and dispatchResumeTurn's upsert merges without touching the stamp.
       if (isCommentsReject || isWriteReject) {
-        worker.directive = { kind: 'reject', mode: isWriteReject ? 'write' : 'comments', at: new Date().toISOString() };
-        persistWorkerRegistry();
+        const worker = (card.workers || []).find((w) => w.sessionId === sessionId);
+        if (worker) {
+          worker.directive = { kind: 'reject', mode: isWriteReject ? 'write' : 'comments', at: new Date().toISOString() };
+          persistWorkerRegistry();
+        }
       }
-      dispatchResumeTurn({ key: cardKey, sessionId: worker.sessionId, checkoutRoot: cardRoot, line: prompt });
+      dispatchResumeTurn({
+        key: cardKey,
+        sessionId: plan.action.sessionId,
+        checkoutRoot: plan.action.checkoutRoot,
+        line: plan.action.prompt,
+      });
       sendJson(res, 200, {
         ok: true,
         card: cardKey,
-        sessionId: worker.sessionId,
+        sessionId: plan.action.sessionId,
         unitId: unitId ?? null,
         note: isCommentsReject
           ? '打回已注入 worker 会话——它将读取该批文档的飞书评论并转成修改要求落账（评论 API 不可达时会向你索要原文），重建后停在新写门'
@@ -1498,43 +1607,33 @@ async function handler(req, res) {
         sendJson(res, 404, { error: `没有战役会话匹配 ${target}` });
         return;
       }
-      if (card.rejectInFlight) {
-        sendJson(res, 409, { error: '该门已打回、新会话重规划中——旧批准行随打回失效，等新写门呈报后再批' });
-        return;
-      }
       const cardKey = card.sessionKey ?? `main::${card.sessionPath}`;
-      const cardRoot = (checkoutsState.find((c) => c.id === card.checkout) || checkoutsState[0]).root;
-      const worker = (card.workers || []).find((w) => w.sessionId === sessionId);
-      if (!worker) {
-        sendJson(res, 404, { error: '该会话不是看板派出的 worker（界面批准仅限 dashboard 派出的会话）' });
-        return;
-      }
-      if (worker.status !== 'idle') {
-        sendJson(res, 409, { error: 'worker 仍在首轮运行中——等它停在门禁后再批准' });
-        return;
-      }
-      // Sibling guard: several parked workers may be idle while one executes
-      // the just-approved turn — a second injection would put two writers on
-      // the same batch. Refuse while ANY worker of this campaign runs.
-      if ((card.workers || []).some((w) => w.sessionId !== sessionId && w.status === 'running')) {
-        sendJson(res, 409, { error: '该战役另一个 worker 正在执行——等它停门后再注入（防双写）' });
-        return;
-      }
-      const approveBusy = sessionRecentlyActive(
-        (checkoutsState.find((c) => c.id === card.checkout) || checkoutsState[0]).root,
-        worker.sessionId,
-      );
-      if (approveBusy) {
-        sendJson(res, 409, { error: `该会话 ${Math.round(approveBusy / 1000)} 秒前仍有转录写入——疑似上一回合未结束，稍候再试` });
+      const cardRoot = checkoutRootForCard(card);
+      // Guard chain (rejectInFlight → board-worker membership → idle →
+      // sibling → transcript recency) shared verbatim with the message relay
+      // via gate-dispatch. When the card carries an attached presentation
+      // index, the line must additionally be one of its replyLines (slice B
+      // binding — additive: cards without an index keep the shape-only rule).
+      const plan = gateDispatch.planCampaignGateDecision({
+        intent: 'approve',
+        card,
+        sessionId,
+        line,
+        presentationIndex: card.gatePresentationIndex?.parsed ?? null,
+        checkoutRoot: cardRoot,
+        sessionRecentlyActiveOf: (candidateSessionId) => sessionRecentlyActive(cardRoot, candidateSessionId),
+      });
+      if (!plan.ok) {
+        sendJson(res, plan.status, { error: plan.message });
         return;
       }
       // Approve-run boundary: snapshot the worker's usage before the resume
       // dispatch; on exit the delta is attributed to the approved unit.
-      dispatchResumeTurn({ key: cardKey, sessionId: worker.sessionId, checkoutRoot: cardRoot, line });
+      dispatchResumeTurn({ key: cardKey, sessionId: plan.action.sessionId, checkoutRoot: plan.action.checkoutRoot, line });
       sendJson(res, 200, {
         ok: true,
         card: cardKey,
-        sessionId: worker.sessionId,
+        sessionId: plan.action.sessionId,
         note: '批准行已注入 worker 会话（--resume）——它将继续执行到下一门或完成，桌面端可围观',
       });
     });

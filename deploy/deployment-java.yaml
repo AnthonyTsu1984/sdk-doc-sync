@@ -32,6 +32,10 @@ spec:
           env:
             - name: LANGUAGE
               value: java
+            # 停门等人批的宽限：人工门节奏是小时级——900s 会让战役每 ~17 分钟重派
+            # 重推导并重发门铃（2026-10-24 首战 2 小时 22 条刷屏的根因）。6h 无人批才让出。
+            - name: CAMPAIGN_GRACE_SECS
+              value: "21600"
             - name: SDK_REPO
               value: milvus-sdk-java
             - name: TRACKS

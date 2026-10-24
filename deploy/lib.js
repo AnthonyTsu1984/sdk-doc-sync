@@ -32,6 +32,16 @@ function validateApproveLine(line) {
 // 无法插值，必须由 bootstrap 用当时 env 的 LLM_MODEL 值渲染写死。
 const OPENCODE_PROVIDER_KEY = 'custom';
 
+// LLM_BASE_URL 的 openai-compatible 规范化：无路径前缀的网关形如
+// https://token.zasdas.com —— openai-compatible provider 在 baseURL 后拼
+// /chat/completions，裸域名会撞到站点登录页/网关 403（2026-10-24 双 pod 首战
+// 实测：裸 URL 403，加 /v1 后 200 出真补全）。幂等：已带 /v<N> 尾缀的原样返回。
+function normalizeLlmBaseUrl(url) {
+  if (typeof url !== 'string' || url.trim() === '') return url;
+  const trimmed = url.trim().replace(/\/+$/, '');
+  return /\/v\d+$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
+}
+
 function renderOpencodeConfig({ baseUrlEnv = 'LLM_BASE_URL', apiKeyEnv = 'LLM_API_KEY', model } = {}) {
   if (typeof model !== 'string' || model.trim() === '') {
     const error = new Error('renderOpencodeConfig: LLM_MODEL is empty — secret sdk-env 缺键或 envFrom 未生效（fail-loud，不渲染空模型配置）');
@@ -396,6 +406,7 @@ module.exports = {
   extractBacklogEntries,
   extractSessionId,
   notifyGate,
+  normalizeLlmBaseUrl,
   registryTrackKey,
   renderOpencodeConfig,
   trackEnvLine,

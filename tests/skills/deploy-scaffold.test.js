@@ -336,3 +336,13 @@ test('pod-approve.js rejects non-integer slot and bad pod name before spawn', ()
     assert.doesNotMatch(result.stderr, /kubectl exited/);
   }
 });
+
+test('normalizeLlmBaseUrl: bare gateway gains /v1, versioned URL untouched', () => {
+  const { normalizeLlmBaseUrl } = require('../../deploy/lib.js');
+  assert.equal(normalizeLlmBaseUrl('https://token.zasdas.com'), 'https://token.zasdas.com/v1');
+  assert.equal(normalizeLlmBaseUrl('https://token.zasdas.com/'), 'https://token.zasdas.com/v1');
+  assert.equal(normalizeLlmBaseUrl('https://open.bigmodel.cn/api/paas/v4'), 'https://open.bigmodel.cn/api/paas/v4');
+  assert.equal(normalizeLlmBaseUrl('https://open.bigmodel.cn/api/paas/v4/'), 'https://open.bigmodel.cn/api/paas/v4');
+  assert.equal(normalizeLlmBaseUrl(''), '');
+  assert.equal(normalizeLlmBaseUrl(undefined), undefined);
+});

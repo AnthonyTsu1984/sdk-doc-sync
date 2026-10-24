@@ -50,6 +50,12 @@ event() { # event <name> [key=value ...] —— JSON 事件走 lib.js（转义�
 log "bootstrap start (language=$LANGUAGE sdk=$SDK_REPO workspace=$WORKSPACE)"
 
 # ---------- 0. 必需 env fail-loud（secret sdk-env 的最小子集） ----------
+# openai-compatible 的 baseURL 必须带 /v1 尾缀（lib.js normalizeLlmBaseUrl 同款语义；
+# 裸域名网关会让 /chat/completions 撞登录页/403——2026-10-24 首战实测）
+case "$LLM_BASE_URL" in
+  */v[0-9]) ;;
+  *) export LLM_BASE_URL="${LLM_BASE_URL%/}/v1"; log "normalize LLM_BASE_URL -> $LLM_BASE_URL" ;;
+esac
 for var in LLM_BASE_URL LLM_API_KEY LLM_MODEL GITHUB_TOKEN; do
   [ -n "${!var:-}" ] || fail "$var is empty — secret sdk-env 缺键或 envFrom 未生效"
 done

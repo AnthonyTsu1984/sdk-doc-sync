@@ -340,6 +340,17 @@ data:
       fi
       local marker; marker="$(active_marker "$track")"
       [ -e "$marker" ] && return 0
+      # B 串行（操作员 2026-10-24 裁定）：同语言两轨一 pod 串行——任一其他轨道的
+      # active marker 在，就不派新战役（一轨收完/让出后再放下一轨；两类共享检出/
+      # 文档树的竞态由此整体避开，见会话评估）。marker=战役存活信号（派单写、
+      # 宽限让出/终态释放删）。
+      local om
+      for om in "$RUNS"/active-*; do
+        [ -e "$om" ] || continue
+        [ "$om" = "$marker" ] && continue
+        log "serialized: track ${track:-?} waits（active: $(basename "$om")）"
+        return 0
+      done
       local pending; pending="$(pending_count)"
       [ "$pending" -gt 0 ] || return 0
 
@@ -437,6 +448,24 @@ data:
         if [ -n "$ses" ]; then
           printf '%s\n' "$ses" > "$RUNS/slot-$slot.session"
           log "slot=$slot campaign exit=$rc session=$ses（armed for approve resume）"
+          # B 串行配套：resume 退出且期间没有新呈门（anchor 之后零 index.json）=
+          # 战役终态（close-session 完成或死亡）——立即释放轨道给下一轨，不吃 6h
+          # 宽限尾巴；若实为死亡，该轨 findings 未处置，会在下一轮空闲时重派（首次
+          # 派单无门退出仍走宽限退避，无热循环）。
+          case "$rundir" in
+            *-resume-*)
+              if [ -e "$RUNS/.resume-anchor-$slot" ]; then
+                local ng; ng="$(find "$GATE_DIR" -name '*.index.json' ! -name 'latest-index.json' -newer "$RUNS/.resume-anchor-$slot" 2>/dev/null | wc -l)"
+                rm -f "$RUNS/.resume-anchor-$slot"
+                if [ "$ng" -eq 0 ]; then
+                  rm -f "$(active_marker "${SLOT_TRACK[$slot]}")" "$RUNS/parked-${SLOT_TRACKKEY[$slot]}" "$RUNS/slot-$slot.session"
+                  log "slot=$slot resume exit with no new gate — track ${SLOT_TRACKKEY[$slot]} released（terminal/serialized mode）"
+                  event slot_released_terminal "slot=$slot" "track=${SLOT_TRACKKEY[$slot]}"
+                  unset "SLOT_TRACKKEY[$slot]"
+                fi
+              fi
+              ;;
+          esac
         else
           log "slot=$slot campaign exit=$rc — sessionID NOT captured（approve resume 不可用，见 opencode.err）"
           event session_capture_failed "slot=$slot" "track=${SLOT_TRACKKEY[$slot]}" "exit=$rc"
@@ -557,6 +586,7 @@ data:
         queue_first_line pop "$queue" >/dev/null
         rundir="$RUNS/$(date +%Y%m%d-%H%M%S)-resume-slot$slot"
         mkdir -p "$rundir"
+        touch "$RUNS/.resume-anchor-$slot"
         local track_key="${SLOT_TRACKKEY[$slot]:-unknown}"
         log "approve resume slot=$slot session=$ses run=$rundir"
         event approve_injected "slot=$slot" "track=$track_key"
@@ -601,5 +631,6 @@ data:
     done
 kind: ConfigMap
 metadata:
+  creationTimestamp: null
   name: sdk-scripts
   namespace: sdk-doc-sync

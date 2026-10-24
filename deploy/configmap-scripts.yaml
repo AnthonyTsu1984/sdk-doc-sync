@@ -531,6 +531,11 @@ for var in LLM_BASE_URL LLM_API_KEY LLM_MODEL GITHUB_TOKEN; do
       # ---------- ⑤ 主循环 ----------
       command -v flock >/dev/null 2>&1 || die "flock not found（util-linux）——批准队列的出队纪律依赖它"
       log "supervisor start pod=$POD_NAME language=$LANGUAGE sdk=$SDK_REPO tracks=$TRACKS slots=$N_SLOTS"
+# 启动清场：active-*/parked-*/slot-*.session 是 supervisor 进程生命周期状态——
+# pod 重建后旧 opencode 子进程必已死，残留文件会让派单门（marker 在→不派）与
+# 宽限检查（SLOT_TRACKKEY 空→不释放）双双卡死（2026-10-24 首战实测）。一律清除。
+rm -f "$RUNS"/active-* "$RUNS"/parked-* "$RUNS"/slot-*.session
+log "startup sweep: stale slot state cleared (active-*/parked-*/slot-*.session)"
       event supervisor_started "count=$N_SLOTS"
       LAST_SCAN=0
       while true; do

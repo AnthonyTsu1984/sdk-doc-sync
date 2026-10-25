@@ -18,10 +18,10 @@
 
 | Skill | 职责 | 会话初态 → 终态 | 操作员门 |
 |---|---|---|---|
-| `api-reference-sync` | SDK/CLI/REST 发布同步到 Feishu（旗舰；内部命名空间仍是 `src/sdk-doc-sync/`） | session `in_progress` → `finalized`；unit `in_progress → executed → finalized` | `APPROVE_GROUPING` / `APPROVE_WRITES` / `APPROVE_DOCUMENT` / `APPROVE_ROLLBACK` / `APPROVE_ACCEPTANCE`（legacy；两门制下 ACCEPTANCE 取消，`close-session` 机械无门） |
-| `localized-doc-sync` | 源→本地化 wiki 配对同步 | `queue_ready` ⇄（每 unit：acceptance_pending → rescan_required）→ `finalized` | 精确 batch digest 写门（删除批、源侧批单列）+ `finalize` 前全库重扫 |
-| `procedure-code-sync` | 流程文档多语言代码块移植 | `approval_ready → acceptance_pending → accepted` | 一条 `APPROVE_WRITES procedure-code-sync <batchDigest>` + 独立 `accept` |
-| `verified-doc-authoring` | 混合参考起草/大改，claims 先验证 | `approval_ready → acceptance_pending → accepted` | `APPROVE_WRITES verified-doc-authoring <batchDigest>` + `accept` 绑 rollback manifest |
+| `api-reference-sync` | SDK/CLI/REST 发布同步到 Feishu（旗舰；内部命名空间仍是 `src/sdk-doc-sync/`） | session `in_progress` → `finalized`；unit `in_progress → executed → finalized` | `APPROVE_CAMPAIGN` / `APPROVE_CAMPAIGN` / `APPROVE_ROLLBACK` / `APPROVE_ROLLBACK` / `APPROVE_CAMPAIGN`（legacy；两门制下 ACCEPTANCE 取消，`close-session` 机械无门） |
+| `localized-doc-sync` | 源→本地化 wiki 配对同步 | `queue_ready` ⇄（每 unit：acceptance_pending → rescan_required）→ `finalized` | 精确 batch digest 战役门（删除批、源侧批单列）+ `finalize` 前全库重扫 |
+| `procedure-code-sync` | 流程文档多语言代码块移植 | `approval_ready → acceptance_pending → accepted` | 一条 `APPROVE_CAMPAIGN procedure-code-sync <batchDigest>` + 独立 `accept` |
+| `verified-doc-authoring` | 混合参考起草/大改，claims 先验证 | `approval_ready → acceptance_pending → accepted` | `APPROVE_CAMPAIGN verified-doc-authoring <batchDigest>` + `accept` 绑 rollback manifest |
 | `doc-code-verify` | 只读验证代码示例（parse/compile/run） | RUNTIME_MACHINE `ready → executing → completed` | live runtime 需 `--approve-runtime-digest`；remediation handoff 结构性无写权 |
 
 ### 内部/工具
@@ -55,9 +55,9 @@
 │ scan/plan/dry-run（agent 只读）→ 会话文件（CAS+状态机，           │
 │   caller 给 --session 路径）→ reviewUnitManifest（一文档一单元） │
 ├─ 门禁漏斗（api-reference-sync 为例）────────────────────────────┤
-│ APPROVE_GROUPING(分组) → 逐 unit: 重dry-run →                    │
-│   APPROVE_WRITES(batchDigest) → 执行(journal+manifest) →        │
-│   refetch 验证 → APPROVE_DOCUMENT(journal digest) →              │
+│ APPROVE_CAMPAIGN(分组) → 逐 unit: 重dry-run →                    │
+│   APPROVE_CAMPAIGN(batchDigest) → 执行(journal+manifest) →        │
+│   refetch 验证 → APPROVE_ROLLBACK(journal digest) →              │
 │   accept-document（两门制=终验收，finalizes unit）→              │
 │   close-session（机械，推进 scan-state.json，唯一推进点）        │
 ├─ 写路径（每次变更）────────────────────────────────────────────┤
@@ -123,7 +123,7 @@
 | **UserPromptSubmit** | — | 软校验：正则识别 `APPROVE_(GROUPING\|WRITES\|DOCUMENT\|ROLLBACK\|ACCEPTANCE)`，缺 ID 或 `sha256:<digest>` → `additionalContext` 指出格式无效（不阻断，digest 校验由 L1 兜底）；识别 "admit/准入" → 注入仪式（含归档一步） | 旁路 #6 门禁格式纪律 |
 | **PreToolUse** | `Bash` | **硬门（核心）**，deny + reason，见 4.2 | 旁路 #1/#2/#3/#4 + 阶段 C 准入门 |
 | **PreToolUse** | `Write\|Edit` | deny 直接写证据面：`scan-state.json`、tmp 下 session/journal/run-manifest/ledger 文件、`write-entrypoints.json`；deny+指引：`contracts/invariants.json`（须与 SKILL.md 同 diff，单调用无法跨文件校验，先 deny 并给出双文件流程） | 旁路 #4 |
-| **PostToolUse** | `Bash` | 上下文追加：dry-run 完成 → "复制 digest，停在 APPROVE_WRITES"；execute 完成 → 校验 journal 存在 `complete` sentinel，缺 → 提示 reconciliation 流程；governed 命令后 → 提醒批量报告附链接表（裸 URL 规则） | 规则收尾；"完成=refetch 不是返回值" |
+| **PostToolUse** | `Bash` | 上下文追加：dry-run 完成 → "复制 digest，停在 APPROVE_CAMPAIGN"；execute 完成 → 校验 journal 存在 `complete` sentinel，缺 → 提示 reconciliation 流程；governed 命令后 → 提醒批量报告附链接表（裸 URL 规则） | 规则收尾；"完成=refetch 不是返回值" |
 | **PostToolUseFailure** | `Bash` | 已知瞬态错误 → 重试/恢复指引：`99991400` 退避、`SESSION_LOCK_CONTENDED` 等持锁者、`RUN_MANIFEST_EVIDENCE_CONFLICT` → 归档仪式命令、`EXECUTION_RECONCILIATION_REQUIRED` → "核 sentinel 后 resume，禁止删 journal" | 踩坑经验固化 |
 | **Stop** | — | 确定性便宜检查，命中才 `block`：本轮跑过 governed execute 但 journal 无 complete；会话 nextGate=APPROVE_* 但最后一条 assistant 消息无 digest 行（轮换前门禁工件未落盘） | 旁路 #5 轮换纪律 |
 | PermissionRequest | — | **不配置**。全部执法放 PreToolUse，避免同一规则两处维护漂移 | — |
@@ -134,7 +134,7 @@
 
 | # | 规则 | 判定 | 动作 |
 |---|---|---|---|
-| R1 | 禁直调写 | 命令含 `feishu-doc.js` 且子命令 `patch\|push\|docs.*(\+update\|update)` 且无 `VERIFIED_DOC_PLAN=` env 前缀 | deny："直调写路径被治理禁止；走 canonical CLI + APPROVE_WRITES 门" |
+| R1 | 禁直调写 | 命令含 `feishu-doc.js` 且子命令 `patch\|push\|docs.*(\+update\|update)` 且无 `VERIFIED_DOC_PLAN=` env 前缀 | deny："直调写路径被治理禁止；走 canonical CLI + APPROVE_CAMPAIGN 门" |
 | R2 | auto-approve 须绑 digest | 命令含 `--auto-approve` 且不含 `--approve-batch-digest\|--approve-runtime-digest\|--approve-plan-digest` | deny："裸 auto-approve 被禁止（静默 no-op/无治理写）" |
 | R3 | 遗留逃逸 env | 命令含 `DOC_OPS_ALLOW_LEGACY_LIVE` | deny（本地版 PRODUCTION_ENV_BAN；wave3 后异常通道已删，该 env 只剩破坏性） |
 | R4 | 证据面写保护 | `rm\|mv 目标不在白名单\|>\|>>\|tee\|sed -i` 触及 run-manifest*.json / *journal*.jsonl / admitted-fingerprints.jsonl / scan-state.json / review-session*.json / acceptance-*.json | deny；白名单=`mv … tmp/run-manifest-archive/`（仪式本身）与 canonical CLI 整体调用（hook 只见命令串，CLI 内部写文件不可见，天然不误伤） |

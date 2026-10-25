@@ -41,11 +41,11 @@ Failure patterns that must block completion:
 
 ## Acceptance Finalization
 
-Post-write verification for one document unit ends with its touched records at `WIP` and `scanStateUpdated: false`. Stop and expose the live document, record links, unit journal digest, and unresolved comments. Do not start the next unit until the user replies with the exact active-unit acceptance command. A comment-driven revision returns the same unit to reviewed planning and invalidates its previous write and journal digests.
+Post-write verification for one document unit ends with its touched records at `WIP` and `scanStateUpdated: false`. Expose the live document, record links, unit journal digest, and unresolved comments in the round report. Each verified unit finalizes as it runs — the campaign approval authorizes the whole unit list, and the acceptance receipt is journal-derived. A comment-driven revision returns the same unit to reviewed planning and invalidates its previous write and journal digests.
 
-After `APPROVE_DOCUMENT`, persist a receipt with `sdk-review-session.js accept-document`. The receipt must bind the unit to the completed execution-journal path and digest, the live Docx and Bitable links, resolved comments, and every touched record's verified journal action, record ID, and document token. Do not hand-edit `acceptedReviewUnits`. Before another process or chat continues, run `node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js --resume-session <session-file>` so the runtime rechecks the journal and live record invariants. A changed token, non-`WIP` progress, `Targets` drifted from the execution baseline, missing record, or manifest drift blocks continuation.
+Persist the unit's receipt with `sdk-review-session.js accept-document`; the auto path derives it from the verified execution journal. The receipt must bind the unit to the completed execution-journal path and digest, the live Docx and Bitable links, resolved comments, and every touched record's verified journal action, record ID, and document token. Do not hand-edit `acceptedReviewUnits`. Before another process or chat continues, run `node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js --resume-session <session-file>` so the runtime rechecks the journal and live record invariants. A changed token, non-`WIP` progress, `Targets` drifted from the execution baseline, missing record, or manifest drift blocks continuation.
 
-After every document unit is accepted and the user explicitly accepts the complete accepted-unit manifest:
+After every planned unit is accepted, final acceptance runs from the complete accepted-unit manifest:
 
 1. Update every touched record from `Progress: WIP` to `Progress: Draft` without changing unrelated fields.
 2. Refetch every record and verify the exact `Draft` value.

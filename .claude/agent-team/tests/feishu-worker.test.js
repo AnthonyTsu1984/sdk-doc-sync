@@ -111,7 +111,7 @@ test('Worker dedupes approval dispatches with KV', async () => {
       message: {
         chat_id: 'oc_chat',
         message_id: 'om_1',
-        content: JSON.stringify({ text: `<at user_id="ou_bot">ztrans</at> APPROVE_WRITES loc-scan-1 sha256:${'a'.repeat(64)} 123456` }),
+        content: JSON.stringify({ text: `<at user_id="ou_bot">ztrans</at> APPROVE_TASK loc-scan-1 sha256:${'a'.repeat(64)} 123456` }),
       },
     },
   };

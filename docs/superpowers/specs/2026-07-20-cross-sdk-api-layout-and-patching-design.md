@@ -374,7 +374,7 @@ After repairing the canaries:
 7. Confirm every plan passes semantic layout validation.
 8. Present a fresh exact write-approval boundary.
 
-No old artifact digest or prior `APPROVE_WRITES` response remains valid after the renderer changes.
+No old artifact digest or prior `APPROVE_CAMPAIGN` response remains valid after the renderer changes.
 
 ## Rollout
 

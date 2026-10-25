@@ -11,15 +11,12 @@
 // from the message text (gate digests and reply lines are display-only), and
 // a changed artifact refuses as stale.
 //
-// v1 approvable scope: the grouping gate (its sha256 digest is a first-class
-// field of the gate-manifest artifact the ledger already reads; worker
-// resolution joins the intake-dispatch ledger). v2 adds the campaign gates —
-// 写门/验收门/战役门 (APPROVE_WRITES / APPROVE_DOCUMENT / APPROVE_ACCEPTANCE /
-// APPROVE_ROLLBACK / APPROVE_CAMPAIGN): their notifications carry the
-// presentation index path, and the digest + replyLine are re-read from that
-// index at execution time; the authoritative guard chain (reject-in-flight,
-// board-worker membership, idle, sibling, transcript recency) lives in
-// gate-dispatch.js and runs once more server-side before dispatch.
+// Approvable scope: the campaign gate (APPROVE_CAMPAIGN, plus the unit-scoped
+// APPROVE_ROLLBACK confirmation riding the same channel). Notifications carry
+// the presentation index path, and the digest + replyLine are re-read from
+// that index at execution time; the authoritative guard chain (reject-in-
+// flight, board-worker membership, idle, sibling, transcript recency) lives
+// in gate-dispatch.js and runs once more server-side before dispatch.
 //
 // The module stays pure: command parsing, reply binding, approval planning,
 // and worker resolution from durable ledgers. The server owns all IO (WS
@@ -89,8 +86,8 @@ const REJECT_RE = /^(?:打回|reject|拒绝)\s+([\s\S]+)$/i;
 
 // Campaign-gate categories a reply can act on; reject is narrower (the board
 // has no composed reject flow for rollback/campaign gates — those point back).
-const CAMPAIGN_CATEGORIES = new Set(['写门', '验收门', '战役门']);
-const REJECTABLE_CATEGORIES = new Set(['写门', '验收门']);
+const CAMPAIGN_CATEGORIES = new Set(['战役门']);
+const REJECTABLE_CATEGORIES = new Set(['战役门']);
 
 function parseCommand(text) {
   const trimmed = String(text || '').trim();
@@ -112,11 +109,11 @@ function parseRejectCommand(text) {
 function helpText() {
   return [
     '门铃指令（确定性语法，仅私聊）：',
-    '1. 回复（引用）某条通知消息，内容发「批准」——批准该通知里的门（分组门/写门/验收门/战役门；digest 与批准行由系统从呈门工件重读绑定，消息里不带也不需要）',
-    '2. 回复某条通知消息，内容发「打回 <原因>」（或 reject / 拒绝 + 原因）——打回该通知里的写门/验收门，原因不能为空',
+    '1. 回复（引用）某条通知消息，内容发「批准」——批准该通知里的战役门（digest 与批准行由系统从呈门工件重读绑定，消息里不带也不需要）',
+    '2. 回复某条通知消息，内容发「打回 <原因>」（或 reject / 拒绝 + 原因）——打回该通知对应的战役规划，原因不能为空',
     '3. 发「状态」——当前全部待决事件快照',
     '4. 发「帮助」——本说明',
-    '说明：验收门多单元时每单元一条通知（含单元号），回信批准天然单义；一条消息含多项事件时不受理整包批准，逐条回复或到看板；旧事件（无呈门绑定）与回滚/战役级打回到任务看板处理。',
+    '说明：一条消息含多项事件时不受理整包批准，逐条回复或到看板；旧事件（无呈门绑定）到任务看板处理。',
   ].join('\n');
 }
 
@@ -217,7 +214,7 @@ function planCampaignApprove({ event, payload, presentationIndexOf }) {
   if (index.sessionPath !== event.sessionPath || index.gate !== event.gate) return stale();
   if ((index.digest ?? null) !== (event.digest ?? null)) return stale();
   if (!Array.isArray(index.replyLines) || !index.replyLines.includes(event.replyLine)) return stale();
-  if (event.reviewUnitId && !String(event.replyLine).startsWith(`APPROVE_DOCUMENT ${event.reviewUnitId} `)) return stale();
+  if (event.reviewUnitId && !String(event.replyLine).startsWith(`APPROVE_ROLLBACK ${event.reviewUnitId} `)) return stale();
   const worker = resolveCampaignWorker(event, card);
   if (!worker.ok) return campaignWorkerRefusal();
   const line = index.replyLines.find((candidate) => candidate === event.replyLine);
@@ -259,7 +256,7 @@ function planCampaignReject({ event, payload, reason }) {
     kind: 'campaign',
     reason,
     sessionId: worker.sessionId,
-    mode: event.category === '写门' ? 'write' : 'comments',
+    mode: 'write',
     unitId: event.reviewUnitId ?? null,
     eventKey: event.key,
     sessionKey: event.sessionKey,
@@ -268,63 +265,18 @@ function planCampaignReject({ event, payload, reason }) {
 }
 
 // Plan a reply-bound approval. Every refusal carries an actionable message,
-// never a silent drop. Dispatch: the grouping gate keeps the v1 path verbatim;
-// campaign-gate events (写门/验收门/战役门 with an index binding) take the v2
-// path. The single-event assertion is unchanged for both.
-function planApprove({ entry, payload, dispatchLines, manifestDigestOf, presentationIndexOf }) {
+// never a silent drop: a single event with a presentation-index binding takes
+// the index path; anything else refuses.
+function planApprove({ entry, payload, presentationIndexOf }) {
   const events = Array.isArray(entry.events) ? entry.events : [];
-  const grouping = events.filter((event) => event && event.category === '分组门');
-  if (events.length !== 1 || grouping.length !== 1) {
-    // Campaign events ARE actionable now — but only one at a time; a merged
-    // multi-event message still refuses as a whole.
-    const campaign = events.length === 1
-      && events[0]
-      && CAMPAIGN_CATEGORIES.has(events[0].category)
-      && events[0].replyLine
-      && events[0].indexId;
-    if (campaign) return planCampaignApprove({ event: events[0], payload, presentationIndexOf });
-    return {
-      ok: false,
-      code: 'NOT_SINGLE_GROUPING',
-      reply: '该通知包含多项事件（或无呈门绑定）——逐条回复对应单元的通知，或到任务看板处理；消息通道只受理单事件批准。',
-    };
-  }
-  return planGroupingApprove({ event: grouping[0], payload, dispatchLines, manifestDigestOf });
-}
-
-// v1 grouping-gate path, byte-for-byte the original body.
-function planGroupingApprove({ event, payload, dispatchLines, manifestDigestOf }) {
-  const card = (payload?.intakes || []).find((candidate) => candidate.manifestPath === event.manifestPath) || null;
-  if (!card || card.approved) {
-    return { ok: false, code: 'ALREADY_APPROVED', reply: '该分组门已有批准证据（回执或后续会话）——无需重复操作。' };
-  }
-  const digest = manifestDigestOf(event.manifestPath);
-  if (!digest || !digest.startsWith('sha256:')) {
-    return { ok: false, code: 'ARTIFACT_UNREADABLE', reply: `分组工件不可读或无 digest（${event.manifestPath}）——到看板核实后再处理。` };
-  }
-  if (event.digest && event.digest !== digest) {
-    return {
-      ok: false,
-      code: 'STALE_DIGEST',
-      // Invalidate the doorbell key so the next sweep re-notifies the new digest.
-      invalidateKey: event.key,
-      reply: '分组方案自通知后已变化（digest 不一致）——未执行批准，稍后会收到新通知。',
-    };
-  }
-  const worker = resolveWorkerSession(dispatchLines, { language: card.language, manifestPath: card.manifestPath });
-  if (!worker.ok) {
-    const hint = worker.code === 'AMBIGUOUS_WORKER'
-      ? '派单台账中该轨道有多个候选 worker 会话，无法确定性选择'
-      : '派单台账中找不到带会话 id 的退出 worker';
-    return { ok: false, code: worker.code, reply: `${hint}——请到任务看板处理该分组门（看板会派新 worker 续接）。` };
+  const single = events.length === 1 ? events[0] : null;
+  if (single && CAMPAIGN_CATEGORIES.has(single.category) && single.replyLine && single.indexId) {
+    return planCampaignApprove({ event: single, payload, presentationIndexOf });
   }
   return {
-    ok: true,
-    kind: 'grouping',
-    approveLine: `APPROVE_GROUPING ${digest}`,
-    sessionId: worker.sessionId,
-    workerKey: worker.workerKey,
-    reply: `已受理：APPROVE_GROUPING 已注入 worker 会话（${worker.sessionId.slice(0, 18)}…）——它将铸造分组回执并继续，停在下一门时会再通知你。`,
+    ok: false,
+    code: 'NOT_SINGLE_GATE',
+    reply: '该通知包含多项事件（或无呈门绑定）——逐条回复对应单元的通知，或到任务看板处理；消息通道只受理单事件批准。',
   };
 }
 

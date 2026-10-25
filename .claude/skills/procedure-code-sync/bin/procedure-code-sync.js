@@ -75,7 +75,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     writeJson(args.output, plan);
     saveProcedureSession(args.session, createProcedureSession({ sessionId: args.sessionId, plan }), { expectedPreviousDigest: null });
     out(`Procedure patch plan: ${plan.planDigest}`);
-    out(`If approved, reply exactly: APPROVE_WRITES procedure-code-sync ${plan.actionBatch.batchDigest}`);
+    out(`If approved, reply exactly: APPROVE_PLAN procedure-code-sync ${plan.actionBatch.batchDigest}`);
     return plan;
   }
 

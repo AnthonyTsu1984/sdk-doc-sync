@@ -1247,7 +1247,7 @@ Expected:
 }
 ```
 
-Only after this plan is implemented and a corrected approval TSV is reviewed should a new `APPROVE_WRITES` phase be considered.
+Only after this plan is implemented and a corrected approval TSV is reviewed should a new `APPROVE_CAMPAIGN` phase be considered.
 
 ---
 

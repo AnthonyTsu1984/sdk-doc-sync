@@ -26,7 +26,7 @@ test('live write card has approve reject and changes commands', () => {
     },
   });
   const content = JSON.stringify(card);
-  assert.match(content, new RegExp(`APPROVE_WRITES task-1 ${digest}`));
+  assert.match(content, new RegExp(`APPROVE_TASK task-1 ${digest}`));
   assert.match(content, new RegExp(`REJECT_WRITES task-1 ${digest}`));
   assert.match(content, new RegExp(`REQUEST_CHANGES task-1 ${digest}`));
   assert.match(content, /localized-doc-sync/);

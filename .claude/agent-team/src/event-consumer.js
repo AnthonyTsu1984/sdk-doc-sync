@@ -81,7 +81,7 @@ function localResponseText(parsed, { actionBatch = null } = {}) {
       'ztrans understands:',
       '- @ztrans dry run <task-id>',
       '- @ztrans patch <task-id>',
-      '- APPROVE_WRITES <task-id> sha256:<batch-digest>',
+      '- APPROVE_TASK <task-id> sha256:<batch-digest>',
       '- REJECT_WRITES <task-id> sha256:<batch-digest>: <reason>',
       '- REQUEST_CHANGES <task-id> sha256:<batch-digest>: <instruction>',
       '- @ztrans explain <task-id>',
@@ -95,7 +95,7 @@ function localResponseText(parsed, { actionBatch = null } = {}) {
       return `Task-only live commands are no longer executable. Use the exact digest command from the latest approval card for task ${parsed.taskId}.`;
     }
     const commands = {
-      approve: `APPROVE_WRITES ${parsed.taskId} ${actionBatch.batchDigest}`,
+      approve: `APPROVE_TASK ${parsed.taskId} ${actionBatch.batchDigest}`,
       reject: `REJECT_WRITES ${parsed.taskId} ${actionBatch.batchDigest}: <reason>`,
       changes: `REQUEST_CHANGES ${parsed.taskId} ${actionBatch.batchDigest}: <instruction>`,
     };

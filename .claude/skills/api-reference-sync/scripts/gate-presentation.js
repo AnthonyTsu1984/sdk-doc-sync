@@ -5,9 +5,9 @@
 // the sdk-review-session handoff recipes reference:
 //
 //   node .claude/skills/api-reference-sync/scripts/gate-presentation.js \
-//     --from-dryrun <dryrun.json>            # write gate (APPROVE_WRITES)
+//     --from-dryrun <dryrun.json>            # campaign gate (APPROVE_CAMPAIGN)
 //   node .claude/skills/api-reference-sync/scripts/gate-presentation.js \
-//     --manifest <gate-manifest.json>        # acceptance / document / rollback / …
+//     --manifest <gate-manifest.json>        # rollback / campaign / … (registered gates)
 //     --session <sync-session.json> [--title "…"] [--notes "…"]
 //     [--out-dir <dir>] [--check-only] [--json] [--repo-root <dir>]
 //
@@ -110,7 +110,7 @@ function printHelp() {
     '  gate-presentation.js --manifest <gate-manifest.json> --session <sync-session.json> [options]',
     '',
     'Options:',
-    '  --from-dryrun <file>   dry-run receipt (engine --json result or bounded summary); gate = APPROVE_WRITES',
+    '  --from-dryrun <file>   dry-run receipt (engine --json result or bounded summary); gate = APPROVE_CAMPAIGN',
     '  --manifest <file>      gate manifest { gate, units[], digest? } for any registered gate',
     '  --session <file>       the sync session this presentation is bound to (required; repo-relative or absolute)',
     '  --title <text>         human title (default "<GATE> — N 单元")',

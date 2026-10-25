@@ -60,7 +60,7 @@ test('plan command writes one immutable document plan and persisted review sessi
   assert.equal(savedPlan.actionBatch.actions.length, 2);
   assert.equal(savedSession.status, 'approval_ready');
   assert.equal(savedSession.planDigest, savedPlan.planDigest);
-  assert.match(output.join('\n'), /APPROVE_WRITES procedure-code-sync sha256:/);
+  assert.match(output.join('\n'), /APPROVE_PLAN procedure-code-sync sha256:/);
 });
 
 test('execute and accept commands persist journal-bound verifier acceptance', async () => {

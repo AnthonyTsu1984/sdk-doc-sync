@@ -1,6 +1,6 @@
 'use strict';
 
-// Per-unit invariant evidence derivation, shared by the two-gate
+// Per-unit invariant evidence derivation, shared by the per-unit
 // document-acceptance transition (review-session-store) and the legacy
 // campaign finalizer (acceptance-finalizer). Evidence is DERIVED from the
 // digest-verified execution journal — never from caller assertions.

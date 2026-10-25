@@ -13,7 +13,6 @@ const {
   loadReviewSessionState,
   migrateSessionToTwoGate,
   recordFinalTargets,
-  recordGroupingApproval,
   recordLearningSuppression,
   TARGETS_FINAL,
   targetsFinalForReviewUnit,
@@ -28,12 +27,6 @@ const {
 } = require('../src/sdk-doc-sync/review-session-store');
 const { deriveCombinedAcceptanceDigest } = require('../src/sdk-doc-sync/combined-acceptance-digest');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
-const {
-  buildGroupingApprovalReceipt,
-  checkGroupingScopeChain,
-  validateGroupingProposal,
-  writeGroupingApprovalReceipt,
-} = require('../src/sdk-doc-sync/grouping-proposal');
 const { DecisionLedger } = require('../../doc-ops-core/src/decision-ledger');
 const { candidateFilePath } = require('../../doc-ops-core/src/process-learning');
 const { normalizedTargetsValue } = require('../src/sdk-doc-sync/record-state');
@@ -80,10 +73,6 @@ const ARG_SPECS = Object.freeze([
   { flag: '--scope-hint', key: 'scopeHint', kind: 'json-object' },
   { flag: '--durable-rule-requested', key: 'durableRuleRequested', kind: 'boolean' },
   { flag: '--event-key', key: 'eventKey', kind: 'value' },
-  { flag: '--proposal', key: 'proposal', kind: 'value' },
-  { flag: '--approvals-dir', key: 'approvalsDir', kind: 'value' },
-  { flag: '--reply', key: 'reply', kind: 'value' },
-  { flag: '--gate-manifest', key: 'gateManifest', kind: 'value' },
   { flag: '--dry-run', key: 'dryRun', kind: 'boolean' },
   { flag: '--recipe', key: 'recipe', kind: 'value' },
   { flag: '--json', key: 'json', kind: 'boolean' },
@@ -129,11 +118,9 @@ const COMMAND_REQUIREMENTS = Object.freeze({
   // lists carry only their own flags.
   'accept-document': ['reviewUnitId', 'executionJournal', 'executionJournalDigest', 'touchedRecords'],
   'request-document-changes': ['reviewUnitId'],
-  'resolve-batch-review': ['reply'],
   'close-session': ['scanStateKey', 'scanStateEntry'],
   'record-decision': ['decisionLedger', 'decisionId', 'gate', 'outcome', 'proposalDigest'],
   'record-learning-suppression': ['eventKey', 'rationale'],
-  'approve-grouping': ['proposal'],
 });
 
 function requireCommandArgs(args) {
@@ -158,7 +145,7 @@ function loadDecisionLedger(repoRoot, decisionLedger) {
   return { entries: new DecisionLedger({ filePath: decisionLedgerPath }).entries, path: decisionLedgerPath, found: true };
 }
 
-function bitableWriterFor(args, io, operation = 'two-gate-migration') {
+function bitableWriterFor(args, io, operation = 'per-unit-migration') {
   const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
   const { WriterGovernance } = require('../../doc-ops-core/src/writer-governance');
   return io.bitableWriter || new BitableWriter({
@@ -171,15 +158,15 @@ function bitableWriterFor(args, io, operation = 'two-gate-migration') {
 }
 
 // Stock migration (2026-10-01 ruling: continue, don't rebuild): the operator
-// gate presents the FULL list of accepted units and their records once; the
+// face presents the FULL list of accepted units and their records once; the
 // approval digest binds that exact plan. The run verifies every unit's
 // journal evidence and every record's live WIP state and Targets baseline
 // BEFORE any write, then performs the governed WIP→Draft transitions, lands
-// a digest-bound per-unit receipt, and flips the session to the two-gate
+// a digest-bound per-unit receipt, and flips the session to the per-unit
 // flow via the store transition.
 async function runMigration({ session, sessionPath, sessionDigest, args, io, out }) {
   if ((session.acceptanceFlow || 'legacy') !== 'legacy') {
-    throw new Error('Session is already on the two-gate acceptance flow');
+    throw new Error('Session is already on the per-unit acceptance flow');
   }
   const plan = (session.acceptedReviewUnits || []).map((unit) => ({
     reviewUnitId: unit.reviewUnitId,
@@ -188,7 +175,7 @@ async function runMigration({ session, sessionPath, sessionDigest, args, io, out
     touchedRecords: unit.touchedRecords || [],
   })).sort((left, right) => left.reviewUnitId.localeCompare(right.reviewUnitId));
   if (plan.length === 0) throw new Error('Session has no accepted units to migrate');
-  const planDigest = digestSemantic({ schemaVersion: 1, kind: 'migrate-to-two-gate', sessionId: session.sessionId, units: plan });
+  const planDigest = digestSemantic({ schemaVersion: 1, kind: 'migrate-to-per-unit', sessionId: session.sessionId, units: plan });
   if (!args.approveDigest) {
     out(`Migration plan: ${plan.length} accepted unit(s), ${plan.reduce((sum, unit) => sum + unit.touchedRecords.length, 0)} record(s)`);
     for (const unit of plan) {
@@ -197,7 +184,7 @@ async function runMigration({ session, sessionPath, sessionDigest, args, io, out
       }
     }
     out(`Plan digest: ${planDigest}`);
-    out('Reply exactly: MIGRATE_TO_TWO_GATE ' + planDigest.slice(0, 18) + '… or rerun with --approve-digest ' + planDigest);
+    out('Rerun with --approve-digest ' + planDigest + ' to apply the migration.');
     return { plan, planDigest, dryRun: true };
   }
   if (args.approveDigest !== planDigest) {
@@ -253,7 +240,7 @@ async function runMigration({ session, sessionPath, sessionDigest, args, io, out
     sideEffects: ['bitable.update'],
     approval: createApprovalEnvelope({
       skill: 'api-reference-sync',
-      operation: 'two-gate-migration',
+      operation: 'per-unit-migration',
       batchDigest: planDigest,
       actionCount: targets.length,
       targets,
@@ -265,18 +252,18 @@ async function runMigration({ session, sessionPath, sessionDigest, args, io, out
   });
   governance.bindRunManifest(createRunManifest({
     skill: 'api-reference-sync',
-    skillVersion: 'api-reference-sync/two-gate-migration@1',
+    skillVersion: 'api-reference-sync/per-unit-migration@1',
     repoRoot,
     batchDigest: planDigest,
-    sessionDigest: `two-gate-migration:${session.sessionId}`,
+    sessionDigest: `per-unit-migration:${session.sessionId}`,
   }), { repoRoot });
   writeRunManifestArtifact(createRunManifest({
     skill: 'api-reference-sync',
-    skillVersion: 'api-reference-sync/two-gate-migration@1',
+    skillVersion: 'api-reference-sync/per-unit-migration@1',
     repoRoot,
     batchDigest: planDigest,
-    sessionDigest: `two-gate-migration:${session.sessionId}`,
-  }), { filePath: path.join(repoRoot, 'tmp', 'api-reference-sync', 'run-manifest-two-gate-migration.json') });
+    sessionDigest: `per-unit-migration:${session.sessionId}`,
+  }), { filePath: path.join(repoRoot, 'tmp', 'api-reference-sync', 'run-manifest-per-unit-migration.json') });
 
   const convertedAt = new Date().toISOString();
   const migrations = [];
@@ -328,7 +315,7 @@ async function runMigration({ session, sessionPath, sessionDigest, args, io, out
 
   const nextSession = migrateSessionToTwoGate(session, { units: migrations, convertedAt });
   saveReviewSession(sessionPath, nextSession, { expectedPreviousDigest: sessionDigest });
-  out(`Migration complete: ${migrations.length} unit(s) finalized, acceptance flow flipped to two-gate.`);
+  out(`Migration complete: ${migrations.length} unit(s) finalized, acceptance flow flipped to per-unit.`);
   return { session: nextSession, migrations, planDigest };
 }
 
@@ -372,7 +359,8 @@ async function runTransfer({ session, sessionPath, sessionDigest, args, io, out 
   return { session: nextSession };
 }
 
-// Two-gate document acceptance (2026-10-01 ruling): pre-write validation,
+// Per-unit document acceptance (2026-10-01 ruling, single-gate model):
+// pre-write validation,
 // governed WIP→Draft writes with post-write verification, the digest-bound
 // per-unit receipt, then the unit-terminal session transition. Fail-closed at
 // every step: a refusal before the writes leaves nothing mutated; a refusal
@@ -607,7 +595,7 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
 // separate acceptance" policy is RETIRED. A verified, recorded execution
 // therefore finalizes (WIP→Draft with the final Targets) in the SAME
 // invocation. Nothing is loosened except the extra human stop — every evidence
-// check the two-gate acceptance ran still runs: the receipt is derived from the
+// check the per-unit acceptance ran still runs: the receipt is derived from the
 // durable journal, and prepareDocumentAcceptance/recordDocumentAcceptance
 // re-validate the journal digest, the WIP baseline, and the Targets baseline
 // before and after the write.
@@ -630,7 +618,7 @@ function buildAutoAcceptanceReceipt({
     schemaVersion: 1,
     status: 'document_accepted',
     // Auto-acceptance runs after the execution, with no interactive review
-    // window: there are no open comments by construction. The two-gate receipt
+    // window: there are no open comments by construction. The per-unit receipt
     // validator still requires the field explicitly (review P0-1).
     commentsResolved: true,
     reviewUnitId,
@@ -679,50 +667,14 @@ async function acceptExecutedUnit({
   });
 }
 
-// ---------- batch review resolver (R16 lesson, 2026-10-07) ----------
-//
-// The executor (执达员) used to interpret the operator's multi-line gate
-// reply itself — summarizing, reordering, re-classifying — and one unstable
-// interpretation re-classified nineteen executed APPROVE_DOCUMENT lines as
-// change requests: executions and journals stayed intact on disk while the
-// acceptance receipts never landed. The executor's job is now RELAY ONLY:
-// it hands the raw reply text to `resolve-batch-review`, which parses the
-// strict grammar, binds every line to the session's own pending executions
-// by digest, and applies. Anything it cannot parse or bind fails closed
-// BEFORE any state changes — a partially understood reply mutates nothing.
-
-const APPROVE_DOCUMENT_LINE_RE = /^APPROVE_DOCUMENT\s+(\S+)\s+sha256:([0-9a-f]{64})$/;
-const REQUEST_DOCUMENT_LINE_RE = /^REQUEST_DOCUMENT\s+(\S+)\s+(.+)$/;
+// 2026-10-24 single-gate ruling: the batch-review reply resolver (the parser
+// of the retired per-unit document approval lines) is deleted with the gate
+// it served — unit acceptance is automatic (journal-derived receipt) and the
+// operator approval surface is the campaign gate plus the unit-level rollback
+// confirmation. Historical campaigns are closed; no consumers remain.
 
 function nonEmptyText(value) {
   return typeof value === 'string' && value.trim() !== '';
-}
-
-function parseBatchReply(text) {
-  const approvals = [];
-  const requests = [];
-  const errors = [];
-  const seen = new Map();
-  for (const [index, raw] of String(text ?? '').split('\n').entries()) {
-    const line = raw.trim();
-    if (!line || line.startsWith('#')) continue;
-    const lineNo = index + 1;
-    const approve = APPROVE_DOCUMENT_LINE_RE.exec(line);
-    const request = approve ? null : REQUEST_DOCUMENT_LINE_RE.exec(line);
-    if (!approve && !request) {
-      errors.push({ line, lineNo, error: 'not an APPROVE_DOCUMENT or REQUEST_DOCUMENT line' });
-      continue;
-    }
-    const reviewUnitId = (approve || request)[1];
-    if (seen.has(reviewUnitId)) {
-      errors.push({ line, lineNo, error: `${reviewUnitId} already decided on line ${seen.get(reviewUnitId)}` });
-      continue;
-    }
-    seen.set(reviewUnitId, lineNo);
-    if (approve) approvals.push({ kind: 'approve', reviewUnitId, digest: `sha256:${approve[2]}`, line, lineNo });
-    else requests.push({ kind: 'request', reviewUnitId, reason: request[2].trim(), line, lineNo });
-  }
-  return { approvals, requests, errors };
 }
 
 // touchedRecords derived from the digest-verified journal itself — the
@@ -784,228 +736,44 @@ function touchedRecordsFromJournal(entries) {
   return [...byAction.values()].sort((left, right) => left.recordId.localeCompare(right.recordId));
 }
 
-// Durable link contract for review gate manifests: structured
-// `units: [{ reviewUnitId, documentLinks, recordLinks }]` wins; the display
-// label form (`<unit> — 页面` / `<unit> — 记录页`) stays as the fallback for
-// manifests authored before the contract. Either way the links come from the
-// manifest the operator was shown — never from executor transcription.
-function linksFromGateManifest(manifest, reviewUnitId) {
-  for (const unit of Array.isArray(manifest?.units) ? manifest.units : []) {
-    if (unit?.reviewUnitId !== reviewUnitId) continue;
-    return {
-      documentLinks: (Array.isArray(unit.documentLinks) ? unit.documentLinks : []).filter(nonEmptyText),
-      recordLinks: (Array.isArray(unit.recordLinks) ? unit.recordLinks : []).filter(nonEmptyText),
-    };
-  }
-  const documentLinks = [];
-  const recordLinks = [];
-  for (const link of Array.isArray(manifest?.links) ? manifest.links : []) {
-    if (typeof link?.url !== 'string' || typeof link?.label !== 'string') continue;
-    if (link.label === `${reviewUnitId} — 页面`) documentLinks.push(link.url);
-    else if (link.label === `${reviewUnitId} — 记录页`) recordLinks.push(link.url);
-  }
-  return { documentLinks, recordLinks };
-}
-
 function readJournalEntries(journalPath) {
   return fs.readFileSync(journalPath, 'utf8').trim().split('\n').filter(Boolean)
     .map((line) => JSON.parse(line));
 }
 
-async function runBatchReviewResolver({ session, sessionPath, sessionDigest, args, io, out }) {
-  if ((session.acceptanceFlow || 'legacy') !== 'two-gate') {
-    throw new Error('resolve-batch-review applies to two-gate sessions; legacy sessions keep the per-unit accept-document / request-document-changes commands');
-  }
-  if (session.status === 'finalized') throw new Error('Session is finalized; no review reply applies');
-  const replyText = args.reply === '-'
-    ? fs.readFileSync(0, 'utf8')
-    : fs.readFileSync(path.resolve(args.reply), 'utf8');
-  const { approvals, requests, errors } = parseBatchReply(replyText);
-  if (errors.length > 0) {
-    throw new Error(`REPLY_NOT_FULLY_PARSED: ${errors.length} unparsed line(s), nothing applied — ${errors
-      .map((error) => `line ${error.lineNo}: ${error.error} (${error.line.slice(0, 80)})`)
-      .join(' | ')}`);
-  }
-  if (approvals.length === 0 && requests.length === 0) {
-    throw new Error('REPLY_EMPTY: no APPROVE_DOCUMENT or REQUEST_DOCUMENT line found — nothing applied');
-  }
-
-  // Pass 1 — validate the WHOLE reply against durable state before any
-  // mutation. Digest binding is the point: a reply line never re-derives or
-  // re-interprets the journal identity, it must match the pending entry the
-  // gate presented.
-  const pendings = new Map();
-  for (const item of (Array.isArray(session.pendingExecutions) && session.pendingExecutions.length
-    ? session.pendingExecutions
-    : (session.activeExecution ? [session.activeExecution] : []))) {
-    pendings.set(item.reviewUnitId, item);
-  }
-  const acceptedByUnit = new Map((session.acceptedReviewUnits || []).map((unit) => [unit.reviewUnitId, unit]));
-  const gateManifest = args.gateManifest
-    ? JSON.parse(fs.readFileSync(path.resolve(args.gateManifest), 'utf8'))
-    : null;
-  const plan = [];
-  for (const decision of approvals) {
-    const accepted = acceptedByUnit.get(decision.reviewUnitId);
-    if (accepted) {
-      if (accepted.executionJournalDigest !== decision.digest) {
-        throw new Error(`REPLY_DIGEST_MISMATCH: ${decision.reviewUnitId} (line ${decision.lineNo}) is already accepted with journal ${accepted.executionJournalDigest}, reply binds ${decision.digest} — nothing applied`);
-      }
-      plan.push({ decision, skip: 'already-accepted' }); // rerun convergence
-      continue;
-    }
-    const pending = pendings.get(decision.reviewUnitId);
-    if (!pending) {
-      throw new Error(`REPLY_UNIT_NOT_PENDING: ${decision.reviewUnitId} (line ${decision.lineNo}) is neither pending review nor accepted — nothing applied`);
-    }
-    if (pending.executionJournalDigest !== decision.digest) {
-      throw new Error(`REPLY_DIGEST_MISMATCH: ${decision.reviewUnitId} (line ${decision.lineNo}) — session pending journal is ${pending.executionJournalDigest}, reply binds ${decision.digest} — nothing applied`);
-    }
-    const entries = readJournalEntries(pending.executionJournalPath);
-    // Re-derive the journal's hash in pass 1: a journal modified after
-    // execution must refuse the WHOLE reply here, not kill apply pass 2
-    // after earlier units already landed.
-    const derivedDigest = digestSemantic(entries);
-    if (derivedDigest !== decision.digest) {
-      throw new Error(`REPLY_JOURNAL_DIGEST_MISMATCH: ${decision.reviewUnitId} (line ${decision.lineNo}) — journal ${pending.executionJournalPath} hashes to ${derivedDigest}, reply binds ${decision.digest} — nothing applied`);
-    }
-    const touched = touchedRecordsFromJournal(entries);
-    if (touched.length === 0) {
-      throw new Error(`REPLY_JOURNAL_UNUSABLE: ${decision.reviewUnitId} journal ${pending.executionJournalPath} yields no prepared (actionId, recordId) entries — nothing applied`);
-    }
-    const links = gateManifest
-      ? linksFromGateManifest(gateManifest, decision.reviewUnitId)
-      : { documentLinks: [], recordLinks: [] };
-    if (links.documentLinks.length === 0 || links.recordLinks.length === 0) {
-      throw new Error(`REPLY_LINKS_MISSING: ${decision.reviewUnitId} needs documentLinks and recordLinks — pass --gate-manifest whose links label “${decision.reviewUnitId} — 页面 / — 记录页” — nothing applied`);
-    }
-    plan.push({ decision, pending, touched, ...links });
-  }
-  for (const decision of requests) {
-    if (pendings.has(decision.reviewUnitId)) {
-      plan.push({ decision });
-      continue;
-    }
-    // Rerun convergence: the unit left pending review since this reply was
-    // first applied. Skip when the durable record explains it — a change
-    // request already on record, or a LATER acceptance (the operator approved
-    // it afterwards; the request line is superseded). A unit with NO durable
-    // history still refuses: a typo'd id must never silently no-op.
-    if (acceptedByUnit.has(decision.reviewUnitId)) {
-      plan.push({ decision, skip: 'accepted-since' });
-      continue;
-    }
-    const alreadyRequested = (session.changeRequests || [])
-      .some((entry) => entry?.reviewUnitId === decision.reviewUnitId);
-    if (alreadyRequested) {
-      plan.push({ decision, skip: 'already-requested' });
-      continue;
-    }
-    throw new Error(`REPLY_UNIT_NOT_PENDING: ${decision.reviewUnitId} (line ${decision.lineNo}) is neither pending review nor accepted — nothing applied`);
-  }
-  const writesNeeded = plan.some((item) => item.decision.kind === 'approve' && !item.skip);
-  if (writesNeeded && !args.dryRun && !args.baseToken && !io.bitableWriter) {
-    throw new Error('--base-token is required (with optional --table-id): two-gate acceptance writes the WIP→Draft transitions');
-  }
-
-  const addressed = new Set([...approvals, ...requests].map((decision) => decision.reviewUnitId));
-  const report = {
-    schemaVersion: 1,
-    command: 'resolve-batch-review',
-    replySource: args.reply,
-    gateManifest: args.gateManifest ?? null,
-    parsed: { approvals: approvals.length, requests: requests.length },
-    accepted: [],
-    alreadyAccepted: [],
-    requested: [],
-    requestSkipped: [],
-    leftPending: [...pendings.keys()].filter((unitId) => !addressed.has(unitId)),
-  };
-  const describe = () => `approve ${report.parsed.approvals} / request ${report.parsed.requests}; accepted ${report.accepted.length}, already accepted ${report.alreadyAccepted.length}, requested ${report.requested.length}, request skipped ${report.requestSkipped.length}, left pending ${report.leftPending.length}`;
-  if (args.dryRun) {
-    for (const item of plan) {
-      out(`- ${item.decision.kind === 'approve' ? 'APPROVE' : 'REQUEST'} ${item.decision.reviewUnitId}${item.skip ? ` (${item.skip} — will skip)` : ''}`);
-    }
-    out(`Dry run: ${describe()}; nothing written.`);
-    report.dryRun = true;
-    return { report, dryRun: true };
-  }
-
-  // Pass 2 — apply in reply order; reload after every persisted save so the
-  // next CAS carries the digest the previous save produced.
-  for (const item of plan) {
-    if (item.decision.kind === 'request') {
-      if (item.skip) {
-        report.requestSkipped.push({ reviewUnitId: item.decision.reviewUnitId, why: item.skip });
-        out(`Request already on record, skipped: ${item.decision.reviewUnitId} (${item.skip})`);
-        continue;
-      }
-      session = recordDocumentChangesRequested(session, {
-        reviewUnitId: item.decision.reviewUnitId,
-        reason: item.decision.reason,
-      });
-      saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
-      ({ session, sessionDigest } = loadReviewSessionState(sessionPath));
-      report.requested.push({ reviewUnitId: item.decision.reviewUnitId, reason: item.decision.reason });
-      out(`Change request recorded: ${item.decision.reviewUnitId}`);
-      continue;
-    }
-    if (item.skip) {
-      report.alreadyAccepted.push(item.decision.reviewUnitId);
-      out(`Already accepted, skipped: ${item.decision.reviewUnitId}`);
-      continue;
-    }
-    const receipt = {
-      reviewUnitId: item.decision.reviewUnitId,
-      executionJournalPath: path.resolve(item.pending.executionJournalPath),
-      executionJournalDigest: item.decision.digest,
-      touchedRecords: item.touched,
-      documentLinks: item.documentLinks,
-      recordLinks: item.recordLinks,
-      commentsResolved: true,
-    };
-    session = await acceptDocumentTwoGate({ session, sessionPath, sessionDigest, receipt, args, io, out });
-    ({ session, sessionDigest } = loadReviewSessionState(sessionPath));
-    report.accepted.push(item.decision.reviewUnitId);
-  }
-  out(`Batch reply resolved: ${describe()}`);
-  return { report, session };
-}
-
 // Cross-chat rotation hint (2026-10-01 ruling: one campaign = one canonical
-// session file; chats rotate at ~42% context). Derives the gate a FRESH chat
+// session file; chats rotate at ~42% context). Derives the step a FRESH chat
 // should present next from durable session state alone — no conversation
-// memory required.
+// memory required. 2026-10-24 single-gate ruling: the per-unit
+// document/acceptance gates are gone from the derivation — a verified unit
+// finalizes automatically, the campaign approval covers every unfinalized
+// unit, and close-session is directly reachable once all units finalized.
 function nextGateOf(session) {
   if (session.status === 'finalized') return null;
-  // A rollback lease in flight is the wedge: resolving it precedes any new
-  // gate presentation.
+  // A rollback lease in flight is the wedge: resolving it (the unit-level
+  // destructive confirmation) precedes any new work.
   if (session.activeRollback) {
     return { gate: 'RESOLVE_ROLLBACK', reviewUnitId: session.activeRollback.reviewUnitId };
   }
   const manifestIds = (session.reviewUnitManifest?.units || []).map((unit) => unit.reviewUnitId);
   const acceptedIds = new Set((session.acceptedReviewUnits || []).map((unit) => unit.reviewUnitId));
-  const pendings = Array.isArray(session.pendingExecutions)
-    ? session.pendingExecutions
-    : (session.activeExecution ? [session.activeExecution] : []);
-  if (pendings.length > 0) {
-    return { gate: 'APPROVE_DOCUMENT', reviewUnitId: pendings[pendings.length - 1].reviewUnitId };
-  }
   const nextUnit = manifestIds.find((id) => !acceptedIds.has(id));
-  if (nextUnit) return { gate: 'APPROVE_WRITE', reviewUnitId: nextUnit };
-  if (session.acceptanceFlow === 'two-gate') return { gate: 'CLOSE_SESSION', reviewUnitId: null };
+  if (nextUnit) return { gate: 'APPROVE_CAMPAIGN', reviewUnitId: nextUnit };
+  if (session.acceptanceFlow === 'per-unit') return { gate: 'CLOSE_SESSION', reviewUnitId: null };
+  // Legacy campaign-acceptance sessions: the operator acceptance gate is
+  // retired; what remains is mechanical (manifest build, then the
+  // finalization journal) before the terminal state.
   if (!session.acceptanceManifest) return { gate: 'BUILD_ACCEPTANCE', reviewUnitId: null };
-  return { gate: 'APPROVE_ACCEPTANCE', reviewUnitId: null };
+  return { gate: 'RECORD_FINALIZATION', reviewUnitId: null };
 }
 
 function status(session, sessionPath) {  const expected = session.reviewUnitManifest?.units?.map((unit) => unit.reviewUnitId).sort() || [];
   const accepted = (session.acceptedReviewUnits || []).map((unit) => unit.reviewUnitId).sort();
   const acceptedSet = new Set(accepted);
   // Derived FRESH from the store on every status read (go-v30 b36 pinning:
-  // the acceptance gate's combined digest must come from the last
-  // pendingExecutions read before the gate was presented — never a
-  // hand-assembled or cached value). Gate layers consume this field instead
-  // of rebuilding the formula.
+  // the combined pending-units digest must come from the last
+  // pendingExecutions read — never a hand-assembled or cached value).
+  // Consumers read this field instead of rebuilding the formula.
   let combinedAcceptanceDigest = null;
   try {
     combinedAcceptanceDigest = deriveCombinedAcceptanceDigest(session);
@@ -1039,10 +807,9 @@ function status(session, sessionPath) {  const expected = session.reviewUnitMani
 // Cross-chat handoff (2026-10-10): campaign chats rotate at ~42% context and
 // a fresh chat used to spend 30-60 minutes rediscovering "what is the next
 // batch and which commands run it". `handoff` derives everything from the
-// durable session state alone: the next gate (nextGateOf), the batch slice
-// (pending executions for document gates, the next ≤N unaccepted units for
-// write gates), the digests the replies will bind (per-unit journal digests,
-// combinedAcceptanceDigest), and ready-to-run command skeletons — optionally
+// durable session state alone: the next step (nextGateOf), the batch slice
+// (the next ≤N unfinalized units — the campaign approval covers them),
+// combinedAcceptanceDigest, and ready-to-run command skeletons — optionally
 // materialized through a per-campaign recipe file (the durable form of the
 // batch method; see SKILL.md "Batch execution runbook").
 const HANDOFF_BATCH_CAP = 20;
@@ -1050,18 +817,7 @@ const HANDOFF_BATCH_CAP = 20;
 function handoffBatchOf(session) {
   if (session.status === 'finalized') return { gate: null, units: [], reason: 'session finalized — archive only' };
   if (session.activeRollback) {
-    return { gate: 'RESOLVE_ROLLBACK', units: [session.activeRollback.reviewUnitId], reason: 'a rollback lease is in flight; resolve it before any new gate' };
-  }
-  const pendings = Array.isArray(session.pendingExecutions)
-    ? session.pendingExecutions
-    : (session.activeExecution ? [session.activeExecution] : []);
-  if (pendings.length > 0) {
-    return {
-      gate: 'APPROVE_DOCUMENT',
-      units: pendings.slice(0, HANDOFF_BATCH_CAP).map((pending) => pending.reviewUnitId),
-      journalDigests: pendings.slice(0, HANDOFF_BATCH_CAP).map((pending) => pending.executionJournalDigest),
-      reason: `${pendings.length} executed unit(s) await the document gate`,
-    };
+    return { gate: 'RESOLVE_ROLLBACK', units: [session.activeRollback.reviewUnitId], reason: 'a rollback lease is in flight; resolve it before any new work' };
   }
   const acceptedIds = new Set((session.acceptedReviewUnits || []).map((unit) => unit.reviewUnitId));
   const nextUnits = (session.reviewUnitManifest?.units || [])
@@ -1069,13 +825,13 @@ function handoffBatchOf(session) {
     .slice(0, HANDOFF_BATCH_CAP);
   if (nextUnits.length > 0) {
     return {
-      gate: 'APPROVE_WRITE',
+      gate: 'APPROVE_CAMPAIGN',
       units: nextUnits.map((unit) => unit.reviewUnitId),
       stableIds: nextUnits.map((unit) => unit.documentStableId || unit.stableId || null),
-      reason: `next write batch of ${nextUnits.length} unaccepted unit(s), manifest order`,
+      reason: `next batch of ${nextUnits.length} unfinalized unit(s), manifest order — one campaign approval covers the batch`,
     };
   }
-  if (session.acceptanceFlow === 'two-gate') return { gate: 'CLOSE_SESSION', units: [], reason: 'every unit finalized — close the session to advance scan-state' };
+  if (session.acceptanceFlow === 'per-unit') return { gate: 'CLOSE_SESSION', units: [], reason: 'every unit finalized — close the session to advance scan-state' };
   return { gate: 'BUILD_ACCEPTANCE', units: [], reason: 'legacy flow: build the campaign acceptance' };
 }
 
@@ -1091,24 +847,16 @@ function handoffSteps(session, sessionPath, summary, batch, recipe) {
   if (batch.gate === 'RESOLVE_ROLLBACK') {
     push('inspect the rollback lease', ['node', 'bin/sdk-review-session.js', 'status', '--session', '{{session}}'], {});
     steps.push({ step: 'resolve the lease (operator)', note: `activeRollback: ${JSON.stringify(session.activeRollback?.reviewUnitId)} — rerun the rollback execution or reconcile, then re-run handoff` });
-  } else if (batch.gate === 'APPROVE_WRITE') {
+  } else if (batch.gate === 'APPROVE_CAMPAIGN') {
     if (recipe?.dryRun) push('full-scope dry-run (resume requires the FULL scope file)', recipe.dryRun, {});
     else push('full-scope dry-run (resume requires the FULL scope file)', ['node', '.claude/skills/api-reference-sync/bin/sdk-doc-sync.js', '<plan args: --sdk-dir --language --sdk-version --source-type --targets --reference-context --release-scope --resume-session>', '--session', '{{session}}'], {});
-    push('present the write gate (canonical card)', ['node', '.claude/skills/api-reference-sync/scripts/gate-presentation.js', '--from-dryrun', '<dryrun.json>'], {});
+    push('present the campaign gate (canonical card)', ['node', '.claude/skills/api-reference-sync/scripts/gate-presentation.js', '--from-dryrun', '<dryrun.json>'], {});
     if (recipe?.execute) push('execute the approved batch (digests from the dry-run, never hand-typed)', recipe.execute, {});
-    else push('execute the approved batch (digests from the dry-run, never hand-typed)', ['node', '.claude/skills/api-reference-sync/bin/sdk-doc-sync.js', '<execute: --approve-batch-digest sha256:… --auto-approve --placement-walk-digest sha256:…>', '--session', '{{session}}'], {});
-  } else if (batch.gate === 'APPROVE_DOCUMENT') {
-    push('present the document gate(s) (canonical card)', ['node', '.claude/skills/api-reference-sync/scripts/gate-presentation.js', '--manifest', '<gate manifest json>'], {});
-    if (recipe?.acceptDocument) {
-      for (const [index, unit] of batch.units.entries()) {
-        push(`accept ${unit}`, recipe.acceptDocument, { reviewUnitId: unit, digest: batch.journalDigests?.[index] ?? '' });
-      }
-    } else {
-      steps.push({
-        step: 'accept the reviewed units',
-        note: `accept-document per unit (--review-unit-id <id> --execution-journal <path> --execution-journal-digest <pending journal digest> --touched-records <file> --document-link/--record-link) or one resolve-batch-review reply covering the batch; batch combined digest: ${typeof summary.combinedAcceptanceDigest === 'string' ? summary.combinedAcceptanceDigest : '(derive via status after acceptance)'}`,
-      });
-    }
+    else push('execute the approved batch (digests from the dry-run, never hand-typed)', ['node', '.claude/skills/api-reference-sync/bin/sdk-doc-sync.js', '<execute: --campaign-approval <receipt.json> or --approve-batch-digest sha256:… --auto-approve --placement-walk-digest sha256:…>', '--session', '{{session}}'], {});
+    steps.push({
+      step: 'verified units finalize automatically',
+      note: 'a recorded, verified execution finalizes in the same invocation (journal-derived receipt, WIP→Draft under governance); accept-document remains the manual per-unit recovery path',
+    });
   } else if (batch.gate === 'CLOSE_SESSION') {
     if (recipe?.closeSession) push('close the session (advances scan-state once)', recipe.closeSession, {});
     else push('close the session (advances scan-state once)', ['node', '.claude/skills/api-reference-sync/bin/sdk-review-session.js', 'close-session', '--session', '{{session}}', '--scan-state-key', '<lang:track>', '--scan-state-entry', '<entry.json>'], {});
@@ -1150,7 +898,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   const { session: loadedSession, sessionDigest } = loadReviewSessionState(sessionPath);
   let session = loadedSession;
 
-  if (args.command === 'migrate-to-two-gate') {
+  if (args.command === 'migrate-to-per-unit') {
     requireValue(args, 'session');
     // runCli has no injectable io at this point; the migration CLI path never
     // injects a writer, so gate on the flag alone (batch 6 review r1 P2 —
@@ -1175,7 +923,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     // dependencies.io (like the batch-review-resolver path) lets hermetic
     // tests inject bitableWriter instead of a live Bitable.
     const io0 = dependencies.io || {};
-    // One-time stock pass: accepted two-gate units whose records sit at
+    // One-time stock pass: accepted per-unit units whose records sit at
     // Draft with empty Targets get the KB-wide final value under one gate.
     // 2026-10-09 widening (stock corrections): --records selects an explicit
     // operator-provided record list (e.g. retargeting CDC to [Milvus] after
@@ -1288,16 +1036,6 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     return { session: nextSession, summary };
   }
 
-  if (args.command === 'resolve-batch-review') {
-    requireCommandArgs(args); // COMMAND_REQUIREMENTS: resolve-batch-review
-    const result = await runBatchReviewResolver({ session, sessionPath, sessionDigest, args, io: dependencies.io || {}, out });
-    if (result.dryRun) return { session, summary: status(session, sessionPath) };
-    session = result.session;
-    const summary = status(session, sessionPath);
-    if (args.json) out(JSON.stringify({ ...result.report, nextGate: summary.nextGate }, null, 2));
-    return { session, summary };
-  }
-
   if (args.command === 'request-document-changes') {
     requireCommandArgs(args); // COMMAND_REQUIREMENTS: request-document-changes
     session = recordDocumentChangesRequested(session, {
@@ -1325,8 +1063,8 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
       recordLinks: args.recordLinks,
       commentsResolved: true,
     };
-    if ((session.acceptanceFlow || 'legacy') === 'two-gate') {
-      // Two-gate acceptance: this command IS the unit's final acceptance. It
+    if ((session.acceptanceFlow || 'legacy') === 'per-unit') {
+      // Per-unit acceptance: this command IS the unit's final acceptance. It
       // writes the verified WIP→Draft transitions under governance, lands the
       // per-unit receipt, and finalizes the unit — no campaign gate behind.
       session = await acceptDocumentTwoGate({
@@ -1343,7 +1081,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
       saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
     }
   } else if (args.command === 'close-session') {
-    // Two-gate close: the campaign-level acceptance gate is retired; the
+    // Mechanical close: the campaign-level acceptance gate is retired; the
     // close runs only when EVERY unit finalized (guarded in the store). The
     // close also runs the process-learning capture (打回即铸): every change
     // request and operator rejection becomes a rule-candidate draft — or an
@@ -1459,68 +1197,11 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     });
     saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
     out(`Learning suppression recorded: ${args.eventKey}`);
-  } else if (args.command === 'approve-grouping') {
-    // Grouping write binding (api.grouping-proposal-staleness): the durable
-    // APPROVE_GROUPING receipt becomes part of the session, and from that
-    // point every sdk-doc-sync SYNC entry against this session chains its
-    // --release-scope digest against the approved scope. Digests are read
-    // ONLY programmatically and in full from the artifact files — never
-    // typed back from a display.
-    requireCommandArgs(args); // COMMAND_REQUIREMENTS: approve-grouping
-    const proposalPath = path.resolve(args.proposal);
-    let proposal;
-    try {
-      proposal = JSON.parse(fs.readFileSync(proposalPath, 'utf8'));
-    } catch (error) {
-      throw new Error(`GROUPING_APPROVAL_INVALID: cannot read proposal at ${args.proposal}: ${error.message}`);
-    }
-    const proposalValidation = validateGroupingProposal(proposal);
-    if (!proposalValidation.valid) {
-      throw new Error(`GROUPING_APPROVAL_INVALID: proposal fails schema validation: ${JSON.stringify(proposalValidation.errors.slice(0, 5))}`);
-    }
-    if (proposal.language !== session.language || proposal.sdkName !== session.sdkName || proposal.track !== session.track) {
-      throw new Error(`GROUPING_APPROVAL_CHAIN_INVALID: proposal identity (${proposal.language}/${proposal.sdkName}/${proposal.track}) does not match the session (${session.language}/${session.sdkName}/${session.track})`);
-    }
-    // One receipt object for both the bind-time chain check and persistence —
-    // two builds would carry two approvedAt timestamps (review finding).
-    const receipt = buildGroupingApprovalReceipt({ proposal, proposalPath });
-    // When the session recorded its scope artifact, chain against it now —
-    // binding a proposal to a scope the campaign is not running refuses
-    // here instead of at the first execution.
-    const scopeArtifact = session.artifacts?.releaseScope;
-    if (scopeArtifact) {
-      if (!fs.existsSync(scopeArtifact)) {
-        throw new Error(`GROUPING_APPROVAL_CHAIN_INVALID: the session's recorded release scope is missing at ${scopeArtifact}; present it or re-run the campaign dry-run`);
-      }
-      let scope;
-      try {
-        scope = JSON.parse(fs.readFileSync(scopeArtifact, 'utf8'));
-      } catch (error) {
-        throw new Error(`GROUPING_APPROVAL_CHAIN_INVALID: cannot read the session's recorded release scope at ${scopeArtifact}: ${error.message}`);
-      }
-      try {
-        checkGroupingScopeChain({ approval: receipt, scope });
-      } catch (error) {
-        throw new Error(`${error.code}: ${error.message}`);
-      }
-    }
-    try {
-      session = recordGroupingApproval(session, receipt);
-    } catch (error) {
-      throw new Error(`${error.code ? `${error.code}: ` : ''}${error.message}`);
-    }
-    // Persist the session BEFORE the receipt file: a crash between the two
-    // writes then leaves a bound-but-receiptless state, which is the SAFE
-    // half-state — the session still fail-closed enforces the chain, and
-    // re-running this command converges idempotently (review finding F4).
-    saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
-    const approvalsDir = args.approvalsDir
-      ? path.resolve(args.approvalsDir)
-      : require('../scripts/record-grouping-approval').DEFAULT_APPROVALS_DIR;
-    const { receiptPath, created } = writeGroupingApprovalReceipt({ receipt, approvalsDir });
-    out(`Grouping approval bound to session ${session.sessionId}: ${receipt.proposalDigest}`);
-    out(created ? `Durable receipt: ${receiptPath}` : `Durable receipt already recorded: ${receiptPath} (approvedAt ${JSON.parse(fs.readFileSync(receiptPath, 'utf8')).approvedAt})`);
   } else if (args.command !== 'status') {
+    // 2026-10-24 single-gate ruling: the approve-grouping command (the
+    // session-level bind of the retired grouping receipt) is deleted with the
+    // legacy approval link — the campaign approval envelopes the approved
+    // scope and chains per invocation at the sdk-doc-sync write boundary.
     if (args.command === 'handoff') {
       // Cross-chat handoff: derive the next batch and ready commands from
       // durable state alone; --recipe materializes a per-campaign invocation
@@ -1530,7 +1211,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
         const recipePath = path.resolve(args.recipe);
         recipe = JSON.parse(fs.readFileSync(recipePath, 'utf8'));
         if (!recipe || typeof recipe !== 'object' || Array.isArray(recipe)) {
-          throw new Error(`--recipe must point to a JSON object recipe file: ${recipePath}`);
+          throw new Error(`--recipe must point at a JSON object recipe file: ${recipePath}`);
         }
         recipe.__path = recipePath;
       }
@@ -1538,7 +1219,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
       out(JSON.stringify(handoff, null, 2));
       return { session, handoff };
     }
-    throw new Error('Command must be accept-document, backfill-targets, close-session, migrate-to-two-gate, transfer-unit-completion, request-document-changes, resolve-batch-review, approve-grouping, list-learning-events, record-learning-suppression, build-acceptance, record-decision, handoff, status, or record-finalization');
+    throw new Error('Command must be accept-document, backfill-targets, close-session, migrate-to-per-unit, transfer-unit-completion, request-document-changes, list-learning-events, record-learning-suppression, build-acceptance, record-decision, handoff, status, or record-finalization');
   }
 
   const summary = status(session, sessionPath);
@@ -1547,27 +1228,11 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     out(`Accepted document receipt: ${args.reviewUnitId}`);
     out(`Remaining review units: ${summary.remainingReviewUnitIds.length}`);
   } else if (args.command === 'build-acceptance') {
+    // Legacy campaign-acceptance flow: the manifest digest is the durable
+    // binding; the operator acceptance ceremony was retired (2026-10-24
+    // single-gate ruling) and finalization chains through the recorded
+    // acceptance journal (record-finalization).
     out(`Acceptance manifest: ${summary.acceptanceManifestDigest}`);
-    // Gate presentation: every page and record this acceptance would touch,
-    // with direct links. Derived from the accepted receipts only.
-    const units = (session.acceptedReviewUnits || []).map((unit) => ({
-      reviewUnitId: unit.reviewUnitId,
-      documentLinks: unit.documentLinks || [],
-      recordLinks: unit.recordLinks || [],
-      touchedRecords: (unit.touchedRecords || []).map((touched) => ({
-        recordId: touched.recordId,
-        documentToken: touched.documentToken || null,
-      })),
-    }));
-    out(JSON.stringify({
-      acceptancePresentation: {
-        acceptedUnits: units.length,
-        touchedPages: [...new Set(units.flatMap((unit) => unit.documentLinks))].length,
-        touchedRecords: [...new Set(units.flatMap((unit) => unit.touchedRecords.map((t) => t.recordId)))].length,
-        units,
-      },
-    }, null, 2));
-    out(`If approved, reply exactly: APPROVE_ACCEPTANCE ${summary.acceptanceManifestDigest}`);
   } else if (args.command === 'record-finalization') {
     out(`Review session finalized: ${summary.acceptanceManifestDigest}`);
   }
@@ -1581,4 +1246,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { parseArgs, parseBatchReply, parseFinalTargets, runCli, status, acceptDocumentTwoGate, acceptExecutedUnit, buildAutoAcceptanceReceipt, readJournalEntries, touchedRecordsFromJournal };
+module.exports = { parseArgs, parseFinalTargets, runCli, status, acceptDocumentTwoGate, acceptExecutedUnit, buildAutoAcceptanceReceipt, readJournalEntries, touchedRecordsFromJournal };

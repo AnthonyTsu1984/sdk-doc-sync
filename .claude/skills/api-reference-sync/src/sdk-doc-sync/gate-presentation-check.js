@@ -15,20 +15,15 @@
 // Checks, in order:
 //   shape          — object, schema 1, registered gate, ISO stamp, string fields
 //   session        — sessionPath present + sessionKey === sessionKeyOf(sessionPath)
-//   digest         — null or sha256:<64-hex>; REQUIRED for every gate except
-//                    APPROVE_DOCUMENT (per-unit journal digests instead)
+//   digest         — sha256:<64-hex>, REQUIRED for every gate (the digest is
+//                    the only binding; units are presentation context)
 //   replyLines     — exactly the lines gateReplyLine reconstructs from the
-//                    index's digest/units; APPROVE_DOCUMENT lines additionally
-//                    match the resolve-batch-review grammar
-//   units          — reviewUnitId/label/links shape on every gate; DOCUMENT
-//                    units must carry a journal digest AND a journal file name
-//                    that encodes the same digest (sha256-<hex>.jsonl)
+//                    index's digest
+//   units          — reviewUnitId/label/links shape on every gate
 
 const { GATE_NAMES, gateReplyLine, isGateName } = require('./gate-registry');
 const {
   DIGEST_PATTERN,
-  DOCUMENT_LINE_PATTERN,
-  JOURNAL_NAME_PATTERN,
   PRESENTATION_INPUT_INVALID,
   PRESENTATION_DIGEST_MISSING,
   PRESENTATION_REPLY_LINE_MISMATCH,
@@ -132,43 +127,18 @@ function checkPresentationIndex(index) {
       if (!Array.isArray(unit.links) || unit.links.some((link) => typeof link !== 'string')) {
         report(PRESENTATION_UNIT_INCOMPLETE, `${label}.links must be an array of strings`, { path: `${label}.links`, reviewUnitId: unit.reviewUnitId });
       }
-      if (gate === 'APPROVE_DOCUMENT') {
-        if (typeof unit.journalDigest !== 'string' || !DIGEST_PATTERN.test(unit.journalDigest)) {
-          report(PRESENTATION_UNIT_INCOMPLETE, `${label}.journalDigest must be sha256:<64-hex> for a DOCUMENT gate unit`, { path: `${label}.journalDigest`, reviewUnitId: unit.reviewUnitId });
-        } else {
-          // The journal file name must encode the very digest the reply line
-          // binds (sha256-<hex>.jsonl) — a name that disagrees with the digest
-          // means the row was hand-assembled, not recorded.
-          if (!nonEmptyString(unit.journal) || !JOURNAL_NAME_PATTERN.test(unit.journal)) {
-            report(PRESENTATION_UNIT_INCOMPLETE, `${label}.journal must be named sha256-<64-hex>.jsonl`, { path: `${label}.journal`, reviewUnitId: unit.reviewUnitId });
-          } else if (`sha256:${JOURNAL_NAME_PATTERN.exec(unit.journal)[1]}` !== unit.journalDigest) {
-            report(PRESENTATION_UNIT_INCOMPLETE, `${label}.journal name does not encode $.journalDigest`, { path: `${label}.journal`, reviewUnitId: unit.reviewUnitId });
-          }
-        }
-      }
     }
   }
 
-  // Digest requirement per gate family.
-  if (gate !== 'APPROVE_DOCUMENT') {
-    if (index.digest === null || index.digest === undefined) {
-      report(PRESENTATION_DIGEST_MISSING, `${gate} binds a digest — $.digest must not be null (presentations never compute one)`, { path: '$.digest' });
-    }
-  } else if (index.digest !== null && index.digest !== undefined) {
-    report(PRESENTATION_INPUT_INVALID, 'APPROVE_DOCUMENT binds per-unit journal digests — $.digest must be null', { path: '$.digest' });
+  // Digest requirement: every registered gate binds a digest.
+  if (index.digest === null || index.digest === undefined) {
+    report(PRESENTATION_DIGEST_MISSING, `${gate} binds a digest — $.digest must not be null (presentations never compute one)`, { path: '$.digest' });
   }
 
   // Reply-line reconstruction: the ONLY lines a consumer may act on are the
-  // ones gateReplyLine rebuilds from the index's own digest/units.
+  // ones gateReplyLine rebuilds from the index's own digest.
   const expectedLines = [];
-  if (gate === 'APPROVE_DOCUMENT') {
-    if (units !== null && units.every((unit) => isObject(unit) && nonEmptyString(unit.reviewUnitId)
-      && typeof unit.journalDigest === 'string' && DIGEST_PATTERN.test(unit.journalDigest))) {
-      for (const unit of [...units].sort((a, b) => (a.reviewUnitId < b.reviewUnitId ? -1 : a.reviewUnitId > b.reviewUnitId ? 1 : 0))) {
-        expectedLines.push(`APPROVE_DOCUMENT ${unit.reviewUnitId} ${unit.journalDigest}`);
-      }
-    }
-  } else if (typeof index.digest === 'string' && DIGEST_PATTERN.test(index.digest)) {
+  if (typeof index.digest === 'string' && DIGEST_PATTERN.test(index.digest)) {
     expectedLines.push(gateReplyLine(gate, { digest: index.digest }));
   }
 
@@ -179,7 +149,7 @@ function checkPresentationIndex(index) {
       || index.replyLines.some((line, position) => line !== expectedLines[position])) {
       report(
         PRESENTATION_REPLY_LINE_MISMATCH,
-        '$.replyLines must be exactly the lines gateReplyLine reconstructs from $.digest/$.units',
+        '$.replyLines must be exactly the lines gateReplyLine reconstructs from $.digest',
         { path: '$.replyLines', expected: expectedLines, got: index.replyLines },
       );
     }
@@ -188,19 +158,11 @@ function checkPresentationIndex(index) {
         report(PRESENTATION_REPLY_LINE_MISMATCH, '$.replyLines entries must be non-empty strings', { path: '$.replyLines' });
         continue;
       }
-      const viaRegistry = gate === 'APPROVE_DOCUMENT'
-        ? gateReplyLine('APPROVE_DOCUMENT', { replyLine: line })
-        : gateReplyLine(gate, { digest: line.replace(`${gate} `, '') });
+      const viaRegistry = gateReplyLine(gate, { digest: line.replace(`${gate} `, '') });
       if (viaRegistry !== line) {
         report(PRESENTATION_REPLY_LINE_MISMATCH, `reply line is not reconstructible through gateRegistry.gateReplyLine: ${line}`, { path: '$.replyLines' });
       }
-      if (gate === 'APPROVE_DOCUMENT' && !DOCUMENT_LINE_PATTERN.test(line)) {
-        report(PRESENTATION_REPLY_LINE_MISMATCH, `reply line violates the resolve-batch-review grammar: ${line}`, { path: '$.replyLines' });
-      }
     }
-  }
-  if (gate === 'APPROVE_DOCUMENT' && units !== null && units.length === 0) {
-    report(PRESENTATION_INPUT_INVALID, 'an APPROVE_DOCUMENT presentation requires at least one unit', { path: '$.units' });
   }
 
   return { valid: errors.length === 0, errors };

@@ -100,8 +100,8 @@ class AcceptanceFinalizer {
       throw invariantEvidenceError(`Execution journal for ${digest} is unreadable: ${error.message}`);
     }
     validateJournalArtifact({ entries, digest });
-    // Evidence derivation is shared with the two-gate document-acceptance
-    // transition (unit-evidence.js) so both gates enforce the identical bar.
+    // Evidence derivation is shared with the per-unit document-acceptance
+    // transition (unit-evidence.js) so both paths enforce the identical bar.
     return deriveUnitEvidence({ unit, entries });
   }
 
@@ -116,13 +116,13 @@ class AcceptanceFinalizer {
     if (!scanStateEntry || typeof scanStateEntry !== 'object' || Array.isArray(scanStateEntry)) {
       throw new Error('scanStateEntry is required');
     }
-    // Two-gate acceptance sessions (2026-10-01 ruling) finalize per unit at
+    // Per-unit acceptance sessions (2026-10-01 ruling) finalize per unit at
     // document acceptance and close via closeSession — the campaign-level
-    // acceptance gate is retired for them, not weakened: every check this
+    // acceptance flow is retired for them, not weakened: every check this
     // finalizer ran is enforced per unit by the same shared evidence
     // derivation.
-    if (reviewSession?.acceptanceFlow === 'two-gate') {
-      const error = new Error('Two-gate acceptance sessions finalize per unit (accept-document) and close via close-session; the campaign-level acceptance gate does not apply');
+    if (reviewSession?.acceptanceFlow === 'per-unit') {
+      const error = new Error('Per-unit acceptance sessions finalize per unit (accept-document) and close via close-session; the campaign-level acceptance flow does not apply');
       error.code = 'ACCEPTANCE_FLOW_SUPERSEDED';
       throw error;
     }

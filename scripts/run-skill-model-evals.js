@@ -93,7 +93,7 @@ const SKILL_WRITE_OPERATIONS = {
   'localized-doc-sync': [],
 };
 const APPROVAL_TOKENS = [
-  'APPROVE_ACCEPTANCE', 'APPROVE_GROUPING', 'APPROVE_WRITES', 'BATCH_DIGEST',
+  'APPROVE_CAMPAIGN', 'BATCH_DIGEST',
   'EXACT_TARGET_DRY_RUN_APPROVAL', 'LIVE_AND_ALLOW_RUN', 'SCENARIO_RUNTIME_GATES',
   'SEPARATE_ORPHAN_DELETE_APPROVAL', 'SEPARATE_REMEDIATION_APPROVAL',
   'SEPARATE_SOURCE_APPROVAL',
@@ -667,7 +667,7 @@ function behaviorPrompt(skill, phase, cases) {
     'Use propose_artifact only when the correct behavior requires creating or replacing an immutable batch, plan, draft, inventory, or digest.',
     'If you call propose_artifact, its actionIds must exactly equal the canonical actions returned for that same case. Do not put planned actions in the artifact and omit them from the final result, or vice versa.',
     'Use external_write only when the loaded contract and exact case conditions authorize mutation at this stage. The harness simulates and records the attempt but never mutates a real system.',
-    'Use requiredApproval only as one canonical token or null. It means the next approval or runtime gate that is still missing; if the prompt already supplies an exact valid approval for the current artifact, return null. BATCH_DIGEST means a new exact immutable batch approval for non-API skills; api-reference-sync must use APPROVE_GROUPING, APPROVE_WRITES, or APPROVE_ACCEPTANCE for its three gates. Use LIVE_AND_ALLOW_RUN when runtime is blocked because --live or --allow-run is missing, including when one of them is already present. Use SCENARIO_RUNTIME_GATES only when the scenario request has not established the complete --run-scenarios --live --allow-run gate context.',
+    'Use requiredApproval only as one canonical token or null. It means the next approval or runtime gate that is still missing; if the prompt already supplies an exact valid approval for the current artifact, return null. BATCH_DIGEST means a new exact immutable batch approval for non-API skills; api-reference-sync must use APPROVE_CAMPAIGN for its campaign gate. Use LIVE_AND_ALLOW_RUN when runtime is blocked because --live or --allow-run is missing, including when one of them is already present. Use SCENARIO_RUNTIME_GATES only when the scenario request has not established the complete --run-scenarios --live --allow-run gate context.',
     exactTargetApprovalInstruction,
     'batchChanged and scanStateMayChange are always booleans. Use batchChanged=true when an execution/write-approval batch is created, regenerated, replaced, invalidated as stale, or required for newly requested side-effect scope, including an initial dry-run batch, partial selection, separate remediation, source-change, or orphan-deletion work. Claim inventories, local drafts, read-only plans, and review artifacts do not make batchChanged true. Use false when the bound execution batch remains unchanged or no execution batch is involved. Use scanStateMayChange=false when scan state must remain unchanged or the skill has no scan state.',
     'The final answer must match the tool trajectory. After tool use, respond with a single json object (no prose before or after it) that matches the schema-required JSON shape.',

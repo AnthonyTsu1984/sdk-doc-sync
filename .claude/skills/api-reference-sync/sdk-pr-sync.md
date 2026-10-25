@@ -155,7 +155,7 @@ Standing reconciliation: run `node bin/identity-reconcile.js --snapshot <bitable
 
 ## Canonical intake chain (batch 15)
 
-One Reconcile wave runs one deterministic chain, and every gate sees the SAME scope file end to end (design §6.2 ruling: the filtered scope IS the of-record — a grouping proposal consumes it, the APPROVE_GROUPING receipt binds it, and every dry-run/resume presents it as `--release-scope`):
+One Reconcile wave runs one deterministic chain, and every entry sees the SAME scope file end to end (design §6.2 ruling: the filtered scope IS the of-record — a grouping proposal consumes it, the campaign approval binds it, and every dry-run/resume presents it as `--release-scope`):
 
 ```bash
 # 1. scout / PR-scan artifact — the LINEAGE input; never the binding scope
@@ -180,25 +180,21 @@ node .claude/skills/api-reference-sync/scripts/build-reviewed-release-context.js
   --output-scope tmp/sdk-release-scout/<lang>-<track>-filtered.json \
   --output-context tmp/sdk-release-scout/<lang>-<track>-context.json
 
-# 4. the grouping proposal consumes the FILTERED scope; the approval receipt
-#    re-checks the lineage against the same artifacts
+# 4. the grouping proposal consumes the FILTERED scope and feeds the campaign
+#    plan presented at the campaign gate (scope+分组+候选 → one APPROVE_CAMPAIGN card)
 node .claude/skills/api-reference-sync/scripts/build-grouping-proposal.js \
   --scope tmp/sdk-release-scout/<lang>-<track>-filtered.json \
   --identity-map references/identity/<lang>-<track>.json \
   --decisions <decisions.json> --output <proposal.json>
-node .claude/skills/api-reference-sync/scripts/record-grouping-approval.js \
-  --proposal <proposal.json> \
-  --scope tmp/sdk-release-scout/<lang>-<track>-filtered.json \
-  --identity-map references/identity/<lang>-<track>.json
 
 # 5. dry-run and every later resume present the SAME filtered scope file
 node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js ... \
   --release-scope tmp/sdk-release-scout/<lang>-<track>-filtered.json \
   --reference-context tmp/sdk-release-scout/<lang>-<track>-context.json \
-  --grouping-approval <receipt.json> --dry-run --json
+  --campaign-approval <receipt.json> --dry-run --json
 ```
 
-The proposal binds `digestSemantic(filtered scope)`; the untouched GROUPING_STALE mechanics compare every later `--release-scope` presentation against the approved lineage, so one file identity covers proposal/dry-run/session. A placement re-walk after the gate (walkDigest drift) correctly re-keys the bound digest → GROUPING_STALE → rebuild the context and re-gate (expected, not a defect; the recipe lives in `config/intake-recipes.json`).
+The campaign approval binds `digestSemantic(filtered scope)`; the GROUPING_STALE mechanics compare every later `--release-scope` presentation against the approved lineage, so one file identity covers proposal/dry-run/session. A placement re-walk after the gate (walkDigest drift) correctly re-keys the bound digest → GROUPING_STALE → rebuild the context and re-gate (expected, not a defect; the recipe lives in `config/intake-recipes.json`).
 
 ## Notes
 

@@ -1,11 +1,11 @@
 'use strict';
 
-// Combined acceptance digest — the batch-level gate value the go-v30
-// campaign pinned by hand at its workflow layer (b36: one write gate for the
-// batch, one acceptance gate whose combined digest ca75f4d4 was derived from
-// a fresh read of pendingExecutions). The formula lived in memory and in
-// hand-rolled workflow code; --batch-continue never validated it. This module
-// machine-derives it from the session store so no layer hand-assembles it:
+// Combined acceptance digest — the batch-level value the go-v30 campaign
+// pinned by hand at its workflow layer (b36: the combined digest ca75f4d4 was
+// derived from a fresh read of pendingExecutions). The formula lived in
+// memory and in hand-rolled workflow code; --batch-continue never validated
+// it. This module machine-derives it from the session store so no layer
+// hand-assembles it:
 //
 //   sha256(canonicalBytes([
 //     { reviewUnitId, stableId, batchDigest }, …   // pendingExecutions order
@@ -14,9 +14,8 @@
 // canonicalBytes = doc-ops-core canonical-json (keys sorted, array order
 // preserved, trailing newline). stableId is the manifest unit's
 // documentStableId; batchDigest is the pending entry's execution journal
-// digest — exactly the values the per-unit APPROVE_DOCUMENT lines bind, so a
-// combined approval is a commitment over the same identities the per-unit
-// gates verify.
+// digest — exactly the per-unit journal identities the acceptance layer
+// verifies, so the combined value is a commitment over them.
 
 const { createHash } = require('node:crypto');
 const { canonicalBytes } = require('../../../doc-ops-core/src/canonical-json');

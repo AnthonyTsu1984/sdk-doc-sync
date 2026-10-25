@@ -1,7 +1,7 @@
 'use strict';
 
 // Grouping-proposal governance (campaign-control hardening, 2026-10-06): the
-// candidate proposal an APPROVE_GROUPING gate approves is a governed artifact,
+// candidate proposal a campaign approval covers is a governed artifact,
 // not a hand-assembled one. This module gives it a schema, a deterministic
 // identity-coverage accounting, and digest-bound lineage to the artifacts it
 // was built from (release scope, identity map, and — when record resolution
@@ -14,15 +14,10 @@
 
 const { digestSemantic } = require('../../../doc-ops-core/src/digest');
 const { validateReleaseScope } = require('./release-scope/schema');
-// P1-3 (2026-10-21): gate names single-source from gate-registry.js.
-const { gateConstant } = require('./gate-registry');
-const fs = require('node:fs');
-const path = require('node:path');
 
 const GROUPING_PROPOSAL_SCHEMA_VERSION = 1;
 const UNIT_INTENTS = new Set(['CREATE', 'UPDATE', 'DEPRECATE', 'BACKFILL', 'REBUILD', 'NO_ACTION']);
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
-const APPROVE_GROUPING_GATE = gateConstant('APPROVE_GROUPING');
 
 const GROUPING_PROPOSAL_INVALID = 'GROUPING_PROPOSAL_INVALID';
 const GROUPING_PARTITION_INCOMPLETE = 'GROUPING_PARTITION_INCOMPLETE';
@@ -31,9 +26,11 @@ const GROUPING_PARTITION_DUPLICATE = 'GROUPING_PARTITION_DUPLICATE';
 const GROUPING_LINEAGE_UNBOUND = 'GROUPING_LINEAGE_UNBOUND';
 const GROUPING_SCOPE_NOT_APPROVAL_GRADE = 'GROUPING_SCOPE_NOT_APPROVAL_GRADE';
 const GROUPING_AMBIGUOUS_OWNERSHIP = 'GROUPING_AMBIGUOUS_OWNERSHIP';
+// 2026-10-24 single-gate ruling: the code name stays, the semantics are the
+// campaign approval's scope drift — thrown by campaign-approval.js
+// (checkCampaignScopeChain) when the presented release scope hashes to
+// something other than the scopeDigest the campaign approval envelopes.
 const GROUPING_STALE = 'GROUPING_STALE';
-const GROUPING_APPROVAL_CHAIN_INVALID = 'GROUPING_APPROVAL_CHAIN_INVALID';
-const GROUPING_APPROVAL_ALREADY_BOUND = 'GROUPING_APPROVAL_ALREADY_BOUND';
 
 class GroupingProposalError extends Error {
   constructor(code, message) {
@@ -74,7 +71,7 @@ function groupingProposalDigest(proposal) {
 // the identity map resolves explicitly (vs. derived fallback identities), and
 // the ownership classification split. Ambiguous actions already force
 // approvalGrade=false in the scout; the counts here make the blocker readable
-// at the grouping gate instead of a bare refusal.
+// at the campaign approval face instead of a bare refusal.
 function groupingCoverage({ scope, identityMap } = {}) {
   const symbols = identityMap?.symbols && typeof identityMap.symbols === 'object' ? identityMap.symbols : {};
   const coverage = {
@@ -361,111 +358,11 @@ function validateGroupingProposal(proposal, { scope = null, identityMap = null, 
   return { valid: errors.length === 0, errors };
 }
 
-// Durable approval receipt: the on-disk credential an APPROVE_GROUPING reply
-// becomes. It embeds the proposal's lineage digests so a write boundary can
-// verify the approval→scope chain WITHOUT the proposal file — paths move,
-// digests do not. Never append approval fields to the proposal artifact
-// itself: that changes its semantic digest and breaks the binding the
-// approval expresses.
-function buildGroupingApprovalReceipt({ proposal, proposalPath = null, approvedAt = new Date().toISOString() } = {}) {
-  const validation = validateGroupingProposal(proposal);
-  if (!validation.valid) {
-    throw new GroupingProposalError(
-      GROUPING_PROPOSAL_INVALID,
-      `cannot build an approval receipt for a proposal that fails schema validation: ${JSON.stringify(validation.errors.slice(0, 5))}`,
-    );
-  }
-  const digest = groupingProposalDigest(proposal);
-  return {
-    schemaVersion: 1,
-    gate: APPROVE_GROUPING_GATE,
-    proposalDigest: digest,
-    approvalCommand: `${APPROVE_GROUPING_GATE} ${digest}`,
-    ...(proposalPath ? { proposalPath } : {}),
-    language: proposal.language,
-    sdkName: proposal.sdkName,
-    track: proposal.track,
-    releaseRange: proposal.releaseRange,
-    lineage: { ...proposal.lineage },
-    approvedAt,
-  };
-}
-
-function validateGroupingApprovalReceipt(receipt) {
-  const errors = [];
-  const report = (message) => errors.push({ code: GROUPING_APPROVAL_CHAIN_INVALID, path: '$', message });
-  if (!isObject(receipt)) return { valid: false, errors: [{ code: GROUPING_APPROVAL_CHAIN_INVALID, path: '$', message: 'must be an object' }] };
-  if (receipt.schemaVersion !== 1) report('$.schemaVersion must be 1');
-  if (receipt.gate !== APPROVE_GROUPING_GATE) report(`$.gate must be ${APPROVE_GROUPING_GATE}`);
-  if (typeof receipt.proposalDigest !== 'string' || !DIGEST_PATTERN.test(receipt.proposalDigest)) {
-    report('$.proposalDigest must be a sha256:<64-hex> digest');
-  }
-  if (receipt.approvalCommand !== `${APPROVE_GROUPING_GATE} ${receipt.proposalDigest}`) {
-    report(`$.approvalCommand must be exactly "${APPROVE_GROUPING_GATE} <proposalDigest>"`);
-  }
-  if (!isObject(receipt.lineage)
-    || typeof receipt.lineage.scopeDigest !== 'string'
-    || !DIGEST_PATTERN.test(receipt.lineage.scopeDigest || '')) {
-    report('$.lineage.scopeDigest must be a sha256:<64-hex> digest (the receipt must bind the approved scope)');
-  }
-  if (receipt.lineage && typeof receipt.lineage.identityMapDigest === 'string'
-    && !DIGEST_PATTERN.test(receipt.lineage.identityMapDigest)) {
-    report('$.lineage.identityMapDigest must be a sha256:<64-hex> digest when present');
-  }
-  for (const key of ['language', 'sdkName', 'track', 'approvedAt']) {
-    if (typeof receipt[key] !== 'string' || receipt[key].length === 0) report(`$.${key} must be a non-empty string`);
-  }
-  return { valid: errors.length === 0, errors };
-}
-
-// The write-boundary chain check (api.grouping-proposal-staleness,
-// runtime-enforced): a bound campaign executes only the release scope its
-// grouping approval covers. The approval side is a receipt (file or session
-// block — same shape); the scope side is the parsed --release-scope.
-// Fail-closed on shape, GROUPING_STALE on any digest or identity drift.
-function checkGroupingScopeChain({ approval, scope } = {}) {
-  const validation = validateGroupingApprovalReceipt(approval);
-  if (!validation.valid) {
-    throw new GroupingProposalError(
-      GROUPING_APPROVAL_CHAIN_INVALID,
-      `grouping approval is malformed: ${validation.errors.map((error) => error.message).join('; ')}`,
-    );
-  }
-  if (!isObject(scope)) {
-    throw new GroupingProposalError(GROUPING_APPROVAL_CHAIN_INVALID, 'a grouping approval is bound but no release scope was presented to chain against');
-  }
-  const scopeDigest = digestSemantic(scope);
-  if (approval.lineage.scopeDigest !== scopeDigest) {
-    throw new GroupingProposalError(
-      GROUPING_STALE,
-      `the presented release scope (${scope.releaseRange || '?'}, digest ${scopeDigest}) is not the scope the grouping approval covers (${approval.lineage.scopeDigest}) — re-run the grouping gate for this scope`,
-    );
-  }
-  if (approval.language !== scope.language || approval.sdkName !== scope.sdkName || approval.track !== scope.track) {
-    throw new GroupingProposalError(
-      GROUPING_APPROVAL_CHAIN_INVALID,
-      `grouping approval identity (${approval.language}/${approval.sdkName}/${approval.track}) does not match the scope (${scope.language}/${scope.sdkName}/${scope.track})`,
-    );
-  }
-  return { proposalDigest: approval.proposalDigest, scopeDigest };
-}
-
-// First-write-wins receipt persistence (the first approval time is the
-// truth). Returns whether this call created the file. O_EXCL is the actual
-// gate (atomic against concurrent recorders); existsSync is only the fast
-// path for the friendly message — review finding.
-function writeGroupingApprovalReceipt({ receipt, approvalsDir }) {
-  const receiptPath = path.join(approvalsDir, `${receipt.proposalDigest}.json`);
-  if (fs.existsSync(receiptPath)) return { receiptPath, created: false };
-  fs.mkdirSync(approvalsDir, { recursive: true });
-  try {
-    fs.writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, { flag: 'wx' });
-  } catch (error) {
-    if (error.code === 'EEXIST') return { receiptPath, created: false };
-    throw error;
-  }
-  return { receiptPath, created: true };
-}
+// 2026-10-24 single-gate ruling: the standalone grouping receipt machinery
+// (receipt builder/validator/writer and the write-boundary chain check) was
+// the legacy approval link and is deleted — the campaign approval
+// (campaign-approval.js) envelopes the scope digest and throws GROUPING_STALE
+// on drift. Historical campaigns are closed; no consumers remain.
 
 module.exports = {
   GROUPING_PROPOSAL_SCHEMA_VERSION,
@@ -477,16 +374,10 @@ module.exports = {
   GROUPING_SCOPE_NOT_APPROVAL_GRADE,
   GROUPING_AMBIGUOUS_OWNERSHIP,
   GROUPING_STALE,
-  GROUPING_APPROVAL_CHAIN_INVALID,
-  GROUPING_APPROVAL_ALREADY_BOUND,
   GroupingProposalError,
   createGroupingProposal,
   validateGroupingProposal,
   groupingCoverage,
   stableGroupingProposalJson,
   groupingProposalDigest,
-  buildGroupingApprovalReceipt,
-  validateGroupingApprovalReceipt,
-  checkGroupingScopeChain,
-  writeGroupingApprovalReceipt,
 };

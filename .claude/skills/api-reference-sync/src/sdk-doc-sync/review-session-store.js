@@ -21,7 +21,6 @@ const { buildAcceptanceManifest } = require('./review-units');
 const { executionTargetsBaseline, normalizedTargetsValue } = require('./record-state');
 const { deriveUnitEvidence } = require('./unit-evidence');
 const { settlementFromEntry } = require('./settled-resources');
-const { validateGroupingApprovalReceipt } = require('./grouping-proposal');
 
 // The lifecycle this store hardens (PR #22's five review rounds), now
 // expressed through the shared machine every skill adopts (6.6): transitions
@@ -39,30 +38,26 @@ const REVIEW_MACHINE = defineSessionMachine({
     recordDocumentRollback: { from: ['in_progress', 'acceptance_pending'], to: 'in_progress' },
     buildSessionAcceptance: { from: ['in_progress'], to: 'acceptance_pending' },
     recordAcceptanceFinalization: { from: ['acceptance_pending'], to: 'finalized' },
-    // Two-gate close (2026-10-01 ruling): no campaign acceptance gate — the
-    // close runs only after EVERY unit finalized (guarded in closeSession).
-    // Legacy sessions never reach it: closeSession refuses them first.
+    // Mechanical close (2026-10-01 ruling, retained under the 2026-10-24
+    // single-gate model): no campaign acceptance gate — the close runs only
+    // after EVERY unit finalized (guarded in closeSession). Legacy sessions
+    // never reach it: closeSession refuses them first.
     closeSession: { from: ['in_progress'], to: 'finalized' },
     // Stock migration (2026-10-01 ruling: continue, don't rebuild): a legacy
     // campaign converts in place — every accepted unit finalizes under the
-    // two-gate semantics (governed Draft writes + per-unit receipts, applied
-    // by the CLI before this transition), then the remaining units run under
-    // the two-gate flow.
+    // per-unit semantics (governed Draft writes + journal-derived receipts,
+    // applied by the CLI before this transition), then the remaining units
+    // run under the per-unit flow.
     migrateToTwoGate: { from: ['in_progress'], to: SAME_STATE },
-    // Targets normalization (2026-10-01 ruling): the document gate writes the
-    // KB-wide final value with the Draft transition; already-finalized units
-    // (e.g. stock migrated before the ruling) get their finalTargets stamped
-    // by the one-time governed backfill.
+    // Targets normalization (2026-10-01 ruling): the unit acceptance writes
+    // the KB-wide final value with the Draft transition; already-finalized
+    // units (e.g. stock migrated before the ruling) get their finalTargets
+    // stamped by the one-time governed backfill.
     recordFinalTargets: { from: ['in_progress'], to: SAME_STATE },
     // Process-learning suppression (打回即铸): recorded while the session is
     // still open, it is the explicit "why this rejection is not a rule"
     // rationale that lets the close skip one learning event's capture.
     recordLearningSuppression: { from: ['in_progress'], to: SAME_STATE },
-    // Grouping write binding (api.grouping-proposal-staleness): binds the
-    // durable APPROVE_GROUPING receipt into the session — from that point
-    // every sdk-doc-sync entry against this session chains its --release-scope
-    // digest against the approved scope (GROUPING_STALE otherwise).
-    recordGroupingApproval: { from: ['in_progress'], to: SAME_STATE },
     // Corrective release (2026-10-24 ruling): a finalized unit whose LIVE
     // page carries a landed engine defect (e.g. the N2 replacer mangle) is
     // released back to in_progress with a typed, evidence-bound ledger row —
@@ -204,7 +199,7 @@ function targetsFinalForReviewUnit(reviewUnitId, audienceRulings = null) {
   return [...(CATEGORY_TARGETS_FINAL.get(category) || TARGETS_FINAL)];
 }
 
-// Unit-level machine (two-gate acceptance flow): the session machine governs
+// Unit-level machine (per-unit acceptance flow): the session machine governs
 // the campaign, this one governs each document unit. Unit state is DERIVED
 // from the session arrays — pendingExecutions = executed, acceptedReviewUnits
 // = finalized — so there is exactly one durable representation, and the
@@ -233,11 +228,11 @@ const UNIT_MACHINE = defineSessionMachine({
   },
 });
 
-// Acceptance flow selection: sessions created before the two-gate flow carry
+// Acceptance flow selection: sessions created before the per-unit flow carry
 // no field and keep the legacy campaign-acceptance semantics; the CLI
-// (sdk-doc-sync session creation) stamps new sessions 'two-gate'.
+// (sdk-doc-sync session creation) stamps new sessions 'per-unit'.
 function acceptanceFlowOf(session) {
-  return session?.acceptanceFlow === 'two-gate' ? 'two-gate' : 'legacy';
+  return session?.acceptanceFlow === 'per-unit' ? 'per-unit' : 'legacy';
 }
 
 function unitStatusOf(session, reviewUnitId) {
@@ -303,15 +298,14 @@ function createReviewSession({
   artifacts = {},
   acceptanceFlow = 'legacy',
   placementWalk = null,
-  groupingApproval = null,
   createdAt = new Date().toISOString(),
 }) {
   if (!nonEmptyString(sessionId)) throw new TypeError('sessionId is required');
   if (!reviewUnitManifest?.manifestDigest || !Array.isArray(reviewUnitManifest.units)) {
     throw new TypeError('reviewUnitManifest is required');
   }
-  if (acceptanceFlow !== 'legacy' && acceptanceFlow !== 'two-gate') {
-    throw new TypeError(`acceptanceFlow must be 'legacy' or 'two-gate', got ${acceptanceFlow}`);
+  if (acceptanceFlow !== 'legacy' && acceptanceFlow !== 'per-unit') {
+    throw new TypeError(`acceptanceFlow must be 'legacy' or 'per-unit', got ${acceptanceFlow}`);
   }
   // T3 placement-live binding (campaign-control batch 2c): the placement
   // audit walk this session derives its placement decisions from. Sessions
@@ -322,12 +316,6 @@ function createReviewSession({
     if (!nonEmptyString(placementWalk.digest) || !nonEmptyString(placementWalk.collectedAt)) {
       throw new TypeError('placementWalk requires { digest, collectedAt } from the placement audit product');
     }
-  }
-  // Grouping write binding: the durable APPROVE_GROUPING receipt baked in at
-  // session creation (sdk-doc-sync --grouping-approval) — validated shape,
-  // frozen copy. Sessions without one carry null and stay unbound (legacy).
-  if (groupingApproval !== null) {
-    assertValidGroupingApproval(groupingApproval);
   }
   return Object.freeze({
     schemaVersion: 1,
@@ -340,7 +328,6 @@ function createReviewSession({
     reviewUnitManifest: clone(reviewUnitManifest),
     reviewUnitManifestDigest: reviewUnitManifest.manifestDigest,
     placementWalk: placementWalk === null ? null : clone(placementWalk),
-    groupingApproval: groupingApproval === null ? null : clone(groupingApproval),
     artifacts: clone(artifacts),
     acceptedReviewUnits: [],
     pendingExecutions: [],
@@ -356,44 +343,17 @@ function createReviewSession({
   });
 }
 
-// The grouping-approval receipt shape as stored in a session (same shape the
-// record-grouping-approval CLI writes to disk).
-function assertValidGroupingApproval(approval) {
-  const validation = validateGroupingApprovalReceipt(approval);
-  if (!validation.valid) {
-    throw Object.assign(
-      new TypeError(`groupingApproval receipt is invalid: ${validation.errors.map((error) => error.message).join('; ')}`),
-      { code: 'GROUPING_APPROVAL_CHAIN_INVALID' },
-    );
-  }
-}
-
-// Binds the durable APPROVE_GROUPING receipt into the session (one-shot:
-// the same proposal digest is idempotent, a different one refuses — a
-// re-scoped campaign re-runs the grouping gate and starts a new session).
-function recordGroupingApproval(session, receipt) {
-  if (!session?.reviewUnitManifest?.units) throw new TypeError('Review session is required');
-  assertValidGroupingApproval(receipt);
-  if (session.groupingApproval) {
-    if (session.groupingApproval.proposalDigest === receipt.proposalDigest) return session;
-    throw Object.assign(
-      new Error(
-        `Review session is already bound to grouping proposal ${session.groupingApproval.proposalDigest}; a different proposal (${receipt.proposalDigest}) requires a fresh grouping gate and a new session`,
-      ),
-      { code: 'GROUPING_APPROVAL_ALREADY_BOUND' },
-    );
-  }
-  REVIEW_MACHINE.assertTransition('recordGroupingApproval', session);
-  return REVIEW_MACHINE.apply('recordGroupingApproval', session, {
-    groupingApproval: clone(receipt),
-  });
-}
+// 2026-10-24 single-gate ruling: the session-level grouping-approval binding
+// (assertValidGroupingApproval / recordGroupingApproval) was the legacy
+// approval link and is deleted with it — the campaign approval envelopes the
+// scope and chains per invocation. Sessions on disk that still carry a
+// groupingApproval field load unchanged (the extra field is ignored).
 
 // Executed-but-unaccepted executions, newest last. Verified batch mode holds
-// K of these between the batch write gate and the batch review gate; the
-// per-unit mode holds at most one. Sessions saved before the batch work only
-// carry activeExecution — synthesize the list from it so every reader sees
-// one shape.
+// K of these between execution and automatic finalization; the per-unit mode
+// holds at most one. Sessions saved before the batch work only carry
+// activeExecution — synthesize the list from it so every reader sees one
+// shape.
 function pendingList(session) {
   if (Array.isArray(session?.pendingExecutions)) return session.pendingExecutions;
   return session?.activeExecution ? [session.activeExecution] : [];
@@ -546,8 +506,8 @@ function recordDocumentExecution(session, execution, { batchContinue = false } =
   const { journalPath } = validateExecutionForUnit(session, execution || {});
   const executedAt = execution.executedAt || new Date().toISOString();
   REVIEW_MACHINE.assertTransition('recordDocumentExecution', session);
-  if (acceptanceFlowOf(session) === 'two-gate') {
-    // Unit-level typed guard: a finalized unit (accepted under the two-gate
+  if (acceptanceFlowOf(session) === 'per-unit') {
+    // Unit-level typed guard: a finalized unit (accepted under the per-unit
     // flow) has no outgoing transitions — re-execution is a corrective
     // release, not an in-place rewrite.
     assertUnitTransition('recordDocumentExecution', session, execution.reviewUnitId);
@@ -650,20 +610,21 @@ function recordDocumentAcceptance(session, receipt) {
   }
   const acceptedAt = receipt.acceptedAt || new Date().toISOString();
   REVIEW_MACHINE.assertTransition('recordDocumentAcceptance', session);
-  // Two-gate acceptance (2026-10-01 ruling): document acceptance IS the
-  // unit's final acceptance. The transition demands the same evidence the
-  // campaign finalizer demanded (tree-delta authoritative, verbatim-attested
-  // content fidelity), verified WIP→Draft transitions for EVERY touched
-  // record (written by the caller before this call, under governance), and a
-  // digest-bound per-unit receipt on disk. The unit then finalizes —
-  // terminal, rollback-proof, no campaign gate behind it.
-  let twoGateFields = {};
-  if (acceptanceFlowOf(session) === 'two-gate') {
+  // Per-unit acceptance (2026-10-01 ruling, retained under the 2026-10-24
+  // single-gate model): document acceptance IS the unit's final acceptance.
+  // The transition demands the same evidence the campaign finalizer demanded
+  // (tree-delta authoritative, verbatim-attested content fidelity), verified
+  // WIP→Draft transitions for EVERY touched record (written by the caller
+  // before this call, under governance), and a digest-bound per-unit receipt
+  // on disk. The unit then finalizes — terminal, rollback-proof, no campaign
+  // gate behind it.
+  let finalizationFields = {};
+  if (acceptanceFlowOf(session) === 'per-unit') {
     assertUnitTransition('recordDocumentAcceptance', session, receipt.reviewUnitId);
     // The receipt's touchedRecords (not the manifest unit's shape — the
     // manifest carries none) are the per-unit evidence surface.
     deriveUnitEvidence({ unit: { reviewUnitId: receipt.reviewUnitId, touchedRecords }, entries });
-    twoGateFields = {
+    finalizationFields = {
       ...validateFinalizationEvidence({
         reviewUnitId: receipt.reviewUnitId,
         executionJournalDigest: receipt.executionJournalDigest,
@@ -688,7 +649,7 @@ function recordDocumentAcceptance(session, receipt) {
       recordLinks,
       commentsResolved: true,
       acceptedAt,
-      ...twoGateFields,
+      ...finalizationFields,
     }].sort((left, right) => left.reviewUnitId.localeCompare(right.reviewUnitId))),
     pendingExecutions: Object.freeze(remainingPendings),
     activeExecution: head ? clone(head) : null,
@@ -696,15 +657,15 @@ function recordDocumentAcceptance(session, receipt) {
   }, { timestamp: acceptedAt });
 }
 
-// Pre-write validation for the two-gate document acceptance: the CLI runs
+// Pre-write validation for the per-unit document acceptance: the CLI runs
 // this BEFORE any external mutation so a receipt that would refuse never
 // drives a Draft write. recordDocumentAcceptance re-validates everything
 // after the writes — the caller's word is never evidence by itself.
 function prepareDocumentAcceptance(session, receipt) {
   if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
-  if (acceptanceFlowOf(session) !== 'two-gate') {
+  if (acceptanceFlowOf(session) !== 'per-unit') {
     throw Object.assign(
-      new Error('prepareDocumentAcceptance is the two-gate pre-write validation; legacy sessions accept through recordDocumentAcceptance'),
+      new Error('prepareDocumentAcceptance is the per-unit pre-write validation; legacy sessions accept through recordDocumentAcceptance'),
       { code: 'ACCEPTANCE_FLOW_LEGACY' },
     );
   }
@@ -728,14 +689,14 @@ function prepareDocumentAcceptance(session, receipt) {
 }
 
 // Shared finalization-evidence checks: the verified WIP→Draft transition
-// records and the digest-bound per-unit receipt file. Used by the two-gate
+// records and the digest-bound per-unit receipt file. Used by the per-unit
 // document acceptance AND the stock migration so both paths enforce the
 // identical bar. Returns the normalized fields stamped onto the accepted
 // entry.
 function validateFinalizationEvidence({ reviewUnitId, executionJournalDigest, touchedRecords, draftRecords, unitReceiptPath, unitReceiptDigest }) {
   if (!Array.isArray(draftRecords) || touchedRecords.length === 0
       || draftRecords.length !== touchedRecords.length) {
-    throw new Error(`Two-gate finalization requires a verified WIP→Draft transition record for every touched record (${touchedRecords.length})`);
+    throw new Error(`Per-unit finalization requires a verified WIP→Draft transition record for every touched record (${touchedRecords.length})`);
   }
   const touchedIds = new Set(touchedRecords.map((record) => record.recordId));
   const seen = new Set();
@@ -754,7 +715,7 @@ function validateFinalizationEvidence({ reviewUnitId, executionJournalDigest, to
   }
   const resolvedReceiptPath = path.resolve(unitReceiptPath || '');
   if (!nonEmptyString(unitReceiptDigest) || !fs.existsSync(resolvedReceiptPath)) {
-    throw new Error('Two-gate finalization requires a per-unit receipt file (unitReceiptPath + unitReceiptDigest)');
+    throw new Error('Per-unit finalization requires a per-unit receipt file (unitReceiptPath + unitReceiptDigest)');
   }
   let unitReceipt;
   try {
@@ -779,7 +740,7 @@ function validateFinalizationEvidence({ reviewUnitId, executionJournalDigest, to
 // KB-wide final value by the caller).
 function validateFinalTargets(finalTargets, touchedRecords) {
   if (!finalTargets || typeof finalTargets !== 'object' || Array.isArray(finalTargets)) {
-    throw new Error('Two-gate acceptance requires finalTargets for every touched record');
+    throw new Error('Per-unit acceptance requires finalTargets for every touched record');
   }
   const normalized = {};
   for (const record of touchedRecords) {
@@ -793,15 +754,15 @@ function validateFinalTargets(finalTargets, touchedRecords) {
 }
 
 // Stock migration (2026-10-01 ruling): stamps every accepted unit with the
-// two-gate finalization evidence and flips the session's acceptance flow.
+// per-unit finalization evidence and flips the session's acceptance flow.
 // Coverage is all-or-nothing — a partial conversion would leave
-// legacy-accepted units under two-gate resume semantics (which demand Draft)
+// legacy-accepted units under per-unit resume semantics (which demand Draft)
 // while their records stayed WIP.
 function migrateSessionToTwoGate(session, { units, convertedAt = new Date().toISOString() } = {}) {
   if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
   if (acceptanceFlowOf(session) !== 'legacy') {
     throw Object.assign(
-      new Error('Session is already on the two-gate acceptance flow'),
+      new Error('Session is already on the per-unit acceptance flow'),
       { code: 'ACCEPTANCE_FLOW_ALREADY_TWO_GATE' },
     );
   }
@@ -846,7 +807,7 @@ function migrateSessionToTwoGate(session, { units, convertedAt = new Date().toIS
     });
   }
   return REVIEW_MACHINE.apply('migrateToTwoGate', session, {
-    acceptanceFlow: 'two-gate',
+    acceptanceFlow: 'per-unit',
     acceptedReviewUnits: Object.freeze((session.acceptedReviewUnits || [])
       .map((unit) => migratedEntries.get(unit.reviewUnitId) || clone(unit))
       .sort((left, right) => left.reviewUnitId.localeCompare(right.reviewUnitId))),
@@ -961,7 +922,7 @@ function transferUnitCompletion(session, {
   }, { timestamp: transferredAt });
 }
 
-// Two-gate finalization evidence supplied by the caller after the governed
+// Per-unit finalization evidence supplied by the caller after the governed
 // Draft writes is validated by validateFinalizationEvidence (shared with the
 // stock migration and the cross-session transfer).
 
@@ -1213,9 +1174,9 @@ function closeSession(session, {
     learning = null,
 } = {}) {
     if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
-    if (acceptanceFlowOf(session) !== 'two-gate') {
+    if (acceptanceFlowOf(session) !== 'per-unit') {
         throw Object.assign(
-            new Error('Legacy sessions close through build-acceptance + APPROVE_ACCEPTANCE; closeSession is the two-gate close'),
+            new Error('Legacy sessions close through their recorded acceptance flow; closeSession is the per-unit close'),
             { code: 'ACCEPTANCE_FLOW_LEGACY' },
         );
     }
@@ -1331,7 +1292,7 @@ function recordDocumentChangesRequested(session, { reviewUnitId, reason = null }
   }
   const requestedAt = new Date().toISOString();
   REVIEW_MACHINE.assertTransition('recordDocumentChangesRequested', session);
-  if (acceptanceFlowOf(session) === 'two-gate') {
+  if (acceptanceFlowOf(session) === 'per-unit') {
     assertUnitTransition('recordDocumentChangesRequested', session, reviewUnitId);
   }
   const remainingPendings = pendings.filter((item) => item.reviewUnitId !== reviewUnitId);
@@ -1526,8 +1487,8 @@ function recordRollbackIntent(session, {
     validateExecutionJournal(path.resolve(anchor.executionJournalPath || ''), anchor.executionJournalDigest);
   }
   const startedAt = new Date().toISOString();
-  if (acceptanceFlowOf(session) === 'two-gate') {
-    // A finalized unit (accepted under the two-gate flow) is terminal: the
+  if (acceptanceFlowOf(session) === 'per-unit') {
+    // A finalized unit (accepted under the per-unit flow) is terminal: the
     // machine refuses the lease the way it refuses every other transition.
     assertUnitTransition('recordRollbackIntent', session, reviewUnitId);
   }
@@ -1553,7 +1514,7 @@ function recordDocumentRollback(session, receipt) {
     throw new Error(`Unknown review unit: ${reviewUnitId || '(missing)'}`);
   }
   REVIEW_MACHINE.assertTransition('recordDocumentRollback', session);
-  if (acceptanceFlowOf(session) === 'two-gate') {
+  if (acceptanceFlowOf(session) === 'per-unit') {
     // The unit-machine refusal precedes journal validation: a finalized unit
     // is terminal regardless of what evidence the caller presents.
     assertUnitTransition('recordDocumentRollback', session, reviewUnitId);
@@ -1676,9 +1637,9 @@ function buildSessionAcceptance(session, builtAt = new Date().toISOString()) {
   if (session.scanStateUpdated === true) {
     throw new Error('Review session is already finalized');
   }
-  if (acceptanceFlowOf(session) === 'two-gate') {
+  if (acceptanceFlowOf(session) === 'per-unit') {
     throw Object.assign(
-      new Error('Two-gate sessions have no campaign acceptance manifest; units finalize at document acceptance and the session closes via close-session'),
+      new Error('Per-unit sessions have no campaign acceptance manifest; units finalize at document acceptance and the session closes via close-session'),
       { code: 'ACCEPTANCE_FLOW_SUPERSEDED' },
     );
   }
@@ -1783,16 +1744,10 @@ function loadReviewSessionState(filePath) {
       `Review session is inconsistent: rollback lease and receipt coexist for ${activeRollback.reviewUnitId}: ${resolved}`,
     );
   }
-  // A bound grouping approval is load-bearing at the write boundary — a
-  // hand-edited or corrupted receipt must refuse at load, not at the first
-  // execution that happens to present a scope.
-  if (loaded.state.groupingApproval !== undefined && loaded.state.groupingApproval !== null) {
-    try {
-      assertValidGroupingApproval(loaded.state.groupingApproval);
-    } catch (error) {
-      throw new Error(`Review session is invalid (groupingApproval): ${error.message}: ${resolved}`);
-    }
-  }
+  // Legacy sessions may still carry a groupingApproval field from the retired
+  // approval link (2026-10-24 single-gate ruling); the field is inert now —
+  // the campaign approval chains per invocation — so it loads through
+  // untouched instead of refusing historical sessions.
   return { session: loaded.state, sessionDigest: loaded.stateDigest };
 }
 
@@ -1835,22 +1790,22 @@ function validateResumeSession({ session, reviewUnitManifest, currentRecords }) 
       executionJournalDigest: pending.executionJournalDigest,
     });
   }
-  const twoGate = acceptanceFlowOf(session) === 'two-gate';
+  const perUnit = acceptanceFlowOf(session) === 'per-unit';
   for (const receipt of session.acceptedReviewUnits || []) {
     const { touchedRecords, entries } = validateAcceptedReceipt(session, receipt);
     // Targets must be UNCHANGED since the unit executed, not blank: the
     // baseline is derived from the journal's rollback capsule (the only
     // evidence of pre-execution Targets), so both executor writes and manual
-    // edits drift the record and block resume. Two-gate sessions finalized
+    // edits drift the record and block resume. Per-unit sessions finalized
     // the unit at document acceptance: its records carry the verified Draft
     // transition instead of sitting at WIP.
     const baseline = executionTargetsBaseline(entries);
     for (const touched of touchedRecords) {
       const current = records.get(touched.recordId);
       if (!current) throw new Error(`Accepted record is missing during resume: ${touched.recordId}`);
-      if (twoGate) {
+      if (perUnit) {
         if (recordProgress(current) !== 'Draft') {
-          throw new Error(`Finalized record ${touched.recordId} must remain Draft (two-gate acceptance finalized the unit)`);
+          throw new Error(`Finalized record ${touched.recordId} must remain Draft (per-unit acceptance finalized the unit)`);
         }
       } else if (recordProgress(current) !== 'WIP') {
         throw new Error(`Accepted record ${touched.recordId} must remain WIP until final acceptance`);
@@ -1902,7 +1857,6 @@ module.exports = {
   recordDocumentExecution,
   recordDocumentChangesRequested,
   recordDocumentRollback,
-  recordGroupingApproval,
   releaseUnitForCorrectiveRework,
   recordReviewDecision,
   recordRollbackIntent,

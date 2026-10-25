@@ -256,7 +256,6 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/targets-final.test.js',
     '.claude/skills/api-reference-sync/tests/token-reference-reader.test.js',
     '.claude/skills/api-reference-sync/tests/track-topology.test.js',
-    '.claude/skills/api-reference-sync/tests/two-gate-flow.test.js',
     '.claude/skills/api-reference-sync/tests/type-url-index.test.js',
     '.claude/skills/api-reference-sync/tests/verbatim-content.test.js',
     '.claude/skills/api-reference-sync/tests/verify-retry-loop.test.js',
@@ -328,12 +327,15 @@ test('operator ceremony is retired: no digest-bound gate replies, plain unit-lis
   // 为纯内部身份（幂等去重），不是操作员批准面。
   const skillRoot = path.resolve(__dirname, '..');
   const skill = fs.readFileSync(path.join(skillRoot, 'SKILL.md'), 'utf8');
-  assert.doesNotMatch(skill, /APPROVE_GROUPING sha256:/);
-  assert.doesNotMatch(skill, /APPROVE_WRITES sha256:/);
-  assert.doesNotMatch(skill, /APPROVE_CAMPAIGN sha256:/);
-  assert.doesNotMatch(skill, /APPROVE_ROLLBACK <review-unit-id> sha256:/);
+  // Generic and stronger: NO digest-bound APPROVE_* reply format of ANY kind.
+  assert.doesNotMatch(skill, /APPROVE_[A-Z_]+ sha256:/);
+  assert.doesNotMatch(skill, /APPROVE_[A-Z_]+ <[a-z-]+> sha256:/);
   assert.match(skill, /单元清单/);
-  assert.match(skill, /已退役的机制/);
+  // The single approval surface (2026-10-24 ruling): the campaign gate is the
+  // one named operator stop, and the rollback confirmation rides the same
+  // channel — no other approval ceremony exists in the skill face.
+  assert.match(skill, /single `APPROVE_CAMPAIGN` gate/);
+  assert.doesNotMatch(skill, /APPROVE_(?:LEGACY|RETIRED)/);
 });
 
 test('rollback CLI reference documents deterministic plan, approval, execute, and reconciliation', () => {

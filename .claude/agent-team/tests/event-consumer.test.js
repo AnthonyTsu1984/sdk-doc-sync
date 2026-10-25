@@ -54,7 +54,7 @@ test('handleEvent allows any normalized sender id candidate', async () => {
       message: {
         chat_id: localConfig.feishu.chatId,
         message_id: 'om_1',
-        content: `APPROVE_WRITES loc-scan-1 ${BATCH_DIGEST}`,
+        content: `APPROVE_TASK loc-scan-1 ${BATCH_DIGEST}`,
       },
     },
     actionBatchResolver: () => currentBatch(),
@@ -82,7 +82,7 @@ test('handleEvent appends decision and dispatches once', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-agent-consumer-'));
   const logPath = path.join(dir, 'decisions.jsonl');
   const dispatched = [];
-  const event = { chat_id: 'oc_chat', sender_id: 'ou_allowed', message_id: 'om_1', content: `APPROVE_WRITES loc-scan-1 ${BATCH_DIGEST}` };
+  const event = { chat_id: 'oc_chat', sender_id: 'ou_allowed', message_id: 'om_1', content: `APPROVE_TASK loc-scan-1 ${BATCH_DIGEST}` };
   const first = await handleEvent({
     config: config(logPath),
     githubToken: 'token',
@@ -123,7 +123,7 @@ test('legacy task-only approval returns the exact current command without dispat
   });
   assert.equal(result.local, true);
   assert.equal(dispatched.length, 0);
-  assert.match(sent[0].text, new RegExp(`APPROVE_WRITES loc-scan-1 ${BATCH_DIGEST}`));
+  assert.match(sent[0].text, new RegExp(`APPROVE_TASK loc-scan-1 ${BATCH_DIGEST}`));
 });
 
 test('handleEvent returns local response for help without dispatching', async () => {

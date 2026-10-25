@@ -2,7 +2,7 @@
 'use strict';
 
 // Canonical grouping-proposal builder (campaign-control hardening, 2026-10-06).
-// The candidate proposal an APPROVE_GROUPING gate approves is assembled ONLY
+// The candidate proposal the campaign approval covers is assembled ONLY
 // here — per-campaign hand-written tmp builders produced un-schema'd artifacts
 // with no lineage (the 2026-10 go/java intake lessons). Inputs are governed:
 // the release scope, the track identity map, and

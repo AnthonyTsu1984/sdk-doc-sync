@@ -16,17 +16,17 @@ test('parseApprovalCommand parses MVP policy commands', () => {
 
 test('parseApprovalCommand requires exact batch digests for live decisions', () => {
   const digest = `sha256:${'a'.repeat(64)}`;
-  assert.deepEqual(parseApprovalCommand(`APPROVE_WRITES loc-scan-1 ${digest}`), {
+  assert.deepEqual(parseApprovalCommand(`APPROVE_TASK loc-scan-1 ${digest}`), {
     action: 'approve_live_write',
     taskId: 'loc-scan-1',
     batchDigest: digest,
     sourceRunId: null,
     customInstruction: '',
-    raw: `APPROVE_WRITES loc-scan-1 ${digest}`,
+    raw: `APPROVE_TASK loc-scan-1 ${digest}`,
   });
   assert.equal(parseApprovalCommand(`REJECT_WRITES loc-scan-1 ${digest}: wrong scope`).action, 'reject');
   assert.equal(parseApprovalCommand(`REQUEST_CHANGES loc-scan-1 ${digest}: exclude Deployment`).action, 'changes_requested');
-  assert.equal(parseApprovalCommand('APPROVE_WRITES loc-scan-1 sha256:short'), null);
+  assert.equal(parseApprovalCommand('APPROVE_TASK loc-scan-1 sha256:short'), null);
 });
 
 test('parseApprovalCommand captures custom instruction', () => {

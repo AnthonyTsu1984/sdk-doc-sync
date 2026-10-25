@@ -2,7 +2,7 @@
 'use strict';
 
 // Revision-campaign session intake (java v3.0.x content revision round).
-// Turns the revision scope artifact + reviewed contexts into a two-gate
+// Turns the revision scope artifact + reviewed contexts into a per-unit
 // review session through the sanctioned store path (createReviewSession /
 // saveReviewSession — the store is intentionally CLI-agnostic; the release
 // CLI's creation gate is diff-derived and cannot see content-conformance
@@ -126,7 +126,7 @@ function intakeRevisionSession({ scope, contexts, language, sdkName, track, sour
         sdkName,
         track,
         reviewUnitManifest,
-        acceptanceFlow: 'two-gate',
+        acceptanceFlow: 'per-unit',
         placementWalk: null,
         artifacts: {
             revisionScope: {

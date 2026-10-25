@@ -21,8 +21,7 @@
 //        dry-run full JSON   → proposedExecutionBatch.batchDigest
 //        dry-run bounded sum → proposedBatchDigest
 //        gate manifest       → digest, or the gate's native receipt field
-//                              (proposalDigest / rollbackManifestDigest /
-//                               acceptanceManifestDigest / campaignPlanDigest)
+//                              (rollbackManifestDigest / campaignPlanDigest)
 //   2. Every replyLine in the index must be reconstructible through
 //      gateRegistry.gateReplyLine — the builder derives them (never accepts a
 //      free-form override) and self-checks; drift is a typed rejection.
@@ -30,10 +29,11 @@
 //      gate presentation cannot be approved — this is the root of the slice-B
 //      trust chain (card matching = gate kind + session).
 //
-// Manifest gates may bind session state: for APPROVE_DOCUMENT the CLI hands in
-// the loaded session and every unit must match a pendingExecution by
-// (reviewUnitId, executionJournalDigest) — a card describing executions the
-// session does not hold is unbound (PRESENTATION_SESSION_UNBOUND).
+// 2026-10-24 ruling: the only digest-bound operator gates are
+// APPROVE_CAMPAIGN (the dry-run path below presents exactly this gate) and
+// APPROVE_ROLLBACK. The retired per-unit document/acceptance stops no longer
+// build cards — a verified unit finalizes automatically with a
+// journal-derived receipt.
 
 const path = require('node:path');
 
@@ -54,25 +54,14 @@ const PRESENTATION_SESSION_UNBOUND = 'PRESENTATION_SESSION_UNBOUND';
 const PRESENTATION_UNIT_INCOMPLETE = 'PRESENTATION_UNIT_INCOMPLETE';
 
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
-// Mirror of bin/sdk-review-session.js APPROVE_DOCUMENT_LINE_RE — the strict
-// grammar resolve-batch-review parses. The presentation must emit lines the
-// resolver accepts verbatim.
-const DOCUMENT_LINE_PATTERN = /^APPROVE_DOCUMENT\s+(\S+)\s+sha256:([0-9a-f]{64})$/;
-// Execution journals on disk are named sha256-<64hex>.jsonl (review-session-
-// store.js receipt naming and every campaign-plans journal).
-const JOURNAL_NAME_PATTERN = /^sha256-([0-9a-f]{64})\.jsonl$/;
 
 // Native receipt field per digest-bound gate — verified against the producers:
-//   grouping-proposal.js     → proposalDigest        (APPROVE_GROUPING <proposalDigest>)
 //   rollback-planner.js      → rollbackManifestDigest
-//   acceptance-finalizer.js  → acceptanceManifestDigest
 //   campaign-approval.js     → campaignPlanDigest
-// APPROVE_WRITES has no manifest carrier (its binding is the dry-run batch
-// digest); APPROVE_DOCUMENT binds per-unit journal digests instead.
+// APPROVE_CAMPAIGN presented from a dry-run receipt binds the execution
+// batch digest directly (no manifest carrier needed).
 const DIGEST_FIELD_BY_GATE = Object.freeze({
-  APPROVE_GROUPING: 'proposalDigest',
   APPROVE_ROLLBACK: 'rollbackManifestDigest',
-  APPROVE_ACCEPTANCE: 'acceptanceManifestDigest',
   APPROVE_CAMPAIGN: 'campaignPlanDigest',
 });
 
@@ -140,8 +129,8 @@ function validSource(value) {
 //   分组提案（candidate-spec 阶段，grouping-proposal.js schema 钉死）:
 //     units[] = { id, sourceStableId, actionIntent, decision, risks }，
 //     actionIntent ∈ {CREATE, UPDATE, DEPRECATE, BACKFILL, REBUILD, NO_ACTION}。
-//   gate manifest（APPROVE_DOCUMENT 等）: units 只有 reviewUnitId/label/
-//     journalDigest —— 没有动作分类，impact 如实降级为 null（绝不编数）。
+//   gate manifest: units 只有 reviewUnitId/label/journalDigest —— 没有动作
+//     分类，impact 如实降级为 null（绝不编数）。
 //
 // 动作映射是**显示语义**，绝不参与 digest 绑定：CREATE 桶收 CREATE/BACKFILL
 // （BACKFILL 是补文档空缺的 create，sync-planner 注释实证），UPDATE 桶收
@@ -252,7 +241,7 @@ function deriveImpact({ fromDryrun, manifest }) {
 function extractDryRunDigest(dryRun) {
   // Full engine result first (bin/sdk-doc-sync.js --json), bounded summary
   // second (createBoundedSummary). No fallback to proposedReleaseBatchDigest:
-  // the APPROVE_WRITES gate binds the EXECUTION batch, and a release batch is
+  // the campaign gate binds the EXECUTION batch, and a release batch is
   // a different signing surface.
   const full = dryRun?.proposedExecutionBatch?.batchDigest;
   const bounded = dryRun?.proposedBatchDigest;
@@ -261,7 +250,7 @@ function extractDryRunDigest(dryRun) {
   return { digest: null, field: null };
 }
 
-// Batch-scoped unit rows for the write-gate card. Prefer the dry-run's own
+// Batch-scoped unit rows for the campaign card. Prefer the dry-run's own
 // writeApprovalPresentation (built from the exact actionable batch, carries
 // title + live links); fall back to the active review unit; else no rows (a
 // digest-only card — the digest remains the only binding).
@@ -310,13 +299,9 @@ function writeUnitsFromDryRun(dryRun) {
 
 function manifestUnitsFromInput(manifest, gate) {
   const rawUnits = manifest?.units;
-  // Digest-bound gates may present on the digest alone (grouping receipt,
-  // campaign plan, acceptance manifest, rollback manifest); only the DOCUMENT
-  // gate binds per-unit rows and therefore requires the array.
+  // Digest-bound gates may present on the digest alone (campaign plan,
+  // rollback manifest); the unit rows are presentation context only.
   if (rawUnits === undefined || rawUnits === null) {
-    if (gate === 'APPROVE_DOCUMENT') {
-      throw new PresentationError(PRESENTATION_INPUT_INVALID, 'gate manifest requires a units array', { field: 'units' });
-    }
     return [];
   }
   if (!Array.isArray(rawUnits)) {
@@ -325,11 +310,10 @@ function manifestUnitsFromInput(manifest, gate) {
   const units = rawUnits.map((unit) => {
     // 呈门 v2：--manifest 也直接吃分组提案/candidate-spec 形态的单元
     // （grouping-proposal.js：{id, sourceStableId, actionIntent,…}）——id 即
-    // 呈现层的 reviewUnitId。APPROVE_DOCUMENT 仍只认 reviewUnitId（其绑定
-    // 语义是执行日志，不允许别名）。
+    // 呈现层的 reviewUnitId。
     const reviewUnitId = nonEmptyString(unit?.reviewUnitId)
       ? unit.reviewUnitId
-      : (gate !== 'APPROVE_DOCUMENT' && nonEmptyString(unit?.id) ? unit.id : unit?.reviewUnitId);
+      : (nonEmptyString(unit?.id) ? unit.id : unit?.reviewUnitId);
     if (!isObject(unit) || !nonEmptyString(reviewUnitId)) {
       throw new PresentationError(
         PRESENTATION_UNIT_INCOMPLETE,
@@ -344,7 +328,7 @@ function manifestUnitsFromInput(manifest, gate) {
     if (nonEmptyString(unit.journalPath)) journal = path.basename(unit.journalPath);
     else if (nonEmptyString(unit.journal)) journal = unit.journal;
     const links = Array.isArray(unit.links) ? unit.links.filter(nonEmptyString) : [];
-    const row = {
+    return {
       reviewUnitId,
       label: nonEmptyString(unit.label)
         ? unit.label
@@ -354,77 +338,13 @@ function manifestUnitsFromInput(manifest, gate) {
       unitBatchDigest: nonEmptyString(unit.batchDigest) ? unit.batchDigest : null,
       links,
     };
-    if (gate === 'APPROVE_DOCUMENT') {
-      if (typeof journalDigest !== 'string' || !DIGEST_PATTERN.test(journalDigest)) {
-        throw new PresentationError(
-          PRESENTATION_UNIT_INCOMPLETE,
-          `DOCUMENT gate unit ${unit.reviewUnitId} requires a sha256:<64-hex> journal digest (executionJournalDigest)`,
-          { reviewUnitId: unit.reviewUnitId },
-        );
-      }
-    }
-    return row;
   });
   return units;
 }
 
-// The session truth check (APPROVE_DOCUMENT only): every presented unit must
-// bind a pendingExecution of the loaded session. A card describing executions
-// the session does not hold is unbound — fail closed.
-function assertDocumentUnitsBoundToSession(units, session) {
-  if (!isObject(session) || !Array.isArray(session.pendingExecutions)) {
-    throw new PresentationError(
-      PRESENTATION_SESSION_UNBOUND,
-      'the bound session exposes no pendingExecutions — a DOCUMENT gate presentation cannot be bound',
-      { sessionPath: null },
-    );
-  }
-  const pending = new Map(session.pendingExecutions
-    .filter((row) => isObject(row) && nonEmptyString(row.reviewUnitId))
-    .map((row) => [row.reviewUnitId, row.executionJournalDigest]));
-  for (const unit of units) {
-    if (!pending.has(unit.reviewUnitId)) {
-      throw new PresentationError(
-        PRESENTATION_SESSION_UNBOUND,
-        `unit ${unit.reviewUnitId} is not a pending execution of the bound session`,
-        { reviewUnitId: unit.reviewUnitId },
-      );
-    }
-    if (pending.get(unit.reviewUnitId) !== unit.journalDigest) {
-      throw new PresentationError(
-        PRESENTATION_SESSION_UNBOUND,
-        `unit ${unit.reviewUnitId} journal digest ${unit.journalDigest} does not bind the session's pending execution (${pending.get(unit.reviewUnitId)})`,
-        { reviewUnitId: unit.reviewUnitId },
-      );
-    }
-  }
-}
-
 // ---------- reply-line derivation (through the registry, always) ----------
 
-function deriveReplyLines({ gate, digest, units }) {
-  if (gate === 'APPROVE_DOCUMENT') {
-    return sortApprovalUnits(units).map((unit) => {
-      const line = `APPROVE_DOCUMENT ${unit.reviewUnitId} ${unit.journalDigest}`;
-      if (!DOCUMENT_LINE_PATTERN.test(line)) {
-        throw new PresentationError(
-          PRESENTATION_REPLY_LINE_MISMATCH,
-          `derived reply line for ${unit.reviewUnitId} violates the APPROVE_DOCUMENT grammar the batch resolver parses`,
-          { reviewUnitId: unit.reviewUnitId, line },
-        );
-      }
-      // The registry is the single reconstruction surface: the exact line the
-      // registry would emit for a manifest carrying this replyLine.
-      if (gateReplyLine('APPROVE_DOCUMENT', { replyLine: line }) !== line) {
-        throw new PresentationError(
-          PRESENTATION_REPLY_LINE_MISMATCH,
-          `reply line for ${unit.reviewUnitId} is not reconstructible through gateRegistry.gateReplyLine`,
-          { reviewUnitId: unit.reviewUnitId, line },
-        );
-      }
-      return line;
-    });
-  }
+function deriveReplyLines({ gate, digest }) {
   if (typeof digest !== 'string' || !DIGEST_PATTERN.test(digest)) {
     throw new PresentationError(PRESENTATION_REPLY_LINE_MISMATCH, 'reply-line derivation requires a well-formed digest', { gate });
   }
@@ -446,10 +366,9 @@ function defaultTitle(gate, unitCount) {
 // ---------- buildPresentationIndex ----------
 
 // input:
-//   fromDryrun — parsed dry-run receipt (engine --json result or bounded summary); gate = APPROVE_WRITES
+//   fromDryrun — parsed dry-run receipt (engine --json result or bounded summary); gate = APPROVE_CAMPAIGN
 //   manifest   — parsed gate manifest { gate, units[], digest? }; any registered gate
 //   sessionPath     (required) repo-relative POSIX path of the sync session
-//   session         (optional) parsed session object — enables the DOCUMENT binding check
 //   title / notes   (optional) human text
 //   generatedAt     (optional) ISO stamp override (tests); defaults to now
 function buildPresentationIndex(input = {}) {
@@ -488,7 +407,7 @@ function buildPresentationIndex(input = {}) {
     if (!isObject(dryRun)) {
       throw new PresentationError(PRESENTATION_INPUT_INVALID, 'fromDryrun must be a parsed dry-run receipt object');
     }
-    gate = 'APPROVE_WRITES';
+    gate = 'APPROVE_CAMPAIGN';
     const extracted = extractDryRunDigest(dryRun);
     digest = extracted.digest;
     if (digest === null) {
@@ -518,34 +437,21 @@ function buildPresentationIndex(input = {}) {
     }
     gate = manifest.gate;
     units = manifestUnitsFromInput(manifest, gate);
-    if (gate === 'APPROVE_DOCUMENT') {
-      if (manifest.digest !== undefined && manifest.digest !== null) {
-        throw new PresentationError(
-          PRESENTATION_INPUT_INVALID,
-          'APPROVE_DOCUMENT binds per-unit journal digests, not a top-level digest',
-          { field: 'digest' },
-        );
-      }
-    } else {
-      const nativeField = DIGEST_FIELD_BY_GATE[gate] || null;
-      digest = manifest.digest !== undefined && manifest.digest !== null
-        ? manifest.digest
-        : (nativeField && manifest[nativeField] !== undefined && manifest[nativeField] !== null ? manifest[nativeField] : null);
-      if (digest === null) {
-        throw new PresentationError(
-          PRESENTATION_DIGEST_MISSING,
-          `the ${gate} manifest carries no digest (looked for digest${nativeField ? ` / ${nativeField}` : ''}) — a presentation never computes one`,
-          { fields: nativeField ? ['digest', nativeField] : ['digest'] },
-        );
-      }
-      if (typeof digest !== 'string' || !DIGEST_PATTERN.test(digest)) {
-        throw new PresentationError(PRESENTATION_INPUT_INVALID, `${gate} digest must be sha256:<64-hex> (got ${JSON.stringify(digest)})`);
-      }
+    const nativeField = DIGEST_FIELD_BY_GATE[gate] || null;
+    digest = manifest.digest !== undefined && manifest.digest !== null
+      ? manifest.digest
+      : (nativeField && manifest[nativeField] !== undefined && manifest[nativeField] !== null ? manifest[nativeField] : null);
+    if (digest === null) {
+      throw new PresentationError(
+        PRESENTATION_DIGEST_MISSING,
+        `the ${gate} manifest carries no digest (looked for digest${nativeField ? ` / ${nativeField}` : ''}) — a presentation never computes one`,
+        { fields: nativeField ? ['digest', nativeField] : ['digest'] },
+      );
+    }
+    if (typeof digest !== 'string' || !DIGEST_PATTERN.test(digest)) {
+      throw new PresentationError(PRESENTATION_INPUT_INVALID, `${gate} digest must be sha256:<64-hex> (got ${JSON.stringify(digest)})`);
     }
     if (Array.isArray(manifest.replyLines)) providedReplyLines = manifest.replyLines;
-    if (gate === 'APPROVE_DOCUMENT' && units.length === 0) {
-      throw new PresentationError(PRESENTATION_INPUT_INVALID, 'an APPROVE_DOCUMENT presentation requires at least one unit');
-    }
   }
 
   // source 三件套透传（呈门 v2）：给了就必须合法 —— 一个坏 source 会让卡片
@@ -566,7 +472,7 @@ function buildPresentationIndex(input = {}) {
   const impact = deriveImpact({ fromDryrun: hasDryrun ? input.fromDryrun : null, manifest: hasManifest ? input.manifest : null });
 
   const sortedUnits = sortApprovalUnits(units);
-  const replyLines = deriveReplyLines({ gate, digest, units: sortedUnits });
+  const replyLines = deriveReplyLines({ gate, digest });
 
   // Supplied reply lines are verified, never trusted: drift is a typed reject.
   if (providedReplyLines !== null) {
@@ -575,24 +481,10 @@ function buildPresentationIndex(input = {}) {
       || providedReplyLines.some((line, index) => line !== replyLines[index])) {
       throw new PresentationError(
         PRESENTATION_REPLY_LINE_MISMATCH,
-        'manifest replyLines disagree with the lines derived from the bound digest/units through gateRegistry.gateReplyLine',
+        'manifest replyLines disagree with the lines derived from the bound digest through gateRegistry.gateReplyLine',
         { provided: providedReplyLines, derived: replyLines },
       );
     }
-  }
-  if (gate === 'APPROVE_DOCUMENT' && nonEmptyString(input.manifest.replyLine)) {
-    if (!replyLines.includes(input.manifest.replyLine.trim())) {
-      throw new PresentationError(
-        PRESENTATION_REPLY_LINE_MISMATCH,
-        'manifest replyLine is not one of the per-unit lines derived from the units',
-        { provided: input.manifest.replyLine, derived: replyLines },
-      );
-    }
-  }
-
-  // Document gate sessions must actually hold the presented executions.
-  if (gate === 'APPROVE_DOCUMENT' && input.session !== undefined && input.session !== null) {
-    assertDocumentUnitsBoundToSession(sortedUnits, input.session);
   }
 
   const generatedAt = nonEmptyString(input.generatedAt) ? input.generatedAt : new Date().toISOString();
@@ -708,7 +600,7 @@ function renderCardHtml(index) {
 
   const digestLine = index.digest
     ? `<div>bound digest: <code>${esc(index.digest)}</code></div>`
-    : '<div>bound digest: <span style="color:#9aa4b2">（逐单元 journal digest，见回行）</span></div>';
+    : '<div>bound digest: <span style="color:#9aa4b2">（缺失）</span></div>';
 
   const summaryItems = [];
   for (const unit of index.units) {
@@ -758,8 +650,6 @@ module.exports = {
   PRESENTATION_SESSION_UNBOUND,
   PRESENTATION_UNIT_INCOMPLETE,
   DIGEST_PATTERN,
-  DOCUMENT_LINE_PATTERN,
-  JOURNAL_NAME_PATTERN,
   DIGEST_FIELD_BY_GATE,
   GATE_NAMES,
   PresentationError,

@@ -16,19 +16,15 @@ const ROLLBACK_MANIFESTS_RELATIVE_DIR = 'tmp/api-reference-sync/rollback-manifes
 // mirrors under <root>/latest.html + latest-index.json.
 const GATE_PRESENTATION_RELATIVE_DIR = 'tmp/api-reference-sync/gate-presentation';
 
-// Relay-actionable category per gate (line vocabulary). 写门/验收门/战役门 are
-// the slice-B p2p-approvable channels; rollback rides the campaign channel
-// (existing ruling — the session machine's APPROVE_ROLLBACK has always
-// surfaced there), and the merged campaign gate is the category's namesake.
+// Relay-actionable category per gate (line vocabulary). The campaign gate is
+// the single approval surface; rollback is a unit-scoped destructive-op
+// confirmation riding the same channel.
 const GATE_CATEGORY_BY_LINE_GATE = Object.freeze({
-  APPROVE_WRITES: '写门',
-  APPROVE_DOCUMENT: '验收门',
-  APPROVE_ACCEPTANCE: '验收门',
   APPROVE_ROLLBACK: '战役门',
   APPROVE_CAMPAIGN: '战役门',
 });
 
-// 2026-10-01 two-gate ruling: rotate conversations at 42% context usage. For
+// 2026-10-01 会话轮换裁定: rotate conversations at 42% context usage. For
 // headless workers the board approximates context with the latest turn's
 // reprocessed input (fresh input + cache read); past the advisory a long turn
 // is burning mostly context carriage (once: 115M tokens / 249 turns).
@@ -117,16 +113,10 @@ function parseGatePresentation(html) {
   };
 }
 
-// The state machine names its batch write gate APPROVE_WRITE (singular,
-// sdk-review-session status vocabulary) while the reply-line protocol — and
-// therefore the presentation artifact's <h1> — says APPROVE_WRITES. Compare
-// in the line vocabulary so write-gate presentations attach to their card;
-// every other gate kind is its own line name.
-const GATE_LINE_BY_MACHINE_GATE = { APPROVE_WRITE: 'APPROVE_WRITES' };
 
 function presentationMatchesCard(parsed, card) {
   if (!parsed || !card?.nextGate?.gate) return false;
-  const lineGate = GATE_LINE_BY_MACHINE_GATE[card.nextGate.gate] ?? card.nextGate.gate;
+  const lineGate = card.nextGate.gate;
   if (parsed.gate !== lineGate) return false;
   return parsed.sessionPath === card.sessionPath;
 }
@@ -360,17 +350,18 @@ function presentationGateEvents(card, { sessionKey, running }) {
   const indexPath = attached?.path ?? null;
   if (!index || !indexPath) return [];
   if (!presentationMatchesCard(index, card)) return [];
-  const lineGate = GATE_LINE_BY_MACHINE_GATE[card.nextGate.gate] ?? card.nextGate.gate;
+  const lineGate = card.nextGate.gate;
   const category = GATE_CATEGORY_BY_LINE_GATE[lineGate] ?? null;
-  if (!category) return []; // e.g. a stray grouping-gate chip — not a campaign channel gate
+  if (!category) return []; // a stray chip not carried by the campaign channel
   const lines = Array.isArray(index.replyLines) ? index.replyLines.filter((line) => typeof line === 'string' && line !== '') : [];
   if (lines.length === 0) return [];
   const idleWorkers = (card.workers || []).filter((w) => w && w.status === 'idle' && w.sessionId);
   const boundSessionId = idleWorkers.length === 1 ? idleWorkers[0].sessionId : null;
-  const perUnit = index.gate === 'APPROVE_DOCUMENT';
+  // Unit-scoped rollback indexes carry one reply line per unit
+  const perUnit = index.gate === 'APPROVE_ROLLBACK';
   const emitted = perUnit
     ? lines.map((line) => {
-      const match = /^APPROVE_DOCUMENT (\S+) sha256:/.exec(line);
+      const match = /^APPROVE_ROLLBACK (\S+) sha256:/.exec(line);
       return { line, unitId: match ? match[1] : null };
     })
     : [{ line: lines[0], unitId: card.nextGate.reviewUnitId ?? null }];
@@ -443,16 +434,16 @@ function campaignEvents(payload, nowMs) {
   return events;
 }
 
-// Unapproved intake grouping manifests: the campaign's first gate, often the
+// Unapproved intake campaign manifests: the campaign's first gate, often the
 // longest wait (presented → operator approval can span days).
 function intakeEvents(payload) {
   const events = [];
   for (const card of payload?.intakes || []) {
     if (card.approved) continue;
     events.push({
-      key: `grouping:${card.manifestPath}`,
-      category: '分组门',
-      line: `${card.language ?? '未知语言'} 分组方案已呈门待批（${card.checkoutLabel ?? ''}）`,
+      key: `campaign:${card.manifestPath}`,
+      category: '战役门',
+      line: `${card.language ?? '未知语言'} 战役计划已呈门待批（${card.checkoutLabel ?? ''}）`,
       since: card.presentedAt ?? null,
     });
   }
@@ -618,7 +609,6 @@ module.exports = {
   pendingRollbackGateFor,
   CONTEXT_LIMIT_TOKENS,
   parseGatePresentation,
-  GATE_LINE_BY_MACHINE_GATE,
   presentationMatchesCard,
   presentationSessionKey,
   parsePresentationIndex,

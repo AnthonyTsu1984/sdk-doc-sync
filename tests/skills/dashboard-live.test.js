@@ -245,9 +245,9 @@ test('buildIntakeBrief is deterministic and fail-closed', (t) => {
   assert.match(good.text, /## 处理简报 · java · 每日扫描发现 · 1 项变更动作/);
   assert.match(good.text, /Vector\.get/);
   assert.match(good.text, /sdk-core\/src\/MilvusClientV2\.java/);
-  assert.match(good.text, /停在 APPROVE_GROUPING 门/);
-  assert.match(good.text, /会话文件落位契约/);
-  assert.match(good.text, /APPROVE_GROUPING sha256:<digest>/);
+  assert.match(good.text, /停在 APPROVE_CAMPAIGN 门/);
+  assert.match(good.text, /战役工件落位契约/);
+  assert.match(good.text, /APPROVE_CAMPAIGN sha256:<campaign-plan-digest>/);
   // Intake critical path (batch 12): pinned commands, artifact locations,
   // and payload discipline so a dispatched worker stops re-deriving them.
   assert.match(good.text, /intake 关键路径/);
@@ -256,18 +256,20 @@ test('buildIntakeBrief is deterministic and fail-closed', (t) => {
   assert.match(good.text, /-bitable-snapshot\.json/);
   assert.match(good.text, /build-current-placement-audit\.js/);
   assert.match(good.text, /gate manifest 落位契约/);
-  assert.match(good.text, /tmp\/sdk-release-scout\/<track>-grouping-gate-manifest\*\.json/);
+  assert.match(good.text, /tmp\/sdk-release-scout\/<track>-campaign-gate-manifest\*\.json/);
   assert.match(good.text, /写进子目录看板不可见/);
   // Workspace disciplines (batch 13): tmp layout, worktree, gate rounds.
   assert.match(good.text, /工作空间契约/);
   assert.match(good.text, /工作树原则/);
   assert.match(good.text, /回合契约/);
   assert.match(good.text, /一次性脚本不落 tmp 顶层/);
-  // Canonical grouping flow (grouping-governance): builder, receipt, binding.
+  // Campaign single-gate flow (2026-10-24 correction, py-v30 precedent): one
+  // APPROVE_CAMPAIGN card → runner sync → acceptance gate + close-session.
   assert.match(good.text, /build-grouping-proposal\.js/);
-  assert.match(good.text, /record-grouping-approval\.js --proposal/);
-  assert.match(good.text, /approve-grouping --session/);
-  assert.match(good.text, /GROUPING_STALE/);
+  assert.match(good.text, /sdk-release-sync\.js sync --config/);
+  assert.match(good.text, /close-session --session/);
+  assert.match(good.text, /--mark-disposed --pr/);
+  assert.match(good.text, /APPROVE_CAMPAIGN 一张卡批准后/);
   assert.equal(good.meta.actionCount, 1);
 
   // Same inputs → same brief.
@@ -314,10 +316,10 @@ test('buildTrackIntakeBrief: registered track → deterministic brief; unregiste
   assert.match(brief.text, /## 轨道工作简报 · go · go-v30（v3\.0\.x）/);
   assert.match(brief.text, /scan-state 基线: v3\.0\.0-beta/);
   assert.match(brief.text, /GOBASE/);
-  assert.match(brief.text, /停在 APPROVE_GROUPING 门/);
+  assert.match(brief.text, /停在 APPROVE_CAMPAIGN 门/);
   assert.match(brief.text, /无发现 → 明确报告"无待处理变更"并结束/);
   assert.match(brief.text, /build-grouping-proposal\.js/);
-  assert.match(brief.text, /record-grouping-approval\.js/);
+  assert.match(brief.text, /sdk-release-sync\.js sync/);
   assert.equal(brief.meta.mode, 'track');
 
   const again = buildTrackIntakeBrief({ repoRoot: root, language: 'go', trackKey: 'go-v30' });
@@ -526,7 +528,7 @@ test('change-request: prompt carries the canonical command verbatim, reason fenc
   assert.match(prompt, /^REQUEST_CHANGES review:node:Authentication:alterRole$/m);
   assert.match(prompt, /request-document-changes --session tmp\/sdk-doc-sync-runs\/node-v30\/review-session\.json --review-unit-id review:node:Authentication:alterRole --reason/);
   assert.match(prompt, /原因：RETURNS 段落缺失——补齐字段表/);
-  assert.match(prompt, /呈新的写门（APPROVE_WRITES \+ 新 digest）后停下等批/);
+  assert.match(prompt, /重呈战役门（APPROVE_CAMPAIGN \+ 新 digest）后停下等批/);
 });
 
 test('reject-with-comments prompt: reads doc comments, canonical filing, honest fallback', () => {
@@ -536,7 +538,7 @@ test('reject-with-comments prompt: reads doc comments, canonical filing, honest 
   assert.match(batch, /飞书评论/);
   assert.match(batch, /404[）)]时[，,]如实向操作员逐条索要评论原文/);
   assert.match(batch, /request-document-changes --session tmp\/s\.json --review-unit-id <受影响单元>/);
-  assert.match(batch, /呈新写门（APPROVE_WRITES \+ 新 digest）后停/);
+  assert.match(batch, /重呈战役门（APPROVE_CAMPAIGN \+ 新 digest）后停/);
 
   const single = composeRejectWithCommentsPrompt({ sessionPath: 'tmp/s.json', unitId: 'review:node:X' });
   assert.match(single, /^REJECT_DOCUMENT review:node:X$/m);

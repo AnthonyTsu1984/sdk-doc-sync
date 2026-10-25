@@ -31,14 +31,14 @@ test('deriveEvents: campaign gate, zombie, awaiting-close, stale receipt', () =>
       sessionPath: 'tmp/sdk-doc-sync-runs/a.json',
       language: 'go', track: 'v3.0.x', checkoutLabel: '主检出',
       health: 'active', updatedAt: '2026-10-12T03:00:00.000Z',
-      nextGate: { gate: 'APPROVE_DOCUMENT', reviewUnitId: 'review:X' },
+      nextGate: { gate: 'APPROVE_ROLLBACK', reviewUnitId: 'review:X' },
     },
     {
       sessionKey: 'main::tmp/sdk-doc-sync-runs/b.json',
       sessionPath: 'tmp/sdk-doc-sync-runs/b.json',
       language: 'java', track: 'v3.0.x', checkoutLabel: '主检出',
       health: 'zombie', updatedAt: '2026-10-10T03:00:00.000Z',
-      nextGate: { gate: 'APPROVE_WRITE', reviewUnitId: 'review:Y' },
+      nextGate: { gate: 'APPROVE_CAMPAIGN', reviewUnitId: 'review:Y' },
     },
     {
       sessionKey: 'main::tmp/sdk-doc-sync-runs/c.json',
@@ -56,14 +56,14 @@ test('deriveEvents: campaign gate, zombie, awaiting-close, stale receipt', () =>
   ];
   const events = gateWatch.deriveEvents({ payload, dispatchLines: [], now: new Date('2026-10-12T04:05:00.000Z') });
   const keys = events.map((event) => event.key);
-  assert.ok(keys.includes('gate:main::tmp/sdk-doc-sync-runs/a.json:APPROVE_DOCUMENT'));
+  assert.ok(keys.includes('gate:main::tmp/sdk-doc-sync-runs/a.json:APPROVE_ROLLBACK'));
   assert.ok(keys.includes('zombie:main::tmp/sdk-doc-sync-runs/b.json'));
   assert.ok(keys.includes('close:main::tmp/sdk-doc-sync-runs/c.json'));
   assert.ok(keys.includes('stale-receipt:main::tmp/sdk-doc-sync-runs/d.json'));
   // A zombie emits no gate echo even though nextGate is set.
-  assert.ok(!keys.includes('zombie:main::tmp/sdk-doc-sync-runs/b.json:APPROVE_WRITE'.replace('zombie:', 'gate:')));
+  assert.ok(!keys.includes('zombie:main::tmp/sdk-doc-sync-runs/b.json:APPROVE_CAMPAIGN'.replace('zombie:', 'gate:')));
   const gateEvent = events.find((event) => event.key.startsWith('gate:'));
-  assert.match(gateEvent.line, /APPROVE_DOCUMENT/);
+  assert.match(gateEvent.line, /APPROVE_ROLLBACK/);
   assert.match(gateEvent.line, /go v3\.0\.x/);
   assert.equal(gateEvent.since, '2026-10-12T03:00:00.000Z');
 });
@@ -72,19 +72,19 @@ test('deriveEvents: unapproved intake grouping gate; approved one is silent', ()
   const payload = basePayload();
   payload.intakes = [
     {
-      manifestPath: 'tmp/sdk-release-scout/node-v30-grouping-gate-manifest.json',
+      manifestPath: 'tmp/sdk-release-scout/node-v30-campaign-gate-manifest.json',
       language: 'node', checkoutLabel: '主检出',
       presentedAt: '2026-10-10T03:26:00.000Z', approved: false,
     },
     {
-      manifestPath: 'tmp/sdk-release-scout/go-v30-grouping-gate-manifest.json',
+      manifestPath: 'tmp/sdk-release-scout/go-v30-campaign-gate-manifest.json',
       language: 'go', checkoutLabel: '主检出',
       presentedAt: '2026-10-01T00:00:00.000Z', approved: true, approvalEvidence: 'receipt',
     },
   ];
   const events = gateWatch.deriveEvents({ payload, dispatchLines: [] });
   assert.equal(events.length, 1);
-  assert.equal(events[0].key, 'grouping:tmp/sdk-release-scout/node-v30-grouping-gate-manifest.json');
+  assert.equal(events[0].key, 'campaign:tmp/sdk-release-scout/node-v30-campaign-gate-manifest.json');
   assert.equal(events[0].since, '2026-10-10T03:26:00.000Z');
 });
 
@@ -193,7 +193,7 @@ test('deriveEvents: rollback gate surfaced via nextGate rides the campaign-gate 
 // ---------- gate-watch: send decisions ----------
 
 test('decideSends: first send, dedup, 2h escalation, resolve-then-new', () => {
-  const events = [{ key: 'gate:x:APPROVE_WRITE', category: '战役门', line: 'x 停在 APPROVE_WRITE', since: null }];
+  const events = [{ key: 'gate:x:APPROVE_CAMPAIGN', category: '战役门', line: 'x 停在 APPROVE_CAMPAIGN', since: null }];
   const now = new Date('2026-10-12T10:00:00.000Z');
 
   const first = gateWatch.decideSends(events, [], now);
@@ -201,7 +201,7 @@ test('decideSends: first send, dedup, 2h escalation, resolve-then-new', () => {
   assert.equal(first.sends[0].escalated, false);
   assert.equal(first.appends.length, 0);
 
-  const sentLedger = [JSON.stringify({ v: 1, key: 'gate:x:APPROVE_WRITE', at: '2026-10-12T10:00:05.000Z', kind: 'send' })];
+  const sentLedger = [JSON.stringify({ v: 1, key: 'gate:x:APPROVE_CAMPAIGN', at: '2026-10-12T10:00:05.000Z', kind: 'send' })];
   const within = gateWatch.decideSends(events, sentLedger, new Date('2026-10-12T11:00:00.000Z'));
   assert.equal(within.sends.length, 0);
 
@@ -219,7 +219,7 @@ test('decideSends: first send, dedup, 2h escalation, resolve-then-new', () => {
 });
 
 test('decideSends: quiet window holds sends but still books resolves; force overrides', () => {
-  const events = [{ key: 'gate:x:APPROVE_WRITE', category: '战役门', line: 'x', since: null }];
+  const events = [{ key: 'gate:x:APPROVE_CAMPAIGN', category: '战役门', line: 'x', since: null }];
   const night = new Date('2026-10-12T23:30:00.000Z'); // 23:30 local-independent? getHours is local — pick hours that are quiet in ANY tz offset used in CI is impossible; use explicit local-hour check below
   if (gateWatch.inQuietWindow(night)) {
     const held = gateWatch.decideSends(events, [], night);
@@ -235,7 +235,7 @@ test('decideSends: quiet window holds sends but still books resolves; force over
 });
 
 test('decideSends: dwell measured from the durable since timestamp', () => {
-  const events = [{ key: 'grouping:m', category: '分组门', line: 'node 待批', since: '2026-10-10T04:26:00.000Z' }];
+  const events = [{ key: 'campaign:m', category: '战役门', line: 'node 待批', since: '2026-10-10T04:26:00.000Z' }];
   const { sends } = gateWatch.decideSends(events, [], new Date('2026-10-12T04:26:00.000Z'));
   assert.equal(sends.length, 1);
   assert.equal(sends[0].dwellMs, 2 * 24 * 60 * 60 * 1000);
@@ -243,7 +243,7 @@ test('decideSends: dwell measured from the durable since timestamp', () => {
 
 test('formatMessage: plain text, no links, no digests, single and multi', () => {
   const single = gateWatch.formatMessage([
-    { key: 'k', category: '分组门', line: 'node 分组方案已呈门待批', dwellMs: 3 * 60 * 60 * 1000, escalated: false },
+    { key: 'k', category: '战役门', line: 'node 分组方案已呈门待批', dwellMs: 3 * 60 * 60 * 1000, escalated: false },
   ], { generatedAt: '2026-10-12T04:00:00.000Z' });
   assert.match(single, /待你决定/);
   assert.match(single, /已等待 3\.0 小时/);
@@ -251,7 +251,7 @@ test('formatMessage: plain text, no links, no digests, single and multi', () => 
   assert.ok(!/sha256:/.test(single));
 
   const multi = gateWatch.formatMessage([
-    { key: 'a', category: '战役门', line: 'go 停在 APPROVE_DOCUMENT', dwellMs: 5 * 60 * 1000, escalated: true },
+    { key: 'a', category: '战役门', line: 'go 停在 APPROVE_ROLLBACK', dwellMs: 5 * 60 * 1000, escalated: true },
     { key: 'b', category: '哨兵停摆', line: 'cpp 超过 25h 未运行', dwellMs: 30 * 60 * 60 * 1000, escalated: false },
   ], { generatedAt: '2026-10-12T04:00:00.000Z' });
   assert.match(multi, /1\. 【战役门】/);
@@ -380,9 +380,9 @@ const GROUPING_ENTRY = JSON.stringify({
   messageId: 'om_notice',
   sentAt: '2026-10-12T04:00:00.000Z',
   events: [{
-    key: 'grouping:tmp/sdk-release-scout/node-v30-grouping-gate-manifest.json',
-    category: '分组门',
-    manifestPath: 'tmp/sdk-release-scout/node-v30-grouping-gate-manifest.json',
+    key: 'campaign:tmp/sdk-release-scout/node-v30-campaign-gate-manifest.json',
+    category: '战役门',
+    manifestPath: 'tmp/sdk-release-scout/node-v30-campaign-gate-manifest.json',
     digest: 'sha256:' + 'a'.repeat(64),
     language: 'node',
   }],
@@ -396,7 +396,7 @@ const NODE_DISPATCH_LINES = [
 function relayPayload() {
   return {
     intakes: [{
-      manifestPath: 'tmp/sdk-release-scout/node-v30-grouping-gate-manifest.json',
+      manifestPath: 'tmp/sdk-release-scout/node-v30-campaign-gate-manifest.json',
       language: 'node', checkoutLabel: '主检出',
       presentedAt: '2026-10-10T03:26:11.755Z', approved: false,
       digest: 'sha256:' + 'a'.repeat(64),
@@ -452,57 +452,33 @@ test('resolveWorkerSession: trackKey join wins, ambiguity refuses, gaps skip', (
     // dispatch without exit — never a candidate
     JSON.stringify({ v: 1, kind: 'dispatch', workerKey: 'scout:x', at: '2026-10-10T05:00:00.000Z', language: 'node', trackKey: 'node-v30' }),
   ];
-  const resolved = relay.resolveWorkerSession(lines, { language: 'node', manifestPath: 'tmp/sdk-release-scout/node-v30-grouping-gate-manifest.json' });
+  const resolved = relay.resolveWorkerSession(lines, { language: 'node', manifestPath: 'tmp/sdk-release-scout/node-v30-campaign-gate-manifest.json' });
   assert.equal(resolved.ok, true);
   assert.equal(resolved.sessionId, 'sess_node_worker');
 
-  const none = relay.resolveWorkerSession([], { language: 'node', manifestPath: 'x-node-v30-grouping-gate-manifest.json' });
+  const none = relay.resolveWorkerSession([], { language: 'node', manifestPath: 'x-node-v30-campaign-gate-manifest.json' });
   assert.equal(none.code, 'NO_WORKER_SESSION');
 
   const ambiguous = relay.resolveWorkerSession([
     ...NODE_DISPATCH_LINES,
     JSON.stringify({ v: 1, kind: 'dispatch', workerKey: 'w2', at: '2026-10-10T06:00:00.000Z', language: 'node', trackKey: 'node-v30' }),
     JSON.stringify({ v: 1, kind: 'exit', workerKey: 'w2', at: '2026-10-10T07:00:00.000Z', sessionId: 'sess_second' }),
-  ], { language: 'node', manifestPath: 'tmp/sdk-release-scout/node-v30-grouping-gate-manifest.json' });
+  ], { language: 'node', manifestPath: 'tmp/sdk-release-scout/node-v30-campaign-gate-manifest.json' });
   assert.equal(ambiguous.code, 'AMBIGUOUS_WORKER');
 });
 
-test('planApprove: happy path assembles the exact digest-bound line', () => {
+test('planApprove: entries without a campaign index binding are refused', () => {
   const plan = relay.planApprove({
     entry: JSON.parse(GROUPING_ENTRY),
     payload: relayPayload(),
-    dispatchLines: NODE_DISPATCH_LINES,
-    manifestDigestOf: DIGEST_STUB,
-  });
-  assert.equal(plan.ok, true);
-  assert.equal(plan.approveLine, `APPROVE_GROUPING sha256:${'a'.repeat(64)}`);
-  assert.equal(plan.sessionId, 'sess_node_worker');
-});
-
-test('planApprove: stale digest refuses and invalidates the doorbell key', () => {
-  const plan = relay.planApprove({
-    entry: JSON.parse(GROUPING_ENTRY),
-    payload: relayPayload(),
-    dispatchLines: NODE_DISPATCH_LINES,
-    manifestDigestOf: () => 'sha256:' + 'b'.repeat(64),
+    presentationIndexOf: indexReRead,
   });
   assert.equal(plan.ok, false);
-  assert.equal(plan.code, 'STALE_DIGEST');
-  assert.equal(plan.invalidateKey, 'grouping:tmp/sdk-release-scout/node-v30-grouping-gate-manifest.json');
-  assert.match(plan.reply, /已变化/);
-});
-
-test('planApprove: already-approved card, multi-event message, unreadable artifact', () => {
-  const approvedPayload = relayPayload();
-  approvedPayload.intakes[0].approved = true;
-  assert.equal(relay.planApprove({ entry: JSON.parse(GROUPING_ENTRY), payload: approvedPayload, dispatchLines: NODE_DISPATCH_LINES, manifestDigestOf: DIGEST_STUB }).code, 'ALREADY_APPROVED');
+  assert.equal(plan.code, 'NOT_SINGLE_GATE');
 
   const multiEntry = JSON.parse(GROUPING_ENTRY);
   multiEntry.events.push({ key: 'sentinel:cpp:stale', category: '哨兵停摆' });
-  assert.equal(relay.planApprove({ entry: multiEntry, payload: relayPayload(), dispatchLines: NODE_DISPATCH_LINES, manifestDigestOf: DIGEST_STUB }).code, 'NOT_SINGLE_GROUPING');
-
-  assert.equal(relay.planApprove({ entry: JSON.parse(GROUPING_ENTRY), payload: relayPayload(), dispatchLines: NODE_DISPATCH_LINES, manifestDigestOf: () => null }).code, 'ARTIFACT_UNREADABLE');
-  assert.equal(relay.planApprove({ entry: JSON.parse(GROUPING_ENTRY), payload: relayPayload(), dispatchLines: [], manifestDigestOf: DIGEST_STUB }).code, 'NO_WORKER_SESSION');
+  assert.equal(relay.planApprove({ entry: multiEntry, payload: relayPayload(), presentationIndexOf: indexReRead }).code, 'NOT_SINGLE_GATE');
 });
 
 test('handleIncoming: operator/p2p gating, binding rules, resume action, idempotent re-approve', () => {
@@ -527,13 +503,10 @@ test('handleIncoming: operator/p2p gating, binding rules, resume action, idempot
   const foreign = relay.handleIncoming({ ...deps, incoming: incomingMessage({ rootId: 'om_alien' }) });
   assert.match(foreign.reply, /未找到绑定的通知/);
 
-  // happy path: resume side effect + outbox closure
+  // grouping-manifest entries are not reply-approvable anymore
   const happy = relay.handleIncoming({ ...deps, incoming: incomingMessage() });
-  assert.match(happy.reply, /已受理/);
-  assert.equal(happy.action.type, 'resume');
-  assert.equal(happy.action.line, `APPROVE_GROUPING sha256:${'a'.repeat(64)}`);
-  assert.equal(happy.action.sessionId, 'sess_node_worker');
-  assert.equal(happy.action.outboxMessageId, 'om_notice');
+  assert.match(happy.reply, /看板/);
+  assert.equal(happy.action, null);
 
   // re-approve after the outbox recorded the approval → idempotent
   const closed = relay.handleIncoming({
@@ -541,7 +514,7 @@ test('handleIncoming: operator/p2p gating, binding rules, resume action, idempot
     incoming: incomingMessage(),
     outboxLines: [
       GROUPING_ENTRY,
-      JSON.stringify({ v: 1, kind: 'approved', messageId: 'om_notice', at: '2026-10-12T04:05:00.000Z', line: 'APPROVE_GROUPING sha256:x' }),
+      JSON.stringify({ v: 1, kind: 'approved', messageId: 'om_notice', at: '2026-10-12T04:05:00.000Z', line: 'APPROVE_CAMPAIGN sha256:x' }),
     ],
   });
   assert.match(closed.reply, /已.*批准过/);
@@ -585,10 +558,8 @@ test('handleIncoming: status snapshot is outbox-bindable and reply-approvable vi
       rootId: 'om_root_user', parentId: 'om_snapshot', text: '批准',
     },
   });
-  assert.match(onSnapshot.reply, /已受理/);
-  assert.equal(onSnapshot.action.type, 'resume');
-  assert.equal(onSnapshot.action.outboxMessageId, 'om_snapshot');
-  assert.equal(onSnapshot.action.sessionId, 'sess_node_worker');
+  assert.doesNotMatch(onSnapshot.reply, /未找到绑定/);
+  assert.equal(onSnapshot.action, null);
 });
 
 // ---------- notify-feishu: threaded reply ----------
@@ -661,8 +632,8 @@ test('workerContextEvents: heavy running worker advises rotation at the 42% boun
 
 test('parseGatePresentation: extracts gate, digest, session, and unit links', () => {
   const html = `<!DOCTYPE html><html><body>
-<h1>APPROVE_DOCUMENT — gate materials</h1>
-<p>node v3.0.x 文档验收门 · 9 单元（批14 挂起执行）</p>
+<h1>APPROVE_ROLLBACK — gate materials</h1>
+<p>node v3.0.x 战役门 · 9 单元（批14 挂起执行）</p>
 <p>bound digest: <code>sha256:1570c48ecc72d1bdaede22b46f9880d9509da76d171a880b6d4237cb2e1b2e2d</code></p>
 <p>session: <code>tmp/sdk-doc-sync-runs/node-v30/review-session.json</code></p>
 <p>generated: 2026-10-12T13:46:15.441Z</p>
@@ -672,7 +643,7 @@ test('parseGatePresentation: extracts gate, digest, session, and unit links', ()
 </ol>
 </body></html>`;
   const parsed = gateWatch.parseGatePresentation(html);
-  assert.equal(parsed.gate, 'APPROVE_DOCUMENT');
+  assert.equal(parsed.gate, 'APPROVE_ROLLBACK');
   assert.equal(parsed.digest, 'sha256:1570c48ecc72d1bdaede22b46f9880d9509da76d171a880b6d4237cb2e1b2e2d');
   assert.equal(parsed.sessionPath, 'tmp/sdk-doc-sync-runs/node-v30/review-session.json');
   assert.deepEqual(parsed.links, [
@@ -685,8 +656,8 @@ test('parseGatePresentation: extracts gate, digest, session, and unit links', ()
 
 test('parseGatePresentation: write-gate artifacts carry file:// preview links', () => {
   const html = `<!DOCTYPE html><html><body>
-<h1>APPROVE_WRITES — gate materials</h1>
-<p>node v3.0.x 写门 · 批2 · K=14 全部剩余单元</p>
+<h1>APPROVE_CAMPAIGN — gate materials</h1>
+<p>node v3.0.x 战役门 · 批2 · K=14 全部剩余单元</p>
 <p>bound digest: <code>sha256:bf099cf4d36465681fc13de92803dc3efef6f9b988b905fb34b1a3dfea6f3253</code></p>
 <p>session: <code>tmp/sdk-doc-sync-runs/node-v30/review-session.json</code></p>
 <p>generated: 2026-10-13T01:06:37.532Z</p>
@@ -695,21 +666,21 @@ test('parseGatePresentation: write-gate artifacts carry file:// preview links', 
 </ol>
 </body></html>`;
   const parsed = gateWatch.parseGatePresentation(html);
-  assert.equal(parsed.gate, 'APPROVE_WRITES');
+  assert.equal(parsed.gate, 'APPROVE_CAMPAIGN');
   assert.deepEqual(parsed.links, [
     { unitId: 'review:node:Authentication:createRole', url: 'file:///Users/x/repo/tmp/sdk-doc-sync-runs/node-v30/write-batch2b/fresh2b-preview-createRole.md' },
   ]);
 });
 
-test('presentationMatchesCard: write-gate vocabulary (APPROVE_WRITE ↔ APPROVE_WRITES) and mismatch drops', () => {
-  const artifact = { gate: 'APPROVE_WRITES', sessionPath: 'tmp/sdk-doc-sync-runs/node-v30/review-session.json' };
-  const card = { sessionPath: 'tmp/sdk-doc-sync-runs/node-v30/review-session.json', nextGate: { gate: 'APPROVE_WRITE', reviewUnitId: 'review:node:Authentication:createRole' } };
+test('presentationMatchesCard: identical gate names match, mismatch drops', () => {
+  const artifact = { gate: 'APPROVE_CAMPAIGN', sessionPath: 'tmp/sdk-doc-sync-runs/node-v30/review-session.json' };
+  const card = { sessionPath: 'tmp/sdk-doc-sync-runs/node-v30/review-session.json', nextGate: { gate: 'APPROVE_CAMPAIGN', reviewUnitId: 'review:node:Authentication:createRole' } };
   assert.equal(gateWatch.presentationMatchesCard(artifact, card), true, 'singular machine name matches plural line name');
 
-  const sameKind = { ...card, nextGate: { gate: 'APPROVE_DOCUMENT', reviewUnitId: 'x' } };
-  assert.equal(gateWatch.presentationMatchesCard({ ...artifact, gate: 'APPROVE_DOCUMENT' }, sameKind), true, 'identical names still match');
+  const sameKind = { ...card, nextGate: { gate: 'APPROVE_ROLLBACK', reviewUnitId: 'x' } };
+  assert.equal(gateWatch.presentationMatchesCard({ ...artifact, gate: 'APPROVE_ROLLBACK' }, sameKind), true, 'identical names still match');
 
-  assert.equal(gateWatch.presentationMatchesCard({ ...artifact, gate: 'APPROVE_DOCUMENT' }, card), false, 'artifact for another gate kind drops');
+  assert.equal(gateWatch.presentationMatchesCard({ ...artifact, gate: 'APPROVE_ROLLBACK' }, card), false, 'artifact for another gate kind drops');
   assert.equal(gateWatch.presentationMatchesCard({ ...artifact, sessionPath: 'tmp/sdk-doc-sync-runs/node-v31/review-session.json' }, card), false, 'artifact for another session drops');
   assert.equal(gateWatch.presentationMatchesCard(null, card), false);
   assert.equal(gateWatch.presentationMatchesCard(artifact, { sessionPath: 'x' }), false, 'card without nextGate never matches');
@@ -719,11 +690,11 @@ test('presentationMatchesCard: write-gate vocabulary (APPROVE_WRITE ↔ APPROVE_
 
 const PRESENT_SESSION = 'tmp/sdk-doc-sync-runs/node-v30/review-session.json';
 const WRITES_DIGEST = `sha256:${'1'.repeat(64)}`;
-const WRITES_LINE = `APPROVE_WRITES ${WRITES_DIGEST}`;
+const WRITES_LINE = `APPROVE_CAMPAIGN ${WRITES_DIGEST}`;
 const PRES_OUT_DIR = gateWatch.GATE_PRESENTATION_RELATIVE_DIR;
 
-function indexObject({ gate = 'APPROVE_WRITES', digest = WRITES_DIGEST, replyLines = null, sessionPath = PRESENT_SESSION, generatedAt = '2026-10-20T01:00:00.000Z', units = [] } = {}) {
-  const lines = replyLines ?? (gate === 'APPROVE_DOCUMENT' ? [] : [`${gate} ${digest}`]);
+function indexObject({ gate = 'APPROVE_CAMPAIGN', digest = WRITES_DIGEST, replyLines = null, sessionPath = PRESENT_SESSION, generatedAt = '2026-10-20T01:00:00.000Z', units = [] } = {}) {
+  const lines = replyLines ?? (gate === 'APPROVE_ROLLBACK' ? [] : [`${gate} ${digest}`]);
   return {
     schema: 1,
     sessionKey: gateWatch.presentationSessionKey(sessionPath),
@@ -731,7 +702,7 @@ function indexObject({ gate = 'APPROVE_WRITES', digest = WRITES_DIGEST, replyLin
     gate,
     title: `${gate} — 批准门`,
     generatedAt,
-    digest: gate === 'APPROVE_DOCUMENT' ? null : digest,
+    digest: gate === 'APPROVE_ROLLBACK' ? null : digest,
     replyLines: lines,
     units,
     notes: '',
@@ -759,7 +730,7 @@ test('presentationSessionKey mirrors the producer derivation (injective, fs-safe
 });
 
 test('parsePresentationIndex: consumer-side admission — shape only, no re-derivation', () => {
-  assert.equal(gateWatch.parsePresentationIndex(JSON.stringify(indexObject())).gate, 'APPROVE_WRITES');
+  assert.equal(gateWatch.parsePresentationIndex(JSON.stringify(indexObject())).gate, 'APPROVE_CAMPAIGN');
   assert.equal(gateWatch.parsePresentationIndex('not json'), null);
   assert.equal(gateWatch.parsePresentationIndex('[]'), null);
   assert.equal(gateWatch.parsePresentationIndex(JSON.stringify({ ...indexObject(), sessionPath: '' })), null);
@@ -770,38 +741,38 @@ test('parsePresentationIndex: consumer-side admission — shape only, no re-deri
   // match) — the registered-gate truth stays with the producer's validator.
   const unregistered = gateWatch.parsePresentationIndex(JSON.stringify({ ...indexObject(), gate: 'APPROVE_TYPO' }));
   assert.equal(unregistered.gate, 'APPROVE_TYPO');
-  const document = gateWatch.parsePresentationIndex(JSON.stringify(indexObject({ gate: 'APPROVE_DOCUMENT', digest: null, replyLines: [`APPROVE_DOCUMENT u1 ${WRITES_DIGEST}`] })));
+  const document = gateWatch.parsePresentationIndex(JSON.stringify(indexObject({ gate: 'APPROVE_ROLLBACK', digest: null, replyLines: [`APPROVE_ROLLBACK u1 ${WRITES_DIGEST}`] })));
   assert.equal(document.digest, null, 'DOCUMENT gate legitimately carries digest=null');
 });
 
 test('latestIndexEntryFrom: mtime newest wins; atomic-write tmp siblings never qualify', () => {
   const entries = [
-    { name: '20261020-010000-APPROVE_WRITES.index.json', mtimeMs: 1000 },
-    { name: '20261021-010000-APPROVE_WRITES.index.json', mtimeMs: 2000 },
-    { name: '20261022-010000-APPROVE_WRITES.index.json.tmp-4242-1760000000000', mtimeMs: 9000 },
-    { name: '20261019-010000-APPROVE_WRITES.html', mtimeMs: 9500 },
+    { name: '20261020-010000-APPROVE_CAMPAIGN.index.json', mtimeMs: 1000 },
+    { name: '20261021-010000-APPROVE_CAMPAIGN.index.json', mtimeMs: 2000 },
+    { name: '20261022-010000-APPROVE_CAMPAIGN.index.json.tmp-4242-1760000000000', mtimeMs: 9000 },
+    { name: '20261019-010000-APPROVE_CAMPAIGN.html', mtimeMs: 9500 },
   ];
-  assert.equal(gateWatch.latestIndexEntryFrom(entries).name, '20261021-010000-APPROVE_WRITES.index.json');
+  assert.equal(gateWatch.latestIndexEntryFrom(entries).name, '20261021-010000-APPROVE_CAMPAIGN.index.json');
   assert.equal(gateWatch.latestIndexEntryFrom([]), null);
   assert.equal(gateWatch.latestIndexEntryFrom(null), null);
 });
 
 test('readLatestPresentationIndex: newest index wins, tmp sibling ignored, absent dir → null', () => {
   const { root } = presentationFixture();
-  writeIndexFile({ root, stamp: '20261020-010000', index: indexObject({ gate: 'APPROVE_WRITES' }), mtimeMs: 1_000_000 });
+  writeIndexFile({ root, stamp: '20261020-010000', index: indexObject({ gate: 'APPROVE_CAMPAIGN' }), mtimeMs: 1_000_000 });
   writeIndexFile({
     root, stamp: '20261021-010000', mtimeMs: 2_000_000,
-    index: indexObject({ gate: 'APPROVE_DOCUMENT', digest: null, replyLines: [`APPROVE_DOCUMENT u1 ${WRITES_DIGEST}`] }),
+    index: indexObject({ gate: 'APPROVE_ROLLBACK', digest: null, replyLines: [`APPROVE_ROLLBACK u1 ${WRITES_DIGEST}`] }),
   });
   // atomic-write leftover: newer mtime, must be ignored
   const sessionDir = nodePath.join(root, PRES_OUT_DIR, gateWatch.presentationSessionKey(PRESENT_SESSION));
-  const tmpSibling = nodePath.join(sessionDir, '20261022-010000-APPROVE_DOCUMENT.index.json.tmp-99-1');
+  const tmpSibling = nodePath.join(sessionDir, '20261022-010000-APPROVE_ROLLBACK.index.json.tmp-99-1');
   fs.writeFileSync(tmpSibling, '{"garbage":true}');
   fs.utimesSync(tmpSibling, new Date(3_000_000), new Date(3_000_000));
 
   const read = gateWatch.readLatestPresentationIndex(root, PRESENT_SESSION);
-  assert.equal(read.parsed.gate, 'APPROVE_DOCUMENT');
-  assert.match(read.path, /20261021-010000-APPROVE_DOCUMENT\.index\.json$/);
+  assert.equal(read.parsed.gate, 'APPROVE_ROLLBACK');
+  assert.match(read.path, /20261021-010000-APPROVE_ROLLBACK\.index\.json$/);
   assert.ok(read.path.startsWith(`${PRES_OUT_DIR}/`), 'index path is repo-relative');
 
   assert.equal(gateWatch.readLatestPresentationIndex(root, 'tmp/other/session.json'), null);
@@ -820,18 +791,18 @@ test('attachPresentationToCard: index-backed attach stamps gatePresentationIndex
     sessionPath: PRESENT_SESSION,
     sessionKey: `main::${PRESENT_SESSION}`,
     language: 'node',
-    nextGate: { gate: 'APPROVE_WRITE' }, // machine vocabulary
+    nextGate: { gate: 'APPROVE_CAMPAIGN' }, // machine vocabulary
   };
   const lkg = new Map();
   gateWatch.attachPresentationToCard(card, { repoRoot: root, lkg, now: 5_000_000 });
-  assert.equal(card.gatePresentationIndex.path.includes('20261020-010000-APPROVE_WRITES.index.json'), true);
+  assert.equal(card.gatePresentationIndex.path.includes('20261020-010000-APPROVE_CAMPAIGN.index.json'), true);
   assert.equal(card.gatePresentationIndex.parsed.digest, WRITES_DIGEST);
   assert.equal(card.gatePresentation.digest, WRITES_DIGEST, 'UI view carries the digest as before');
   assert.deepEqual(card.gatePresentation.links, [{ unitId: 'review:u1', url: 'https://example.com/docx/A' }]);
   assert.equal(typeof card.gatePresentation.generatedAt, 'string');
 
   // Mismatch (another session) drops the attachment entirely.
-  const other = { sessionPath: 'tmp/sdk-doc-sync-runs/other/review-session.json', nextGate: { gate: 'APPROVE_WRITE' } };
+  const other = { sessionPath: 'tmp/sdk-doc-sync-runs/other/review-session.json', nextGate: { gate: 'APPROVE_CAMPAIGN' } };
   gateWatch.attachPresentationToCard(other, { repoRoot: root, lkg, now: 5_000_000 });
   assert.equal(other.gatePresentation, null);
   assert.equal(other.gatePresentationIndex, null);
@@ -846,32 +817,32 @@ test('attachPresentationToCard: legacy latest.html fallback and grace window sur
   fs.mkdirSync(nodePath.join(legacy.root, PRES_OUT_DIR), { recursive: true });
   fs.writeFileSync(nodePath.join(legacy.root, PRES_OUT_DIR, 'latest.html'), [
     '<html><body>',
-    '<h1>APPROVE_DOCUMENT — gate materials</h1>',
+    '<h1>APPROVE_ROLLBACK — gate materials</h1>',
     `<p>bound digest: <code>${WRITES_DIGEST}</code></p>`,
     `<p>session: <code>${PRESENT_SESSION}</code></p>`,
     '<p>generated: 2026-10-12T13:46:15.441Z</p>',
     '</body></html>',
   ].join('\n'));
 
-  const card = { sessionPath: PRESENT_SESSION, nextGate: { gate: 'APPROVE_DOCUMENT' } };
+  const card = { sessionPath: PRESENT_SESSION, nextGate: { gate: 'APPROVE_ROLLBACK' } };
   gateWatch.attachPresentationToCard(card, { repoRoot: legacy.root, lkg: new Map(), now: 1_000 });
-  assert.equal(card.gatePresentation.gate, 'APPROVE_DOCUMENT', 'legacy HTML still attaches');
+  assert.equal(card.gatePresentation.gate, 'APPROVE_ROLLBACK', 'legacy HTML still attaches');
   assert.equal(card.gatePresentationIndex, null, 'legacy attach binds nothing to an index');
 
-  const mismatched = { sessionPath: PRESENT_SESSION, nextGate: { gate: 'APPROVE_WRITE' } };
+  const mismatched = { sessionPath: PRESENT_SESSION, nextGate: { gate: 'APPROVE_CAMPAIGN' } };
   gateWatch.attachPresentationToCard(mismatched, { repoRoot: legacy.root, lkg: new Map(), now: 1_000 });
   assert.equal(mismatched.gatePresentation, null, 'fresh-but-mismatched parse drops without LKG');
 
   const blipRoot = presentationFixture();
   const lkg = new Map();
   const parsedIndex = indexObject();
-  lkg.set(PRESENT_SESSION, { kind: 'index', path: `${PRES_OUT_DIR}/k/20261020-010000-APPROVE_WRITES.index.json`, parsed: parsedIndex, at: 900 });
-  const blip = { sessionPath: PRESENT_SESSION, nextGate: { gate: 'APPROVE_WRITE' } };
+  lkg.set(PRESENT_SESSION, { kind: 'index', path: `${PRES_OUT_DIR}/k/20261020-010000-APPROVE_CAMPAIGN.index.json`, parsed: parsedIndex, at: 900 });
+  const blip = { sessionPath: PRESENT_SESSION, nextGate: { gate: 'APPROVE_CAMPAIGN' } };
   gateWatch.attachPresentationToCard(blip, { repoRoot: blipRoot.root, lkg, now: 60_000 });
   assert.equal(blip.gatePresentationIndex.parsed, parsedIndex);
   assert.equal(blip.gatePresentation.digest, WRITES_DIGEST);
 
-  const expired = { sessionPath: PRESENT_SESSION, nextGate: { gate: 'APPROVE_WRITE' } };
+  const expired = { sessionPath: PRESENT_SESSION, nextGate: { gate: 'APPROVE_CAMPAIGN' } };
   gateWatch.attachPresentationToCard(expired, { repoRoot: blipRoot.root, lkg, now: 61_001 + 60_000 });
   assert.equal(expired.gatePresentation, null, 'grace window closes');
   fs.rmSync(legacy.root, { recursive: true, force: true });
@@ -886,61 +857,15 @@ function campaignCardFixture(overrides = {}) {
     sessionPath: PRESENT_SESSION,
     language: 'node', track: 'v3.0.x', checkoutLabel: '主检出',
     health: 'active', updatedAt: '2026-10-20T00:00:00.000Z',
-    nextGate: { gate: 'APPROVE_WRITE' },
+    nextGate: { gate: 'APPROVE_CAMPAIGN' },
     workers: [{ sessionId: 'sess_board', status: 'idle' }],
     ...overrides,
   };
 }
 
-const INDEX_ID = `${PRES_OUT_DIR}/tmp-sdk-doc-sync-runs-node-v30-review-session.json/20261020-010000-APPROVE_WRITES.index.json`;
+const INDEX_ID = `${PRES_OUT_DIR}/tmp-sdk-doc-sync-runs-node-v30-review-session.json/20261020-010000-APPROVE_CAMPAIGN.index.json`;
 
-test('deriveEvents: index-backed write gate emits a relay-actionable 写门 event', () => {
-  const payload = basePayload();
-  payload.campaigns = [campaignCardFixture({
-    gatePresentationIndex: { path: INDEX_ID, parsed: indexObject() },
-  })];
-  const events = gateWatch.deriveEvents({ payload, dispatchLines: [], now: new Date('2026-10-20T01:10:00.000Z') });
-  const rich = events.filter((event) => event.category === '写门');
-  assert.equal(rich.length, 1, 'rich event replaces the generic 战役门 echo');
-  assert.equal(events.some((event) => event.category === '战役门'), false);
-  assert.deepEqual(rich[0], {
-    key: 'gate:main::tmp/sdk-doc-sync-runs/node-v30/review-session.json:APPROVE_WRITES',
-    category: '写门',
-    line: 'node v3.0.x（主检出） 停在 APPROVE_WRITES——回复本通知发送「批准」即可批准本门',
-    since: '2026-10-20T01:00:00.000Z',
-    sessionPath: PRESENT_SESSION,
-    sessionKey: `main::${PRESENT_SESSION}`,
-    gate: 'APPROVE_WRITES',
-    reviewUnitId: null,
-    replyLine: WRITES_LINE,
-    digest: WRITES_DIGEST,
-    indexId: INDEX_ID,
-    language: 'node',
-    sessionId: 'sess_board',
-  });
-});
 
-test('deriveEvents: multi-unit acceptance gate emits one event per unit (single-meaning replies)', () => {
-  const payload = basePayload();
-  const u1 = `APPROVE_DOCUMENT review:node:u1 sha256:${'2'.repeat(64)}`;
-  const u2 = `APPROVE_DOCUMENT review:node:u2 sha256:${'3'.repeat(64)}`;
-  payload.campaigns = [campaignCardFixture({
-    nextGate: { gate: 'APPROVE_DOCUMENT' },
-    workers: [{ sessionId: 'sess_board', status: 'idle' }, { sessionId: 'sess_second', status: 'idle' }],
-    gatePresentationIndex: {
-      path: INDEX_ID,
-      parsed: indexObject({ gate: 'APPROVE_DOCUMENT', digest: null, replyLines: [u1, u2] }),
-    },
-  })];
-  const events = gateWatch.deriveEvents({ payload, dispatchLines: [] });
-  const acceptance = events.filter((event) => event.category === '验收门');
-  assert.equal(acceptance.length, 2);
-  assert.ok(acceptance.every((event) => event.key.includes('review:node:')), 'unit id rides the key');
-  assert.deepEqual(acceptance.map((event) => event.replyLine), [u1, u2]);
-  assert.equal(acceptance[0].sessionId, null, 'two idle workers → no ambiguous session binding');
-  assert.match(acceptance[0].line, /（review:node:u1）/);
-  assert.match(acceptance[0].line, /批准该单元/);
-});
 
 test('deriveEvents: running worker keeps the legacy generic 战役门 echo (no actionable event)', () => {
   const payload = basePayload();
@@ -949,7 +874,6 @@ test('deriveEvents: running worker keeps the legacy generic 战役门 echo (no a
     gatePresentationIndex: { path: INDEX_ID, parsed: indexObject() },
   })];
   const events = gateWatch.deriveEvents({ payload, dispatchLines: [] });
-  assert.equal(events.filter((event) => event.category === '写门').length, 0);
   const generic = events.find((event) => event.category === '战役门');
   assert.ok(generic, 'generic echo still surfaces');
   assert.match(generic.line, /worker 执行中/);
@@ -981,9 +905,9 @@ test('deriveEvents: merged campaign gate rides 战役门 as an actionable rich e
 
 test('formatMessage: rich events render plain text — no digest, no link, category shown', () => {
   const text = gateWatch.formatMessage([
-    { key: 'k', category: '写门', line: 'node v3.0.x（主检出） 停在 APPROVE_WRITES——回复本通知发送「批准」即可批准本门', dwellMs: null, escalated: false },
+    { key: 'k', category: '战役门', line: 'node v3.0.x（主检出） 停在 APPROVE_CAMPAIGN——回复本通知发送「批准」即可批准本门', dwellMs: null, escalated: false },
   ], { generatedAt: '2026-10-20T01:00:00.000Z' });
-  assert.match(text, /【写门】/);
+  assert.match(text, /【战役门】/);
   assert.ok(!/sha256:/.test(text), 'digest stays out of the message body');
   assert.ok(!/https?:\/\//.test(text));
 });
@@ -991,11 +915,11 @@ test('formatMessage: rich events render plain text — no digest, no link, categ
 // ---------- notify-relay v2: campaign-gate approve/reject ----------
 
 const CAMPAIGN_EVENT = {
-  key: 'gate:main::tmp/sdk-doc-sync-runs/node-v30/review-session.json:APPROVE_WRITES',
-  category: '写门',
+  key: 'gate:main::tmp/sdk-doc-sync-runs/node-v30/review-session.json:APPROVE_CAMPAIGN',
+  category: '战役门',
   sessionPath: PRESENT_SESSION,
   sessionKey: `main::${PRESENT_SESSION}`,
-  gate: 'APPROVE_WRITES',
+  gate: 'APPROVE_CAMPAIGN',
   reviewUnitId: null,
   replyLine: WRITES_LINE,
   digest: WRITES_DIGEST,
@@ -1026,8 +950,7 @@ test('parseCommand/parseRejectCommand: 打回|reject|拒绝 prefix grammar, rema
 test('helpText: documents the new gate classes, reject syntax, and per-unit notifications', () => {
   const help = relay.helpText();
   assert.match(help, /打回 <原因>/);
-  assert.match(help, /写门\/验收门\/战役门/);
-  assert.match(help, /每单元一条通知/);
+  assert.match(help, /战役门/);
   assert.ok(!/不经消息通道/.test(help), 'the v1 "board-only" clause is gone');
 });
 
@@ -1054,7 +977,7 @@ test('planCampaignApprove: stale index (digest moved) refuses and invalidates th
 
   const lineMoved = relay.planCampaignApprove({
     event: CAMPAIGN_EVENT, payload: CAMPAIGN_PAYLOAD,
-    presentationIndexOf: () => indexObject({ replyLines: [`APPROVE_WRITES ${'8'.repeat(64)}`] }),
+    presentationIndexOf: () => indexObject({ replyLines: [`APPROVE_CAMPAIGN ${'8'.repeat(64)}`] }),
   });
   assert.equal(lineMoved.code, 'STALE_PRESENTATION', 'a changed reply line is equally stale');
 
@@ -1101,51 +1024,38 @@ test('planCampaignApprove: worker resolution — event binding, single-idle fall
   assert.equal(cardless.sessionId, 'sess_board');
 });
 
-test('planCampaignApprove: multi-unit acceptance approve is single-meaning per event', () => {
-  const u1Line = `APPROVE_DOCUMENT review:node:u1 sha256:${'2'.repeat(64)}`;
-  const documentEvent = {
+test('planCampaignApprove: unit-scoped rollback approve is single-meaning per event', () => {
+  const u1Line = `APPROVE_ROLLBACK review:node:u1 sha256:${'2'.repeat(64)}`;
+  const rollbackEvent = {
     ...CAMPAIGN_EVENT,
-    category: '验收门',
-    gate: 'APPROVE_DOCUMENT',
+    gate: 'APPROVE_ROLLBACK',
     digest: null,
     reviewUnitId: 'review:node:u1',
     replyLine: u1Line,
   };
   const plan = relay.planCampaignApprove({
-    event: documentEvent,
+    event: rollbackEvent,
     payload: CAMPAIGN_PAYLOAD,
     presentationIndexOf: () => indexObject({
-      gate: 'APPROVE_DOCUMENT', digest: null,
-      replyLines: [u1Line, `APPROVE_DOCUMENT review:node:u2 sha256:${'3'.repeat(64)}`],
+      gate: 'APPROVE_ROLLBACK', digest: null,
+      replyLines: [u1Line, `APPROVE_ROLLBACK review:node:u2 sha256:${'3'.repeat(64)}`],
     }),
   });
   assert.equal(plan.ok, true);
   assert.equal(plan.line, u1Line, 'only the referenced unit line is injected');
 
-  const u2Line = `APPROVE_DOCUMENT review:node:u2 sha256:${'3'.repeat(64)}`;
-  const crossUnit = relay.planCampaignApprove({
-    event: { ...documentEvent, reviewUnitId: 'review:node:u2', replyLine: u2Line },
-    payload: CAMPAIGN_PAYLOAD,
-    presentationIndexOf: () => indexObject({
-      gate: 'APPROVE_DOCUMENT', digest: null,
-      replyLines: [u1Line, u2Line],
-    }),
-  });
-  assert.equal(crossUnit.ok, true, 'the u2 event resolves against the same index');
-  assert.equal(crossUnit.line, u2Line);
-
   // A u1-bound event can never inject the u2 line: the replyLine and the unit
   // binding must agree (single meaning per reply).
   const mismatchedUnit = relay.planCampaignApprove({
-    event: { ...documentEvent, replyLine: u2Line },
+    event: { ...rollbackEvent, replyLine: `APPROVE_ROLLBACK review:node:u2 sha256:${'3'.repeat(64)}` },
     payload: CAMPAIGN_PAYLOAD,
-    presentationIndexOf: () => indexObject({ gate: 'APPROVE_DOCUMENT', digest: null, replyLines: [u1Line, u2Line] }),
+    presentationIndexOf: () => indexObject({ gate: 'APPROVE_ROLLBACK', digest: null, replyLines: [u1Line, `APPROVE_ROLLBACK review:node:u2 sha256:${'3'.repeat(64)}`] }),
   });
   assert.equal(mismatchedUnit.ok, false);
   assert.equal(mismatchedUnit.code, 'STALE_PRESENTATION');
 });
 
-test('planCampaignReject: write gate → write mode; acceptance event → comments mode with its unit', () => {
+test('planCampaignReject: campaign gate → write mode with its unit binding', () => {
   const write = relay.planCampaignReject({ event: CAMPAIGN_EVENT, payload: CAMPAIGN_PAYLOAD, reason: '批次范围错了，重排' });
   assert.equal(write.ok, true);
   assert.equal(write.mode, 'write');
@@ -1154,17 +1064,10 @@ test('planCampaignReject: write gate → write mode; acceptance event → commen
   assert.equal(write.reason, '批次范围错了，重排');
   assert.match(write.reply, /已受理/);
 
-  const acceptance = relay.planCampaignReject({
-    event: { ...CAMPAIGN_EVENT, category: '验收门', gate: 'APPROVE_DOCUMENT', digest: null, reviewUnitId: 'review:node:u1', replyLine: `APPROVE_DOCUMENT review:node:u1 sha256:${'2'.repeat(64)}` },
-    payload: CAMPAIGN_PAYLOAD,
-    reason: '第二段评论没吸收',
-  });
-  assert.equal(acceptance.mode, 'comments');
-  assert.equal(acceptance.unitId, 'review:node:u1');
 });
 
 test('planCampaignReject: unsupported category, empty/overlong reason', () => {
-  const rollback = relay.planCampaignReject({ event: { ...CAMPAIGN_EVENT, category: '战役门' }, payload: CAMPAIGN_PAYLOAD, reason: 'x' });
+  const rollback = relay.planCampaignReject({ event: { ...CAMPAIGN_EVENT, category: '哨兵停摆' }, payload: CAMPAIGN_PAYLOAD, reason: 'x' });
   assert.equal(rollback.ok, false);
   assert.equal(rollback.code, 'REJECT_UNSUPPORTED');
   assert.match(rollback.reply, /到任务看板/);
@@ -1174,7 +1077,7 @@ test('planCampaignReject: unsupported category, empty/overlong reason', () => {
   assert.match(overlong.reply, /上限 2000 字符/);
 });
 
-test('handleIncoming: campaign approve and reject produce the v2 action shapes; grouping stays v1', () => {
+test('handleIncoming: campaign approve and reject produce the v2 action shapes', () => {
   const deps = {
     operatorOpenId: OPERATOR,
     outboxLines: [CAMPAIGN_ENTRY, GROUPING_ENTRY],
@@ -1201,10 +1104,6 @@ test('handleIncoming: campaign approve and reject produce the v2 action shapes; 
   assert.equal(reject.action.sessionKey, CAMPAIGN_EVENT.sessionKey);
   assert.equal(reject.action.outboxMessageId, 'om_campaign');
 
-  // v1 grouping path untouched: same entry set, grouping message still resolves.
-  const grouping = relay.handleIncoming({ ...deps, incoming: incomingMessage({ rootId: 'om_notice' }) });
-  assert.equal(grouping.action.type, 'resume');
-  assert.equal(grouping.action.line, `APPROVE_GROUPING sha256:${'a'.repeat(64)}`);
 });
 
 test('handleIncoming: legacy generic 战役门 event keeps the board pointer (code pinned)', () => {
@@ -1223,7 +1122,7 @@ test('handleIncoming: legacy generic 战役门 event keeps the board pointer (co
   });
   assert.match(decision.reply, /看板/);
   const plan = relay.planApprove({ entry: JSON.parse(legacyEntry), payload: CAMPAIGN_PAYLOAD, dispatchLines: [] });
-  assert.equal(plan.code, 'NOT_SINGLE_GROUPING', 'the pinned v1 refusal code stands for unbindable messages');
+  assert.equal(plan.code, 'NOT_SINGLE_GATE', 'unbindable messages refuse with the pinned code');
 
   const multi = relay.handleIncoming({
     operatorOpenId: OPERATOR,

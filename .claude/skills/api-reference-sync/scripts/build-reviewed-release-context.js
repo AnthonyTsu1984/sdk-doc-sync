@@ -1102,7 +1102,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
     writesPerformed: false,
     scanStateUpdated: false,
     // Batch 15 §6.2: the filtered scope IS the grouping-bound of-record —
-    // the proposal, the APPROVE_GROUPING receipt, and every later dry-run
+    // the proposal, the campaign approval envelope, and every later dry-run
     // bind this one file; the scout/PR artifact stays a lineage input. The
     // additive marker makes the chain role explicit on the artifact itself.
     ofRecord: true,

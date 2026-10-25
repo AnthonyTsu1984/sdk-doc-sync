@@ -213,8 +213,7 @@
       "journal": "required",
       "reconciliation": "required",
       "tests": [
-        ".claude/skills/api-reference-sync/tests/sdk-review-session-cli.test.js",
-        ".claude/skills/api-reference-sync/tests/two-gate-flow.test.js"
+        ".claude/skills/api-reference-sync/tests/sdk-review-session-cli.test.js"
       ]
     },
     {
@@ -371,7 +370,7 @@
       "skill": "api-reference-sync",
       "classification": "read-only",
       "operation": "compose-pr-reconcile-candidate-spec",
-      "basis": "zero live calls: composes the canonical candidate-spec from pinned offline artifacts (release scope, decisions, sha-bound page dumps, Bitable snapshot, placement audit, root walk, identity map); --patch-context writes only the operator-designated local context/report files (campaign-control batch 15 §4)"
+      "basis": "zero live calls: composes the canonical candidate-spec from pinned offline artifacts (release scope, decisions, sha-bound page dumps, Bitable snapshot, placement audit, root walk, identity map); --patch-context writes only the operator-designated local context/report files (campaign-control batch 15 \u00a74)"
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/copy-and-repoint-plan.js",
@@ -905,7 +904,7 @@
       "skill": "doc-ops-core",
       "classification": "read-only",
       "operation": "skill-md-lint",
-      "basis": "slice 3-2 SKILL.md meta-lint (audit tmp/skill-thin-refactor-audit.md §6.5 B-5): read-only checks over the skill tree — size budget, marker/registry digest consistency, pointer integrity, refusal-code citations; no external mutation signature"
+      "basis": "slice 3-2 SKILL.md meta-lint (audit tmp/skill-thin-refactor-audit.md \u00a76.5 B-5): read-only checks over the skill tree \u2014 size budget, marker/registry digest consistency, pointer integrity, refusal-code citations; no external mutation signature"
     },
     {
       "path": "scripts/validate-skills.js",

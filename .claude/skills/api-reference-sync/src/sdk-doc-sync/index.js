@@ -678,7 +678,7 @@ class SdkDocSync {
                 // reconciler re-derives the target chain from the walk
                 // product when one is bound (foreign-folder targets refuse).
                 SyncPlanner.reconcilePlanTargetChain(plan, this.placementWalkProduct);
-                // Two-gate executed-resource settlement: an executed-row
+                // Per-unit executed-resource settlement: an executed-row
                 // journal that observed and verified this resource's
                 // resolution settles the plan to NOOP (no re-drive, no
                 // claim, no mutation). Without it the plan stays actionable
@@ -758,7 +758,7 @@ class SdkDocSync {
                     : action;
                 if (sessionExecutedDocumentIds?.has(plannableAction.stableId)) {
                     context.reviewSessionExecuted = true;
-                    // Finalized two-gate units (accepted receipt on file) keep
+                    // Finalized per-unit units (accepted receipt on file) keep
                     // their slot in the manifest WITHOUT re-entering write
                     // planning: their acceptance is journal-verified evidence,
                     // no redo is in flight, and a re-drive of the scope's
@@ -815,8 +815,8 @@ class SdkDocSync {
                                 diffAction: 'SETTLED_UNIT_NOOP',
                                 acceptedUnit: finalizedUnitIds.has(`accepted:${settledUnitId}`),
                                 reason: finalizedUnitIds.has(`accepted:${settledUnitId}`)
-                                    ? 'unit finalized under the two-gate acceptance; no redo is in flight'
-                                    : 'unit executed and verified; the batch document gate binds its review',
+                                    ? 'unit finalized under the per-unit acceptance; no redo is in flight'
+                                    : 'unit executed and verified; the campaign approval binds its review',
                             }),
                         });
                         SyncPlanner.reconcilePlanTargetChain(acceptedPadPlan, this.placementWalkProduct);
@@ -2329,7 +2329,7 @@ class SdkDocSync {
             ...(suppliedContext.current || {}),
             ...(actionContext.current || {}),
         };
-        // Two-gate redo replans (node v3.0.6): the CREATE-reviewed context
+        // Per-unit redo replans (node v3.0.6): the CREATE-reviewed context
         // predates the unit's own record, so the auto-routed REBUILD replan
         // needs the executed unit's verified record identity as its current
         // proof — read it from the durable session evidence (pending or
@@ -2405,7 +2405,7 @@ class SdkDocSync {
                         // A REBUILD observation journals a REUSED document: no
                         // createdDocument — the reused token rides the
                         // prepared capsule's documentRollback and the record
-                        // identity rides the observed recordId (two-gate
+                        // identity rides the observed recordId (per-unit
                         // batch2d wall, 2026-10-13).
                         if (!documentRecord && evidence && nonEmptyString(evidence.recordId)) {
                             const prepared = journalEntries.find((entry) => (
@@ -2521,7 +2521,7 @@ class SdkDocSync {
             }
         }
 
-        // Session-executed re-plan proof (two-gate redo, node v3.0.6): the
+        // Session-executed re-plan proof (per-unit redo, node v3.0.6): the
         // reviewed context of a CREATE unit predates its own record, so the
         // auto-routed REBUILD re-plan carries no current-placement evidence —
         // the planner refuses typed (REBUILD_PLACEMENT_REQUIRED) even though

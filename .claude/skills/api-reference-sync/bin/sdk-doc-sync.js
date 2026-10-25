@@ -41,10 +41,6 @@ const {
     saveReviewSession,
 } = require('../src/sdk-doc-sync/review-session-store');
 const {
-    checkGroupingScopeChain,
-    validateGroupingApprovalReceipt,
-} = require('../src/sdk-doc-sync/grouping-proposal');
-const {
     resolveCampaignApprovalForWrite,
     validateCampaignApprovalReceipt,
 } = require('../src/sdk-doc-sync/campaign-approval');
@@ -138,8 +134,6 @@ function parseArgs(argv) {
             args.sessionState = argv[++i];
         } else if (arg === '--resume-session' && argv[i + 1]) {
             args.resumeSession = argv[++i];
-        } else if (arg === '--grouping-approval' && argv[i + 1]) {
-            args.groupingApproval = argv[++i];
         } else if (arg === '--campaign-approval' && argv[i + 1]) {
             args.campaignApproval = argv[++i];
         } else if (arg === '--campaign-chain-grouping' && argv[i + 1]) {
@@ -185,8 +179,7 @@ Options:
   --batch-continue                 Verified batch mode: permit planning and recording executions while sibling units await review (only a unit's OWN unaccepted execution blocks its re-selection). The operator's batch write approval binds the unit list; without this flag the per-unit strict gate is unchanged
   --session-state <file>           Create a persistent session from a complete initial dry-run; with --finalize-acceptance, the canonical acceptance-pending session to finalize
   --resume-session <file>          Resume from verified persisted document-acceptance receipts
-  --grouping-approval <file>       Bind the durable APPROVE_GROUPING receipt into the created session; a bound session refuses any entry whose --release-scope digest is not the approved scope (GROUPING_STALE)
-  --campaign-approval <file>       The merged APPROVE_CAMPAIGN receipt (batch 18 W-C): one approval that envelopes the scope and the batch digest. Chained against the presented --release-scope (a drifted scope is GROUPING_STALE, exactly as the grouping receipt would be) and it supplies the write's approved batch digest. Units-based receipts (batch 16) additionally require --review-unit-id plus --campaign-chain-grouping/--campaign-chain-candidate-spec (the grouping and candidate-spec artifacts the receipt approved — re-chained, CAMPAIGN_DIGEST_STALE on drift) and accept a regenerated unit digest (CONTENT_REGENERATED journaled). Per-invocation like --approve-batch-digest (NOT persisted into the session — re-present it at every live entry). Mutually exclusive with --grouping-approval
+  --campaign-approval <file>       The APPROVE_CAMPAIGN receipt (batch 18 W-C, the 2026-10-24 single approval surface): one approval that envelopes the scope and the batch digest. Chained against the presented --release-scope (a drifted scope is GROUPING_STALE) and it supplies the write's approved batch digest. Units-based receipts (batch 16) additionally require --review-unit-id plus --campaign-chain-grouping/--campaign-chain-candidate-spec (the grouping and candidate-spec artifacts the receipt approved — re-chained, CAMPAIGN_DIGEST_STALE on drift) and accept a regenerated unit digest (CONTENT_REGENERATED journaled). Per-invocation like --approve-batch-digest (NOT persisted into the session — re-present it at every live entry)
   --campaign-chain-grouping <file>     The grouping artifact to re-chain a units-based --campaign-approval against (its semantic digest must equal the receipt's groupingDigest)
   --campaign-chain-candidate-spec <file>  The candidate-spec artifact to re-chain a units-based --campaign-approval against
   --finalize-acceptance <file>     Finalize acceptance from a receipt bound (by acceptanceManifestDigest) to the canonical --session-state session
@@ -591,14 +584,9 @@ async function runCli({
 
     if (args.finalizeAcceptance) {
         // Finalization is NOT a sync entry: it chains through the session's
-        // acceptance-manifest-bound receipts, never a fresh grouping receipt —
+        // acceptance-manifest-bound receipts, never a fresh approval receipt —
         // refuse the combination loudly instead of silently ignoring the flag
         // (review finding F1).
-        if (args.groupingApproval) {
-            err('Error: GROUPING_APPROVAL_CHAIN_INVALID: --grouping-approval cannot be combined with --finalize-acceptance; finalization chains through the session\'s bound receipts, not a new grouping approval');
-            exit(1);
-            return null;
-        }
         if (args.campaignApproval) {
             err('Error: CAMPAIGN_APPROVAL_CONFLICT: --campaign-approval cannot be combined with --finalize-acceptance; finalization chains through the session\'s bound receipts, not a new campaign approval');
             exit(1);
@@ -708,70 +696,17 @@ async function runCli({
             return null;
         }
     }
-    // The merged APPROVE_CAMPAIGN receipt already carries the approved scope,
-    // so pairing it with a standalone grouping receipt is ambiguous — refuse it
-    // up front, before either binding does any work.
-    if (args.campaignApproval && args.groupingApproval) {
-        err('Error: CAMPAIGN_APPROVAL_CONFLICT: --campaign-approval already carries the approved scope; do not also pass --grouping-approval');
-        exit(1);
-        return null;
-    }
-    // Grouping write binding (api.grouping-proposal-staleness,
-    // runtime-enforced): a bound campaign executes only the release scope its
-    // grouping approval covers. Binding activates from either side —
-    // --grouping-approval at session creation, or a resumed session that
-    // already carries groupingApproval — and once active the scope digest
-    // must chain at every SYNC entry (dry-run, resume, live write;
-    // --finalize-acceptance refuses the flag outright — finalization chains
-    // through acceptance receipts), so a re-scoped or hand-swapped scope
-    // refuses typed instead of executing unapproved material.
-    let groupingApprovalBinding = null;
-    if (args.groupingApproval) {
-        let groupingReceipt;
-        try {
-            groupingReceipt = JSON.parse(readFile(path.resolve(args.groupingApproval)));
-        } catch (error) {
-            err(`Error: GROUPING_APPROVAL_CHAIN_INVALID: cannot read --grouping-approval: ${error.message}`);
-            exit(1);
-            return null;
-        }
-        const receiptValidation = validateGroupingApprovalReceipt(groupingReceipt);
-        if (!receiptValidation.valid) {
-            err(`Error: GROUPING_APPROVAL_CHAIN_INVALID: ${receiptValidation.errors.map((item) => item.message).join('; ')}`);
-            exit(1);
-            return null;
-        }
-        if (reviewSession?.groupingApproval && reviewSession.groupingApproval.proposalDigest !== groupingReceipt.proposalDigest) {
-            err(`Error: GROUPING_APPROVAL_CHAIN_INVALID: --grouping-approval (${groupingReceipt.proposalDigest}) disagrees with the session's bound approval (${reviewSession.groupingApproval.proposalDigest})`);
-            exit(1);
-            return null;
-        }
-        groupingApprovalBinding = groupingReceipt;
-    } else if (reviewSession?.groupingApproval) {
-        groupingApprovalBinding = reviewSession.groupingApproval;
-    }
-    if (groupingApprovalBinding) {
-        if (!releaseScope) {
-            err('Error: GROUPING_APPROVAL_CHAIN_INVALID: a grouping approval is bound (flag or session) but no --release-scope was presented to chain against');
-            exit(1);
-            return null;
-        }
-        try {
-            checkGroupingScopeChain({ approval: groupingApprovalBinding, scope: releaseScope });
-        } catch (error) {
-            err(`Error: ${error.code}: ${error.message}`);
-            exit(1);
-            return null;
-        }
-    }
-    // Merged-gate write binding (batch 18 W-C, api.campaign-plan-digest): ONE
-    // APPROVE_CAMPAIGN receipt envelopes {scopeDigest, groupingDigest,
-    // candidateSpecDigest, batchDigest}. resolveCampaignApprovalForWrite fans
-    // it back out to the exact two checks the split gates performed — never a
-    // relaxation — and returns the batch digest the write must execute.
-    // Per-invocation, exactly like --approve-batch-digest (not persisted into
-    // the session); combining it with --grouping-approval is refused as
-    // ambiguous (two scope bindings).
+    // Campaign write binding (api.grouping-proposal-staleness,
+    // runtime-enforced): the campaign executes only the release scope its
+    // campaign approval covers. ONE APPROVE_CAMPAIGN receipt envelopes
+    // {scopeDigest, groupingDigest, candidateSpecDigest, batchDigest}
+    // (batch 18 W-C, api.campaign-plan-digest).
+    // resolveCampaignApprovalForWrite fans it back out to the exact checks
+    // the legacy split approvals performed — never a relaxation — and returns
+    // the batch digest the write must execute. Per-invocation, exactly like
+    // --approve-batch-digest (not persisted into the session). The 2026-10-24
+    // single-gate ruling deleted the legacy session-level scope bind; a
+    // presented scope that drifts from the approved one refuses GROUPING_STALE.
     let approvedBatchDigest = args.approveBatchDigest || null;
     let campaignApprovalRegeneration = null;
     if (args.campaignApproval) {
@@ -1222,16 +1157,13 @@ async function runCli({
             sdkName: args.sdkName,
             track: args.sdkVersion,
             reviewUnitManifest: result.reviewUnitManifest,
-            // Two-gate acceptance flow (2026-10-01 ruling): document
-            // acceptance finalizes the unit (WIP→Draft + per-unit receipt)
-            // and the session closes mechanically once every unit finalized —
-            // no campaign-level acceptance gate.
-            acceptanceFlow: 'two-gate',
+            // Per-unit acceptance flow (2026-10-01 ruling, retained under the
+            // 2026-10-24 single-gate model): document acceptance finalizes the
+            // unit (WIP→Draft + journal-derived receipt) and the session
+            // closes mechanically once every unit finalized — no
+            // campaign-level acceptance gate.
+            acceptanceFlow: 'per-unit',
             placementWalk: capturedPlacementWalk,
-            // Grouping write binding: the validated --grouping-approval
-            // receipt, frozen into the session at creation — every later
-            // entry chains its --release-scope digest against it.
-            groupingApproval: args.groupingApproval ? groupingApprovalBinding : null,
             artifacts: {
                 releaseScope: args.releaseScope ? path.resolve(args.releaseScope) : null,
                 referenceContext: args.referenceContext ? path.resolve(args.referenceContext) : null,
@@ -1287,7 +1219,7 @@ async function runCli({
             out(`Active review unit: ${result.activeReviewUnit.reviewUnitId} (${result.activeReviewUnit.documentStableId}).`);
         }
         out(`Proposed execution batch: ${batchDigest} (${result.proposedExecutionBatch.actions.length} actions).`);
-        out(`If approved, reply exactly: APPROVE_WRITES ${batchDigest}`);
+        out(`If approved, reply exactly: APPROVE_CAMPAIGN ${batchDigest}`);
         out(`Live CLI approval flag: --approve-batch-digest ${batchDigest}`);
     } else if (result.executionResult?.status === 'BLOCKED') {
         out(`\nSync blocked. ${result.executionResult.diagnostics.length} blocking diagnostics.`);

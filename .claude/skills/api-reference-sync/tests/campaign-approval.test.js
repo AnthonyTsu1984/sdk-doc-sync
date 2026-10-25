@@ -164,7 +164,7 @@ test('resolveCampaignApprovalForWrite fans the envelope out to the two write che
 
 test('resolveCampaignApprovalForWrite refuses a malformed approval before chaining', () => {
   assert.throws(
-    () => resolveCampaignApprovalForWrite({ approval: { schemaVersion: 1, gate: 'APPROVE_GROUPING' }, scope: scope() }),
+    () => resolveCampaignApprovalForWrite({ approval: { schemaVersion: 1, gate: 'APPROVE_LEGACY_RETIRED' }, scope: scope() }),
     (error) => error.code === CAMPAIGN_PLAN_INVALID,
   );
 });

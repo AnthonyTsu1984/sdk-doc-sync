@@ -69,7 +69,7 @@ test('non-JSON dry-run prints the exact digest-bound approval reply and live fla
 
   const digest = result.proposedExecutionBatch.batchDigest;
   const output = stdout.join('\n');
-  assert.match(output, new RegExp(`If approved, reply exactly: APPROVE_WRITES ${digest}`));
+  assert.match(output, new RegExp(`If approved, reply exactly: APPROVE_CAMPAIGN ${digest}`));
   assert.match(output, new RegExp(`--approve-batch-digest ${digest}`));
 });
 
@@ -2746,11 +2746,9 @@ test('CLI consumes the merged APPROVE_CAMPAIGN: chains the scope and supplies th
   assert.equal(drifted.exitCode, 1);
   assert.match(drifted.stderr, /GROUPING_STALE/);
 
-  // (2) Two scope bindings at once is ambiguous.
-  const conflicted = await runRefusal(['--grouping-approval', '/tmp/grouping.json'], readScoped());
-  assert.equal(conflicted.result, null);
-  assert.equal(conflicted.exitCode, 1);
-  assert.match(conflicted.stderr, /CAMPAIGN_APPROVAL_CONFLICT/);
+  // (2) The legacy standalone scope-bind flag was deleted with the legacy
+  // approval link (2026-10-24 single-gate ruling): the campaign approval is
+  // the one scope binding, so the old two-bindings conflict case is gone.
 
   // (3) A standalone batch digest that is not the enveloped one is refused.
   const batchConflict = await runRefusal(['--approve-batch-digest', `sha256:${'9'.repeat(64)}`], readScoped());

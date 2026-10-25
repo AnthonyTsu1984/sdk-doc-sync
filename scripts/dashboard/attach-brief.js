@@ -17,23 +17,23 @@ const { buildLedger, buildRevisionCards, parseWorktreeList } = require('./ledger
 const REVIEW_SESSION_CLI = path.join('.claude', 'skills', 'api-reference-sync', 'bin', 'sdk-review-session.js');
 
 const GATE_FORMAT_LINES = [
-  '- 门禁回复格式（缺 sha256 摘要的批准无效）: `APPROVE_GROUPING sha256:<digest>` / `APPROVE_WRITES sha256:<batch-digest>` / `APPROVE_DOCUMENT <review-unit-id> sha256:<journal-digest>` / `APPROVE_ROLLBACK <id> sha256:<digest>` / `APPROVE_ACCEPTANCE sha256:<digest>`',
+  '- 门禁回复格式（缺 sha256 摘要的批准无效）: `APPROVE_CAMPAIGN sha256:<campaign-plan-digest>`',
   '- 批准绑定精确 digest: 任何重规划/重扫都会使旧 digest 作废，必须重新走门。',
 ];
 const IRON_RULES = [
   '- 铁律: 执行中绝不删除 journal 重放；写路径只走 canonical CLI；scan-state 只由 close-session/finalize 推进。',
   '- 本简报由盘上 durable 状态确定性生成；续接以 durable 状态与 canonical CLI 输出为准，勿凭记忆。',
 ];
-// Execution critical path (batch 12): the java/go-proven loop, pinned so a
-// fresh chat starts from the materialized handoff instead of re-deriving the
-// method from SKILL.md each time (the writing sessions' 30–40% repo-exploration
-// overhead). SKILL.md §Domain Workflow 8 stays the reference; this is the
-// entry-point contract the brief guarantees.
+// Execution critical path: the runner loop, pinned so a fresh chat starts
+// from the materialized handoff instead of re-deriving the method from
+// SKILL.md each time. SKILL.md §Domain Workflow stays the reference; this is
+// the entry-point contract the brief guarantees.
 const EXECUTION_PATH_LINES = [
   '- 写作/落盘关键路径（战役已验证的方法，勿再自行推导）:',
-  '  1. 每个新对话第一步: `node .claude/skills/api-reference-sync/bin/sdk-review-session.js handoff --session <session-file> [--recipe <recipe.json>]`——它推导下一道门、批切片（文档门=挂起执行；写门=manifest 序下 ≤20 个未接受单元）、要绑的 digest 和可直接执行的命令骨架。',
-  '  2. 循环骨架: FULL-scope dry-run → `node .claude/skills/api-reference-sync/scripts/gate-presentation.js --from-dryrun` 呈卡 → 操作员回 `APPROVE_WRITES sha256:<batch-digest>` → execute（`--approve-batch-digest` 等 digest 全部程序化注入，绝不手抄）→ 文档门/resolve-batch-review → 循环到 remaining=0 → `close-session`（scan-state 恰好推进一次；打回即铸在闭关时自动落 rule candidate）。',
-  '  3. 工件与回执落点: journal/run-manifest 在 `tmp/api-reference-sync/`（execute 每跑一轮用全新 journal 路径）；分组批准回执在 `tmp/api-reference-sync/grouping-approvals/`。',
+  '  1. 每个新对话第一步: `node .claude/skills/api-reference-sync/bin/sdk-release-sync.js status --config <sync-config.json>`（无 sync-config 的战役先 `init --from-plan` 迁移）——runner 从盘上状态推导剩余单元，勿凭记忆续接。',
+  '  2. 循环骨架: `sync --config <sync-config.json>` 逐单元 写→验→Draft（digest 全内部化，单元验证后自动终化）；单单元失败只记录不冻结，重跑 sync 自动跳过已完成；WIP 滞留用 recover。战役计划变更先重呈战役门（APPROVE_CAMPAIGN），旧批准作废。',
+  '  3. 收口: `node .claude/skills/api-reference-sync/bin/sdk-review-session.js close-session --session <session.json> --scan-state-key <key> --scan-state-entry <entry.json>`（scan-state 恰好推进一次；打回即铸在闭关时自动落 rule candidate）→ 战役消费的 PR 在 findings 账本 mark-disposed。',
+  '  4. 工件落点: journal/run-manifest 在 `tmp/api-reference-sync/`（每轮全新 journal 路径）。',
 ];
 
 // Session self-restraint (2026-10-12 ruling: rotate conversations at 42%
@@ -138,8 +138,8 @@ function buildRevisionBrief(card, now = new Date()) {
   lines.push(`- 工作树: ${card.checkoutLabel}（\`${card.checkoutRoot}\`）——一切以该检出盘上状态为准，勿在主检出操作。`);
   lines.push(`- 工作单: \`${card.worklistPath}\`（${card.scope.findings} 项发现 / 唯一页 ${card.scope.uniquePages}；活体 scope 口径 ${card.scope.pages} 页，生成于 ${card.scope.generatedAt ?? '—'}）`);
   if (card.ruling) lines.push(`- 裁定: ${card.ruling}`);
-  if (card.groupingGate) {
-    lines.push(`- 分组门: 已呈门（digest \`${card.groupingGate.digest}\`${card.groupingGate.title ? ` · ${card.groupingGate.title}` : ''}）——续接前先向操作员确认该 digest 已获批准。`);
+  if (card.gateManifest) {
+    lines.push(`- 呈门: 已呈战役门（digest \`${card.gateManifest.digest}\`${card.gateManifest.title ? ` · ${card.gateManifest.title}` : ''}）——续接前先向操作员确认该 digest 已获批准。`);
   }
   lines.push(`- 已写页面（run-manifest 对账，${card.writtenPages}/${card.scope.pages}）:`);
   if (card.written.length === 0) {
@@ -172,7 +172,7 @@ function buildBrief({ repoRoot, requested, now = new Date(), runStatus = default
 
   const card = resolved.card;
   const lines = [];
-  lines.push(`## 战役简报 · ${card.language} · ${card.track}${card.acceptanceFlow ? ` · ${card.acceptanceFlow}` : ''}`);
+  lines.push(`## 战役简报 · ${card.language} · ${card.track}`);
   lines.push('');
   lines.push(`- 会话文件: \`${card.sessionPath}\``);
   lines.push(`- 状态: ${card.status}（健康档: ${card.health}）· 单元 ${card.accepted}/${card.units} 已接受 · 挂起执行 ${card.pending}`);

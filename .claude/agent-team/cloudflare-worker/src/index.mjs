@@ -9,7 +9,7 @@ const ACTION_ALIASES = Object.freeze({
 });
 
 const EXACT_LIVE_ACTIONS = Object.freeze({
-  APPROVE_WRITES: 'approve_live_write',
+  APPROVE_TASK: 'approve_live_write',
   REJECT_WRITES: 'reject',
   REQUEST_CHANGES: 'changes_requested',
 });
@@ -58,12 +58,12 @@ function parseApprovalCommand(text) {
   const explainMatch = normalized.match(/^explain\s+([a-zA-Z0-9_.:-]+)$/i);
   if (explainMatch) return localIntent('explain', explainMatch[1], raw);
 
-  const exactLiveMatch = normalized.match(/^(APPROVE_WRITES|REJECT_WRITES|REQUEST_CHANGES)\s+([a-zA-Z0-9_.:-]+)\s+(sha256:[a-f0-9]{64})(?:\s+([0-9]+))?(?::\s*([\s\S]+))?$/i);
+  const exactLiveMatch = normalized.match(/^(APPROVE_TASK|REJECT_WRITES|REQUEST_CHANGES)\s+([a-zA-Z0-9_.:-]+)\s+(sha256:[a-f0-9]{64})(?:\s+([0-9]+))?(?::\s*([\s\S]+))?$/i);
   if (exactLiveMatch) {
     const command = exactLiveMatch[1].toUpperCase();
     const customInstruction = exactLiveMatch[5] ? exactLiveMatch[5].trim() : '';
-    if (command !== 'APPROVE_WRITES' && !customInstruction) return null;
-    if (command === 'APPROVE_WRITES' && customInstruction) return null;
+    if (command !== 'APPROVE_TASK' && !customInstruction) return null;
+    if (command === 'APPROVE_TASK' && customInstruction) return null;
     return {
       action: EXACT_LIVE_ACTIONS[command],
       taskId: exactLiveMatch[2],
@@ -161,7 +161,7 @@ function localResponseText(parsed) {
       'ztrans understands:',
       '- @ztrans dry run <task-id>',
       '- @ztrans patch <task-id>',
-      '- APPROVE_WRITES <task-id> sha256:<batch-digest> <source-run-id>',
+      '- APPROVE_TASK <task-id> sha256:<batch-digest> <source-run-id>',
       '- REJECT_WRITES <task-id> sha256:<batch-digest> <source-run-id>: <reason>',
       '- REQUEST_CHANGES <task-id> sha256:<batch-digest> <source-run-id>: <instruction>',
       '- @ztrans explain <task-id>',

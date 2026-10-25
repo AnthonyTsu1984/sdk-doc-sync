@@ -8,8 +8,8 @@ Three working disciplines every session (operator-driven or board-dispatched) fo
 
 | Directory | Contents | Lifecycle |
 |---|---|---|
-| `tmp/api-reference-sync/` | Governance core: execution journals, run-manifests, grouping-approval receipts (`grouping-approvals/`), gate presentations (`gate-presentation/`), disposal journals, and `archive/` for superseded gate artifacts | Journals of live sessions are never deleted (iron rule: replay); superseded manifests move to `run-manifest-archive/` or `archive/` during the admission ritual |
-| `tmp/sdk-release-scout/` | Daily scout artifacts (`daily/`), campaign session files (`<track>-session.json` — top level only, the board's scan roots), Bitable/Drive snapshots, per-intake workdirs (`<track>-intake-<date>/`), grouping-gate manifests (top level) | Session files persist as the campaign registry; snapshots are per-campaign evidence; closed-campaign stdout/stderr diagnostics move to `tmp/archive/` |
+| `tmp/api-reference-sync/` | Governance core: execution journals, run-manifests, campaign approval receipts (`campaign-approvals/`), gate presentations (`gate-presentation/`), disposal journals, and `archive/` for superseded gate artifacts | Journals of live sessions are never deleted (iron rule: replay); superseded manifests move to `run-manifest-archive/` or `archive/` during the admission ritual |
+| `tmp/sdk-release-scout/` | Daily scout artifacts (`daily/`), campaign session files (`<track>-session.json` — top level only, the board's scan roots), Bitable/Drive snapshots, per-intake workdirs (`<track>-intake-<date>/`), campaign gate manifests (top level) | Session files persist as the campaign registry; snapshots are per-campaign evidence; closed-campaign stdout/stderr diagnostics move to `tmp/archive/` |
 | `tmp/sdk-doc-sync-runs/` | Campaign run directories (`<language>-<track>/review-session.json` + run artifacts) | Same as session files — persist while the campaign is on the board |
 | `tmp/skill-feedback/` | Rule candidates (`api-reference-sync/candidates/`) written by close-session learning capture (打回即铸) | Durable until promoted into harness rules or explicitly rejected |
 | `tmp/skill-feedback-rollout/` | Admission ledger (`admitted-fingerprints.jsonl`) | Append-only |
@@ -22,7 +22,7 @@ Rules:
 
 - **One-off scripts never live at `tmp/` top level.** A throwaway script goes in a topic subdirectory (`tmp/<topic>/…`) or the run directory it serves; when its campaign closes it archives with that campaign.
 - **Campaign diagnostics (stdout/stderr dumps of dry-runs and executes) are not evidence.** The journal is the evidence. Diagnostics of a closed campaign move to `tmp/archive/` at campaign close.
-- **Cleanup is archival, not deletion** (`mv` into a dated `tmp/archive/` batch), and never touches: live-session journals, grouping receipts, run-manifests of the current admission window, session files, scan-state, or the admission ledger.
+- **Cleanup is archival, not deletion** (`mv` into a dated `tmp/archive/` batch), and never touches: live-session journals, campaign receipts, run-manifests of the current admission window, session files, scan-state, or the admission ledger.
 - Nothing outside `tmp/` is scratch: evidence, references, and configs referenced from the repository are repository content.
 
 ## Worktree Principles
@@ -38,8 +38,8 @@ The main checkout is the governance truth: it carries the ADMITTED fingerprint, 
 
 A round is the unit of governed progress: it starts at dispatch/attach/resume and ends at the next gate stop or a terminal state.
 
-1. **Stop at every gate.** When work reaches an `APPROVE_*` gate, present it (`gate-presentation.js`) with the exact digest-bound reply line, then END the round. Never self-approve, never continue past an unapproved gate, never batch two gates into one approval.
-2. **An approval becomes real only as a durable receipt**: `record-grouping-approval.js` for grouping; journal-derived receipts via `sdk-review-session.js` for documents. A verbal/ejected reply without its receipt did not happen.
+1. **Stop at the campaign gate.** When work reaches the `APPROVE_CAMPAIGN` gate, present it (`gate-presentation.js`) with the exact digest-bound reply line, then END the round. Never self-approve, never continue past an unapproved gate.
+2. **An approval becomes real only as a durable receipt** (`tmp/api-reference-sync/campaign-approvals/`). A verbal/ejected reply without its receipt did not happen.
 3. **The next round resumes from durable state** — the board re-dispatches the card (attach brief re-hydrates from the session file), or the operator's board approval forwards the exact reply line into the waiting session. A resumed session never replays from memory; it re-reads the session file and journals.
 4. **Any re-planning or re-scan voids the digest** — the old approval line is dead; the gate must be re-presented with the new digest. One approval, one round, one digest.
 5. **Round products land in their canonical locations** (journals, manifests, receipts — see the layout table) before the round ends. A round that produced no durable artifact must say so explicitly in its final report.

@@ -1981,7 +1981,7 @@ function plFinalizeUnit(session, directory, unitId, sequence) {
   });
 }
 
-// A fully-finalized two-gate session whose unit A went through one
+// A fully-finalized per-unit session whose unit A went through one
 // changes-requested redo, leaving one learning event behind.
 function plSessionWithChangeRequest() {
   const directory = plTempDir('pl-close-');
@@ -1991,7 +1991,7 @@ function plSessionWithChangeRequest() {
     sdkName: 'sdk',
     track: 'v1',
     reviewUnitManifest: plManifest(),
-    acceptanceFlow: 'two-gate',
+    acceptanceFlow: 'per-unit',
   });
   const journal = plJournal(directory, 'pl-first.jsonl', 'node:Collections:pl-a', 'sha256:pl-batch-first');
   session = recordDocumentExecution(session, {
@@ -2053,7 +2053,7 @@ scenarios['process-learning-suppression-recorded'] = () => {
     sdkName: 'sdk',
     track: 'v1',
     reviewUnitManifest: plManifest(),
-    acceptanceFlow: 'two-gate',
+    acceptanceFlow: 'per-unit',
   });
   session = plFinalizeUnit(session, directory, PL_UNIT_A, 'a');
   session = plFinalizeUnit(session, directory, PL_UNIT_B, 'b');
@@ -2098,7 +2098,7 @@ scenarios['process-learning-execution-wall-captured'] = () => {
     sdkName: 'sdk',
     track: 'v1',
     reviewUnitManifest: plManifest(),
-    acceptanceFlow: 'two-gate',
+    acceptanceFlow: 'per-unit',
   });
   session = plFinalizeUnit(session, directory, PL_UNIT_A, 'a');
   session = plFinalizeUnit(session, directory, PL_UNIT_B, 'b');
@@ -2150,8 +2150,8 @@ scenarios['process-learning-execution-wall-captured'] = () => {
   };
 };
 
-// Grouping-proposal governance (2026-10-06): the APPROVE_GROUPING gate
-// approves a governed artifact with durable materials. Proves the policy
+// Grouping-proposal governance (2026-10-06): the campaign approval covers
+// a governed artifact with durable materials. Proves the policy
 // kernel (lineage digests, partition refusals), the typed scout identity-map
 // blocker, and the production CLIs — including that the durable approval
 // receipt refuses a hand-assembled proposal without lineage.
@@ -2255,24 +2255,16 @@ scenarios['grouping-proposal-governance'] = async () => {
 // (ok + GROUPING_STALE), the session one-shot bind (idempotent +
 // GROUPING_APPROVAL_ALREADY_BOUND), and the production session CLI.
 scenarios['grouping-proposal-staleness'] = async () => {
-  const fs = require('node:fs');
-  const os = require('node:os');
-  const path = require('node:path');
-  const { spawnSync } = require('node:child_process');
+  // 2026-10-24 single-gate ruling: the scope-drift floor rides the campaign
+  // approval envelope (campaign-approval.js). The campaign approval binds the
+  // exact release scope it covers; a presented scope whose semantic digest
+  // drifted refuses GROUPING_STALE at every sdk-doc-sync entry.
   const { createReleaseScope } = require('../../src/sdk-doc-sync/release-scope/schema');
   const {
-    createGroupingProposal,
-    buildGroupingApprovalReceipt,
-    checkGroupingScopeChain,
-    groupingProposalDigest,
-    stableGroupingProposalJson,
-  } = require('../../src/sdk-doc-sync/grouping-proposal');
-  const {
-    createReviewSession,
-    loadReviewSessionState,
-    recordGroupingApproval,
-    saveReviewSession,
-  } = require('../../src/sdk-doc-sync/review-session-store');
+    buildCampaignPlan,
+    buildCampaignApprovalReceipt,
+    checkCampaignScopeChain,
+  } = require('../../src/sdk-doc-sync/campaign-approval');
 
   const action = (stableId, symbol) => ({
     type: 'UPDATE',
@@ -2292,13 +2284,23 @@ scenarios['grouping-proposal-staleness'] = async () => {
     actions: [action('go:Client:search', 'Client.search'), action('go:Client:flush', 'Client.flush')],
     approvalGrade: true,
   });
-  const identityMap = { schemaVersion: 1, language: 'go', track: 'v3.0.x', defaultCategory: 'Client', symbols: {} };
-  const units = [{ id: 'u1', sourceStableId: 'go:Client:search', actionIntent: 'UPDATE', decision: {} }];
-  const exclusions = [{ sourceStableId: 'go:Client:flush', reason: 'internal helper' }];
+  const { componentDigests } = require('../../src/sdk-doc-sync/campaign-approval');
+  const plan = buildCampaignPlan({
+    language: 'go',
+    sdkName: 'milvus',
+    track: 'v3.0.x',
+    components: componentDigests({
+      scope,
+      grouping: { schemaVersion: 1, kind: 'grouping-fixture' },
+      candidateSpec: { schemaVersion: 1, kind: 'candidate-spec-fixture' },
+      batchDigest: 'sha256:' + 'd'.repeat(64),
+    }),
+  });
+  const approval = buildCampaignApprovalReceipt({ plan });
 
-  const proposal = createGroupingProposal({ scope, identityMap, units, exclusions });
-  const receipt = buildGroupingApprovalReceipt({ proposal });
-  const chainOk = checkGroupingScopeChain({ approval: receipt, scope }).scopeDigest === receipt.lineage.scopeDigest;
+  const chained = checkCampaignScopeChain({ approval, scope });
+  const chainOk = chained.scopeDigest === approval.lineage.scopeDigest
+    && chained.campaignPlanDigest === approval.campaignPlanDigest;
 
   const staleScope = createReleaseScope({
     language: 'go',
@@ -2313,66 +2315,12 @@ scenarios['grouping-proposal-staleness'] = async () => {
   });
   let staleCode = null;
   try {
-    checkGroupingScopeChain({ approval: receipt, scope: staleScope });
+    checkCampaignScopeChain({ approval, scope: staleScope });
   } catch (error) {
     staleCode = error.code || null;
   }
 
-  // Session one-shot bind (kernel): idempotent same digest, typed conflict
-  // for a different proposal over the same scope.
-  const session = createReviewSession({
-    sessionId: 'scenario:go:milvus:v3.0.x:binding',
-    language: 'go',
-    sdkName: 'milvus',
-    track: 'v3.0.x',
-    reviewUnitManifest: { manifestDigest: `sha256:${'7'.repeat(64)}`, units: [] },
-  });
-  const bound = recordGroupingApproval(session, receipt);
-  const sessionBound = bound.groupingApproval.proposalDigest === groupingProposalDigest(proposal)
-    && recordGroupingApproval(bound, receipt) === bound;
-  const rePartitioned = createGroupingProposal({
-    scope,
-    identityMap,
-    units: [{ id: 'u1', sourceStableId: 'go:Client:flush', actionIntent: 'BACKFILL', decision: {} }],
-    exclusions: [{ sourceStableId: 'go:Client:search', reason: 're-partitioned' }],
-  });
-  let conflictCode = null;
-  try {
-    recordGroupingApproval(bound, buildGroupingApprovalReceipt({ proposal: rePartitioned }));
-  } catch (error) {
-    conflictCode = error.code || null;
-  }
-
-  // Production CLI over a real persisted session.
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'grouping-staleness-'));
-  const proposalFile = path.join(temp, 'proposal.json');
-  fs.writeFileSync(proposalFile, stableGroupingProposalJson(proposal));
-  const sessionPath = path.join(temp, 'session.json');
-  saveReviewSession(sessionPath, session, { expectedPreviousDigest: null });
-  const approvalsDir = path.join(temp, 'approvals');
-  const cli = path.join(__dirname, '..', '..', 'bin', 'sdk-review-session.js');
-  const bindRun = spawnSync(process.execPath, [
-    cli, 'approve-grouping', '--session', sessionPath, '--proposal', proposalFile, '--approvals-dir', approvalsDir,
-  ], { encoding: 'utf8' });
-  const cliBound = bindRun.status === 0
-    && loadReviewSessionState(sessionPath).session.groupingApproval.proposalDigest === groupingProposalDigest(proposal)
-    && fs.existsSync(path.join(approvalsDir, `${groupingProposalDigest(proposal)}.json`));
-
-  const conflictedFile = path.join(temp, 'repartitioned.json');
-  fs.writeFileSync(conflictedFile, stableGroupingProposalJson(rePartitioned));
-  const conflictRun = spawnSync(process.execPath, [
-    cli, 'approve-grouping', '--session', sessionPath, '--proposal', conflictedFile, '--approvals-dir', approvalsDir,
-  ], { encoding: 'utf8' });
-  const cliConflictRefused = conflictRun.status === 1 && /GROUPING_APPROVAL_ALREADY_BOUND/.test(conflictRun.stderr || '');
-
-  return {
-    chainOk,
-    staleCode,
-    sessionBound,
-    conflictCode,
-    cliBound,
-    cliConflictRefused,
-  };
+  return { chainOk, staleCode };
 };
 
 module.exports = { scenarios };

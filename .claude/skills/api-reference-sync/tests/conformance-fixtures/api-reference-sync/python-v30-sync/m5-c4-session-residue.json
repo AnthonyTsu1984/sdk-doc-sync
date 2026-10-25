@@ -4,7 +4,7 @@
   "language": "python",
   "sdkName": "pymilvus",
   "track": "v3.0.x",
-  "acceptanceFlow": "two-gate",
+  "acceptanceFlow": "per-unit",
   "status": "in_progress",
   "reviewUnitManifest": {
     "schemaVersion": 1,

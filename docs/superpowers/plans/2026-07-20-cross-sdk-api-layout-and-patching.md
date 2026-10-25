@@ -67,7 +67,7 @@
 
 - Do not modify `.claude/skills/sdk-doc-sync/scripts/build-current-placement-audit.js`; it contains an unrelated user change.
 - Do not run live Feishu mutations during Tasks 1-9.
-- Do not reuse the existing PyMilvus v2.6.x digests or `APPROVE_WRITES` boundary after Task 2 changes renderer output.
+- Do not reuse the existing PyMilvus v2.6.x digests or `APPROVE_CAMPAIGN` boundary after Task 2 changes renderer output.
 - Do not update `.claude/skills/sdk-doc-sync/scan-state.json` during pipeline repair, smoke tests, canary repair, or batch regeneration.
 - Treat `AnnSearchRequest` as embedded under `hybrid_search()` and continue excluding `UserItem` and `RoleItem` standalone records when regenerating the Python batch.
 
@@ -980,7 +980,7 @@ Each plan must include exact block IDs, operations, preserved blocks, history ev
 
 - [ ] **Step 3: Request a new canary repair approval**
 
-Present exactly three actions. The former `APPROVE_WRITES` is stale and must not be reused.
+Present exactly three actions. The former `APPROVE_CAMPAIGN` is stale and must not be reused.
 
 - [ ] **Step 4: After approval, execute one page at a time**
 
@@ -1092,7 +1092,7 @@ jq -r '.plans[] | [.action,.stableId,.target.folderToken,.source.recordId,.sourc
 Report action count, blocked count, create/update/copy/rebuild counts, canary reconciliation, successor decisions, artifact paths, and allowed replies:
 
 ```text
-APPROVE_WRITES
+APPROVE_CAMPAIGN
 REJECT_WRITES
 REQUEST_CHANGES <action-id>
 ```

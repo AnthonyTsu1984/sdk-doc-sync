@@ -7,12 +7,12 @@
 //   1. extractCardActionEvent —— 兼容 WS/HTTP 两种回调包络取 (operator, value)；
 //   2. 操作员身份比对（operator.open_id；identity 未解析出来时降级为仅严格
 //      形状校验——与 notify-relay 同一纪律）；
-//   3. value 形状校验（kind/pod/line/indexId/sentAt；line 过 deploy/lib.js
+//   3. value 形状校验（kind/pod/slot/line/indexId/sentAt；line 过 deploy/lib.js
 //      的 APPROVE 正则——与 pod 内 supervisor 消费端同源）；
 //   4. 去重：内存 5 分钟窗 + 盘上 outbox 追加 {kind:'card-approved'}
 //      （默认写 tmp/dashboard-events/notify-outbox.jsonl，与回复批准同一账本；
 //      可注入替换）；
-//   5. spawn `pod-approve.js --pod --line --json` —— 全程 argv 向量，
+//   5. spawn `pod-approve.js --pod --slot --line --json` —— 全程 argv 向量，
 //      绝不 shell 字符串拼接；
 //   6. 返回确认/失败文本（server.js 负责包装成卡片回调响应）。
 //
@@ -25,6 +25,7 @@ const path = require('node:path');
 const CARD_VALUE_KIND = 'pod-gate-approve';
 const DEDUPE_WINDOW_MS = 5 * 60_000;
 const POD_NAME_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+const SLOT_RE = /^[1-9][0-9]*$/;
 const OUTBOX_RELATIVE_PATH = 'tmp/dashboard-events/notify-outbox.jsonl';
 
 // 回调包络：WS 长连接直接给 {operator, action:{value}, context}；HTTP/旧 schema
@@ -51,15 +52,17 @@ function parseCardValue(value, { validateApproveLine }) {
     return { ok: false, error: `value.kind 必须是 ${CARD_VALUE_KIND}（got ${JSON.stringify(value.kind ?? null)}）` };
   }
   const pod = typeof value.pod === 'string' ? value.pod : '';
+  const slot = typeof value.slot === 'string' ? value.slot : '';
   const line = typeof value.line === 'string' ? value.line : '';
   const indexId = typeof value.indexId === 'string' ? value.indexId : '';
   const sentAt = typeof value.sentAt === 'string' ? value.sentAt : '';
   if (!POD_NAME_RE.test(pod)) return { ok: false, error: `value.pod 非法：${JSON.stringify(value.pod ?? null)}` };
+  if (!SLOT_RE.test(slot)) return { ok: false, error: `value.slot 非法：${JSON.stringify(value.slot ?? null)}` };
   if (!indexId) return { ok: false, error: 'value.indexId 缺失（呈门工件标识，v2 卡片必带）' };
   if (!sentAt || Number.isNaN(Date.parse(sentAt))) return { ok: false, error: `value.sentAt 非法：${JSON.stringify(value.sentAt ?? null)}` };
   const verdict = validateApproveLine(line);
   if (!verdict.ok) return { ok: false, error: `value.line 不是合法批准行：${JSON.stringify(line)}` };
-  return { ok: true, action: { pod, line: verdict.line, indexId, sentAt } };
+  return { ok: true, action: { pod, slot, line: verdict.line, indexId, sentAt } };
 }
 
 function defaultAppendOutbox(repoRoot) {
@@ -115,9 +118,7 @@ function createCardApprover({
       return { ok: false, deduped: false, text: `批准按钮无法识别，已拒绝：${parsed.error}` };
     }
     const action = parsed.action;
-    // 去重键带 indexId（2026-10-24 常驻卡裁定）：同 digest 重呈现（新 indexId 的
-    // 新按钮）不被旧键挡死；同一张卡上双击（同 indexId 同 line）仍被去重。
-    const dedupeKey = `${action.pod}:${action.indexId}:${action.line}`;
+    const dedupeKey = `${action.pod}:${action.slot}:${action.line}`;
     if (isDuplicate(dedupeKey, at)) {
       return {
         ok: true,
@@ -131,6 +132,7 @@ function createCardApprover({
         kind: 'card-approved',
         at: new Date(at).toISOString(),
         pod: action.pod,
+        slot: action.slot,
         line: action.line,
         indexId: action.indexId,
         dedupeKey,
@@ -139,7 +141,7 @@ function createCardApprover({
     // argv 向量注入（绝不 shell 拼接）：pod-approve 内部还有本地正则 + pod 内
     // 二次正则两道闸，这里只负责把四个值原样放进参数位。
     const result = spawnImpl(process.execPath, [
-      podApprovePath, '--pod', action.pod, '--line', action.line, '--json',
+      podApprovePath, '--pod', action.pod, '--slot', action.slot, '--line', action.line, '--json',
     ], { encoding: 'utf8', cwd: repoRoot, maxBuffer: 4 * 1024 * 1024 });
     if (result.error) {
       return { ok: false, deduped: false, text: `批准注入失败（spawn）：${result.error.message}` };
@@ -159,7 +161,7 @@ function createCardApprover({
       return {
         ok: true,
         deduped: false,
-        text: `已批准（${action.pod}）：${receipt.line ?? action.line}${receipt.note ? ` · ${receipt.note}` : ''}`,
+        text: `已批准 slot ${action.slot}（${action.pod}）：${receipt.line ?? action.line}${receipt.note ? ` · ${receipt.note}` : ''}`,
       };
     }
     // 失败细节优先取 pod-approve --json 的一行 JSON note（typed 拒绝原因），
@@ -168,7 +170,7 @@ function createCardApprover({
       || String(result.stderr ?? '').trim().split('\n').filter(Boolean)[0]
       || String(result.stdout ?? '').trim().split('\n').filter(Boolean)[0]
       || `exit ${result.status}`;
-    return { ok: false, deduped: false, text: `批准注入失败（${action.pod}）：${detail}` };
+    return { ok: false, deduped: false, text: `批准注入失败（${action.pod} slot ${action.slot}）：${detail}` };
   }
 
   return { handleCardAction };

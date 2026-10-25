@@ -4,19 +4,19 @@
 // pod-approve.js — Mac 侧向 S2 worker pod 注入 APPROVE_* 批准行（deploy/README.md
 // 「Mac 侧批准注入」一节的唯一入口）。
 //
-//   node scripts/dashboard/pod-approve.js --pod python-v3-worker \
-//     --line 'APPROVE_CAMPAIGN sha256:<campaign-plan-digest>'
+//   node scripts/dashboard/pod-approve.js --pod python-worker --slot 1 \
+//     --line 'APPROVE_WRITES sha256:<batch-digest>'
 //   node scripts/dashboard/pod-approve.js --list
 //
 // 机制：行先过本地正则校验（与 pod 内 supervisor 消费端正则同源，require
 // deploy/lib.js），再 `kubectl exec -n sdk-doc-sync <pod> -- sh -c …` 追加进
-// /workspace/inbound/approve.queue（一轨一 pod：单队列）。spawn 全程 argv 数组、无 shell 字符串
+// /workspace/inbound/approve-<slot>.queue。spawn 全程 argv 数组、无 shell 字符串
 // 拼接；行内容在 pod 内以位置参数二次过同一正则后才落盘——注入面只有校验过的
 // 一行，杜绝换行/分号注入。
 //
 // 红线（照抄仓库治理语汇）：本工具只往队列文件追加一行，不直接驱动会话、不代替
 // 操作员判断；批准只有落成回执才生效；scan-state 只由 close-session/finalize 推进。
-// supervisor 每 20s 轮询队列，首行匹配正则才会以 `opencode run -s <ses>` 续跑本轨会话。
+// supervisor 每 20s 轮询队列，首行匹配正则才会以 `opencode run -s <ses>` 续跑该 slot。
 
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
@@ -25,20 +25,23 @@ const { validateApproveLine, APPROVE_LINE_RE } = require(path.join(__dirname, '.
 
 const NAMESPACE = 'sdk-doc-sync';
 const QUEUE_DIR = '/workspace/inbound';
+const KNOWN_PODS = ['python-worker', 'java-worker'];
 const POD_NAME_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+const SLOT_RE = /^[1-9][0-9]*$/;
 
 function usage(exitCode = 0) {
   process.stdout.write([
     'pod-approve.js — inject an APPROVE_* line into an S2 worker pod queue',
     '',
     'Usage:',
-    '  node scripts/dashboard/pod-approve.js --pod <trackKey>-worker --line "<APPROVE_… sha256:…>" [--json]',
+    '  node scripts/dashboard/pod-approve.js --pod <python-worker|java-worker> --slot <n> --line "<APPROVE_… sha256:…>" [--json]',
     '  node scripts/dashboard/pod-approve.js --list [--pod <name>]',
     '',
     'Options:',
-    '  --pod <name>    target pod（一轨一 pod：名=<trackKey>-worker，如 python-v3-worker）',
-        '  --line <text>   the exact gate reply line, e.g. "APPROVE_CAMPAIGN sha256:<64-hex>"',
-    '  --json          machine face: one line {"ok":…,"pod":…,"line":…,"note":…}',
+    '  --pod <name>    target pod (python-worker / java-worker)',
+    '  --slot <n>      slot number (1 = first TRACKS entry, 2 = second)',
+    '  --line <text>   the exact gate reply line, e.g. "APPROVE_WRITES sha256:<64-hex>"',
+    '  --json          machine face: one line {"ok":…,"pod":…,"slot":…,"line":…,"note":…}',
     '                  (成功注入或任何 typed 失败都输出这一行；默认文本输出不变)',
     '  --list          tail the last 20 events.jsonl lines of the worker pod(s)',
     '  --help          this text',
@@ -54,7 +57,7 @@ function usage(exitCode = 0) {
 function fail(message, { json = false, payload = null } = {}) {
   if (json) {
     // --json 机器面：一行 {ok:false,…}，card-approve.js 消费这一行分支。
-    process.stdout.write(`${JSON.stringify({ ok: false, pod: payload?.pod ?? null, line: payload?.line ?? null, note: message })}\n`);
+    process.stdout.write(`${JSON.stringify({ ok: false, pod: payload?.pod ?? null, slot: payload?.slot ?? null, line: payload?.line ?? null, note: message })}\n`);
     process.exit(1);
   }
   process.stderr.write(`pod-approve: ${message}\n`);
@@ -77,8 +80,8 @@ function kubectl(args, { capture = true } = {}) {
   return result;
 }
 
-function appendLine({ pod, line }) {
-  const queueFile = `${QUEUE_DIR}/approve.queue`;
+function appendLine({ pod, slot, line }) {
+  const queueFile = `${QUEUE_DIR}/approve-${slot}.queue`;
   // 注入安全的远端脚本：脚本本体是常量，行/正则/目录/队列文件全走位置参数
   // （$1 行、$2 正则、$3 目录、$4 队列文件）；pod 内二次过同一正则，两次校验
   // 之间没有第二个解释层。
@@ -99,16 +102,8 @@ function appendLine({ pod, line }) {
 }
 
 function listEvents(podFilter) {
-  const args = ['get', 'pods', '-n', NAMESPACE, '-l', 'app.kubernetes.io/part-of=sdk-doc-sync',
-    '-o', 'jsonpath={range .items[*]}{.metadata.name}{"\\n"}{end}'];
-  const listed = podFilter
-    ? [podFilter]
-    : String(kubectl(args) || '').split('\n').map((name) => name.trim()).filter(Boolean);
-  if (listed.length === 0) {
-    process.stdout.write('(no worker pods found — label app.kubernetes.io/part-of=sdk-doc-sync)\n');
-    return;
-  }
-  for (const pod of listed) {
+  const pods = podFilter ? [podFilter] : KNOWN_PODS;
+  for (const pod of pods) {
     process.stdout.write(`===== ${pod} · /workspace/logs/events.jsonl (tail 20) =====\n`);
     kubectl([
       'exec', '-n', NAMESPACE, pod, '--',
@@ -128,7 +123,7 @@ function main() {
     const podFilter = podAt !== -1 ? argv[podAt + 1] : null;
     if (podFilter && !POD_NAME_RE.test(podFilter)) fail(`--pod looks invalid: ${podFilter}`);
     listEvents(podFilter);
-    process.stdout.write('事件语义见 deploy/README.md §看门；批准注入用 --pod/--line。\n');
+    process.stdout.write('事件语义见 deploy/README.md §看门；批准注入用 --pod/--slot/--line。\n');
     return;
   }
 
@@ -140,10 +135,17 @@ function main() {
     return argv[at + 1];
   };
   const pod = readValue('--pod');
+  const slot = readValue('--slot');
   const line = readValue('--line');
 
   if (!POD_NAME_RE.test(pod)) {
-    fail(`--pod looks invalid: ${pod}（expected dns-1035 name, e.g. python-v3-worker）`, { json: jsonMode, payload: { pod, line } });
+    fail(`--pod looks invalid: ${pod}（expected dns-1035 name, e.g. python-worker）`, { json: jsonMode, payload: { pod, slot, line } });
+  }
+  if (!SLOT_RE.test(slot)) {
+    fail(`--slot must be a positive integer (got ${JSON.stringify(slot)})`, { json: jsonMode, payload: { pod, slot, line } });
+  }
+  if (!KNOWN_PODS.includes(pod)) {
+    process.stderr.write(`pod-approve: WARN: ${pod} 不在已知清单 [${KNOWN_PODS.join(', ')}]——继续尝试（集群里可能有同名 pod）\n`);
   }
 
   // 本地校验（与 pod 内 supervisor/第二次校验同一正则，deploy/lib.js 单源）。
@@ -151,25 +153,26 @@ function main() {
   if (!verdict.ok) {
     fail(
       `APPROVE_LINE_INVALID: ${JSON.stringify(line)}\n  形态必须匹配 ${APPROVE_LINE_RE}\n  回现行请从呈门卡片/index.json 的 replyLines 逐字复制；重规划/重扫后旧 digest 作废，须重新走门。`,
-      { json: jsonMode, payload: { pod, line } },
+      { json: jsonMode, payload: { pod, slot, line } },
     );
   }
 
-  const queued = appendLine({ pod, line: verdict.line });
+  const queued = appendLine({ pod, slot, line: verdict.line });
   if (jsonMode) {
     // card-approve.js 消费的机器面：只此一行。
-    process.stdout.write(`${JSON.stringify({ ok: true, pod, line: verdict.line, note: queued || 'queued' })}\n`);
+    process.stdout.write(`${JSON.stringify({ ok: true, pod, slot, line: verdict.line, note: queued || 'queued' })}\n`);
     return;
   }
   process.stdout.write([
     '—— pod-approve 回执 ——',
     `pod:    ${pod}`,
-    `queue:  ${QUEUE_DIR}/approve.queue`,
+    `slot:   ${slot}`,
+    `queue:  ${QUEUE_DIR}/approve-${slot}.queue`,
     `line:   ${verdict.line}`,
     queued ? `remote: ${queued}` : null,
     '',
-    'supervisor ≤20s 内会出队并以 `opencode run -s <ses>` 续跑本轨会话；',
-    '批准只有落成回执才生效——回看该 pod 的 run 目录 opencode.jsonl / 门文件确认推进。',
+    'supervisor ≤20s 内会出队并以 `opencode run -s <ses>` 续跑该 slot；',
+    '批准只有落成回执才生效——回看该 slot 的 run 目录 opencode.jsonl / 门文件确认推进。',
     '看门：node scripts/dashboard/pod-approve.js --list',
   ].filter((value) => value !== null).join('\n'));
   process.stdout.write('\n');

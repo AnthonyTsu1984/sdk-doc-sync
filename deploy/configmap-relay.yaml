@@ -1,7 +1,7 @@
 # deploy/configmap-relay.yaml — 呈门回调 relay pod 的代码副本（控制面云化裁定
 # 2026-10-24）。单真相=repo 文件：本文件只是 kubectl 生成的部署镜像，副本一致
 # 性由 tests/skills/deploy-scaffold.test.js「configmap-relay 六副本」钉死（内嵌
-# 块 vs repo 源文件逐字节比对）。volume items 在 relay-deployment.yaml 里按 repo
+# 块 vs repo 文件逐字节比对）。volume items 在 relay-deployment.yaml 里按 repo
 # 目录结构重映射到 /opt/relay（deploy/{relay-entry.js,relay-entry.sh,
 # relay-kubectl-fetch.sh,lib.js} + scripts/dashboard/{card-approve.js,
 # pod-approve.js}）——relay-entry.js 的相对 require 与 repo 内同解，
@@ -27,12 +27,12 @@ data:
     //   1. extractCardActionEvent —— 兼容 WS/HTTP 两种回调包络取 (operator, value)；
     //   2. 操作员身份比对（operator.open_id；identity 未解析出来时降级为仅严格
     //      形状校验——与 notify-relay 同一纪律）；
-    //   3. value 形状校验（kind/pod/line/indexId/sentAt；line 过 deploy/lib.js
+    //   3. value 形状校验（kind/pod/slot/line/indexId/sentAt；line 过 deploy/lib.js
     //      的 APPROVE 正则——与 pod 内 supervisor 消费端同源）；
     //   4. 去重：内存 5 分钟窗 + 盘上 outbox 追加 {kind:'card-approved'}
     //      （默认写 tmp/dashboard-events/notify-outbox.jsonl，与回复批准同一账本；
     //      可注入替换）；
-    //   5. spawn `pod-approve.js --pod --line --json` —— 全程 argv 向量，
+    //   5. spawn `pod-approve.js --pod --slot --line --json` —— 全程 argv 向量，
     //      绝不 shell 字符串拼接；
     //   6. 返回确认/失败文本（server.js 负责包装成卡片回调响应）。
     //
@@ -45,6 +45,7 @@ data:
     const CARD_VALUE_KIND = 'pod-gate-approve';
     const DEDUPE_WINDOW_MS = 5 * 60_000;
     const POD_NAME_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+    const SLOT_RE = /^[1-9][0-9]*$/;
     const OUTBOX_RELATIVE_PATH = 'tmp/dashboard-events/notify-outbox.jsonl';
 
     // 回调包络：WS 长连接直接给 {operator, action:{value}, context}；HTTP/旧 schema
@@ -71,15 +72,17 @@ data:
         return { ok: false, error: `value.kind 必须是 ${CARD_VALUE_KIND}（got ${JSON.stringify(value.kind ?? null)}）` };
       }
       const pod = typeof value.pod === 'string' ? value.pod : '';
+      const slot = typeof value.slot === 'string' ? value.slot : '';
       const line = typeof value.line === 'string' ? value.line : '';
       const indexId = typeof value.indexId === 'string' ? value.indexId : '';
       const sentAt = typeof value.sentAt === 'string' ? value.sentAt : '';
       if (!POD_NAME_RE.test(pod)) return { ok: false, error: `value.pod 非法：${JSON.stringify(value.pod ?? null)}` };
+      if (!SLOT_RE.test(slot)) return { ok: false, error: `value.slot 非法：${JSON.stringify(value.slot ?? null)}` };
       if (!indexId) return { ok: false, error: 'value.indexId 缺失（呈门工件标识，v2 卡片必带）' };
       if (!sentAt || Number.isNaN(Date.parse(sentAt))) return { ok: false, error: `value.sentAt 非法：${JSON.stringify(value.sentAt ?? null)}` };
       const verdict = validateApproveLine(line);
       if (!verdict.ok) return { ok: false, error: `value.line 不是合法批准行：${JSON.stringify(line)}` };
-      return { ok: true, action: { pod, line: verdict.line, indexId, sentAt } };
+      return { ok: true, action: { pod, slot, line: verdict.line, indexId, sentAt } };
     }
 
     function defaultAppendOutbox(repoRoot) {
@@ -135,9 +138,7 @@ data:
           return { ok: false, deduped: false, text: `批准按钮无法识别，已拒绝：${parsed.error}` };
         }
         const action = parsed.action;
-        // 去重键带 indexId（2026-10-24 常驻卡裁定）：同 digest 重呈现（新 indexId 的
-        // 新按钮）不被旧键挡死；同一张卡上双击（同 indexId 同 line）仍被去重。
-        const dedupeKey = `${action.pod}:${action.indexId}:${action.line}`;
+        const dedupeKey = `${action.pod}:${action.slot}:${action.line}`;
         if (isDuplicate(dedupeKey, at)) {
           return {
             ok: true,
@@ -151,6 +152,7 @@ data:
             kind: 'card-approved',
             at: new Date(at).toISOString(),
             pod: action.pod,
+            slot: action.slot,
             line: action.line,
             indexId: action.indexId,
             dedupeKey,
@@ -159,7 +161,7 @@ data:
         // argv 向量注入（绝不 shell 拼接）：pod-approve 内部还有本地正则 + pod 内
         // 二次正则两道闸，这里只负责把四个值原样放进参数位。
         const result = spawnImpl(process.execPath, [
-          podApprovePath, '--pod', action.pod, '--line', action.line, '--json',
+          podApprovePath, '--pod', action.pod, '--slot', action.slot, '--line', action.line, '--json',
         ], { encoding: 'utf8', cwd: repoRoot, maxBuffer: 4 * 1024 * 1024 });
         if (result.error) {
           return { ok: false, deduped: false, text: `批准注入失败（spawn）：${result.error.message}` };
@@ -179,7 +181,7 @@ data:
           return {
             ok: true,
             deduped: false,
-            text: `已批准（${action.pod}）：${receipt.line ?? action.line}${receipt.note ? ` · ${receipt.note}` : ''}`,
+            text: `已批准 slot ${action.slot}（${action.pod}）：${receipt.line ?? action.line}${receipt.note ? ` · ${receipt.note}` : ''}`,
           };
         }
         // 失败细节优先取 pod-approve --json 的一行 JSON note（typed 拒绝原因），
@@ -188,7 +190,7 @@ data:
           || String(result.stderr ?? '').trim().split('\n').filter(Boolean)[0]
           || String(result.stdout ?? '').trim().split('\n').filter(Boolean)[0]
           || `exit ${result.status}`;
-        return { ok: false, deduped: false, text: `批准注入失败（${action.pod}）：${detail}` };
+        return { ok: false, deduped: false, text: `批准注入失败（${action.pod} slot ${action.slot}）：${detail}` };
       }
 
       return { handleCardAction };
@@ -222,8 +224,8 @@ data:
     // ---------- approve 行（supervisor 消费与 Mac 注入共用同一正则） ----------
 
     // 任务书钉死的形态：APPROVE_<GATE> [可选第二 token] sha256:<64hex>。
-    // APPROVE_ROLLBACK <review-unit-id> sha256:… 走可选段；APPROVE_CAMPAIGN sha256:… 无。
-    const APPROVE_LINE_RE = /^APPROVE_(CAMPAIGN|ROLLBACK)(?: \S+)? sha256:[0-9a-f]{64}$/;
+    // APPROVE_DOCUMENT <review-unit-id> sha256:… 走可选段；APPROVE_WRITES sha256:… 无。
+    const APPROVE_LINE_RE = /^APPROVE_[A-Z]+( \S+)? sha256:[0-9a-f]{64}$/;
 
     function validateApproveLine(line) {
       const text = String(line ?? '').trim();
@@ -284,8 +286,8 @@ data:
     //   `opencode run --format json` 产出 NDJSON 事件，每行事件都带顶层
     //   "sessionID":"ses_…"；`opencode run -s <ses_…> -m <provider/model> "<prompt>"`
     //   续跑该具体会话（实测续会话能回忆上一轮内容）。`-c/--continue` 只续"该项目
-    //   目录的最后一个会话"——一 pod 一轨后虽无串会话风险，仍以 -s 精确续接
-    //   （session 文件落 /workspace/runs/campaign.session）。
+    //   目录的最后一个会话"，双 slot 共用 cwd 时有串会话风险——supervisor 因此
+    //   每 slot 落 session 文件，用 -s 精确续接。
     function extractSessionId(jsonlText) {
       const match = /"sessionID":"(ses_[A-Za-z0-9]+)"/.exec(String(jsonlText || ''));
       return match ? match[1] : null;
@@ -374,7 +376,42 @@ data:
 
     // ---------- 确定性门铃归因（规格 3，supervisor gate_watch 消费） ----------
     //
+    // 旧"检测瞬间恰在跑的 slot"启发式（active==1）已删除——实测错配/unknown。
+    // 改为从工件路径确定性反解：工件路径含 gate-presentation/<sessionKey>/ 前缀，
+    // sessionKey 由 sessionPath 派生（src/sdk-doc-sync/gate-presentation.js
+    // sessionKeyOf），其中的 track 字样（python-v3 / python / java-v26 / v3.0 /
+    // v26 …）唯一反解。两级：
+    //   1) trackKey 反查：长 key 优先——python-v3 必须先于裸 python 匹配，否则
+    //      python-v30-* 路径会被裸 key 吞掉；
+    //   2) 查不到（slot 已释放/pod 重启清场）→ TRACKS 顺序固定映射（slot1=第1轨
+    //      v3.0.x、slot2=第2轨 v2.6.x——与派单顺序一致）：从路径提取版本字样
+    //      （v<maj>.<min> / v<maj><min>）逐 slot 匹配。
     // 两级都落空 → unknown（如实显示，绝不猜）。纯函数：tests 直测反解表。
+    function deriveGateAttribution(artifactPath, slots) {
+      if (!Array.isArray(slots) || slots.length === 0) return { slot: 'unknown', trackKey: 'unknown' };
+      const haystack = String(artifactPath ?? '');
+      let best = null;
+      for (const entry of slots) {
+        const key = entry.trackKey;
+        if (typeof key !== 'string' || key === '') continue;
+        if (haystack.includes(key) && (best === null || key.length > best.trackKey.length)) {
+          best = entry;
+        }
+      }
+      if (best) return { slot: best.slot, trackKey: best.trackKey };
+      for (const entry of slots) {
+        const version = String(entry.track ?? '');
+        const match = /^v(\d+)\.(\d+)\./.exec(version);
+        if (!match) continue;
+        const dotted = `v${match[1]}.${match[2]}`;
+        const compact = `v${match[1]}${match[2]}`;
+        if (haystack.includes(dotted) || haystack.includes(compact)) {
+          return { slot: entry.slot, trackKey: entry.trackKey || entry.track };
+        }
+      }
+      return { slot: 'unknown', trackKey: 'unknown' };
+    }
+
     // ---------- CLI ----------
 
     function readJsonlLedger(filePath) {
@@ -460,11 +497,14 @@ data:
     // （同文件 EventDispatcher 注释）。open.feishu.cn 文档页 JS 渲染抓不到正文，
     // 以 SDK d.ts 作为落盘权威。
 
-    // 门中文映射（卡片标题给操作员看的是中文名，回现行/事件保持英文门名——
-    // 那是协议面，不翻译）。APPROVE_CAMPAIGN=唯一战役门；APPROVE_ROLLBACK=单元级
-    // 破坏性确认，走同一通道。
+    // 六门中文映射（gate-registry.js GATE_NAMES 一一对应；卡片标题给操作员看的
+    // 是中文名，回现行/事件保持英文门名——那是协议面，不翻译）。
     const GATE_LABELS_ZH = Object.freeze({
+      APPROVE_GROUPING: '分组批准',
+      APPROVE_WRITES: '写入批准',
+      APPROVE_DOCUMENT: '文档批准',
       APPROVE_ROLLBACK: '回滚批准',
+      APPROVE_ACCEPTANCE: '验收批准',
       APPROVE_CAMPAIGN: '战役批准',
     });
 
@@ -517,31 +557,10 @@ data:
       return IMPACT_CARD_ACTION_LABEL[action] ?? '待分类';
     }
 
-    // 每 replyLine 一个 primary 按钮（v2 门卡与战役常驻卡共用同一形状——回调侧
-    // scripts/dashboard/card-approve.js 按同一 value 契约解析，改动即双端同步测试红）。
-    function gateActionElements(replyLines, { pod, indexId, sentAt }) {
-      const lines = replyLines || [];
-      return lines.map((line, position) => ({
-        tag: 'action',
-        actions: [{
-          tag: 'button',
-          text: { tag: 'plain_text', content: lines.length > 1 ? `批准 ${position + 1}` : '批准' },
-          type: 'primary',
-          value: {
-            kind: 'pod-gate-approve',
-            pod: String(pod),
-            line,
-            indexId: String(indexId ?? ''),
-            sentAt,
-          },
-        }],
-      }));
-    }
-
     // legacy interactive 卡片（card 1.0）：三件套 div + 每 replyLine 一个 primary
     // 按钮 + 打回尾注。value 全字符串，回调侧（scripts/dashboard/card-approve.js）
     // 按同一形状解析。
-    function buildGateCard({ index, pod, trackKey, language, indexId }) {
+    function buildGateCard({ index, pod, slot, trackKey, language, indexId }) {
       const sentAt = new Date().toISOString();
       const sourceText = sourceLarkMd(index.source);
       const impact = impactLarkMd(index.impact);
@@ -556,13 +575,31 @@ data:
       } else {
         for (const doc of documents) lines.push(`${doc.title} —— ${impactDocumentLabel(doc.action)}`);
       }
-      lines.push(`pod: ${pod} · 轨道: ${trackKey} · 语言: ${language} · 门: ${index.gate}`);
+      lines.push(`pod: ${pod} · slot: ${slot} · 轨道: ${trackKey} · 语言: ${language} · 门: ${index.gate}`);
       lines.push(`会话: ${sessionShortName(index.sessionPath)} · digest: ${index.digest ?? '（逐单元，见回行）'}`);
       lines.push('批准行（按钮或逐字复制回信均可）:');
       for (const line of index.replyLines || []) lines.push(line);
 
+      const replyLines = index.replyLines || [];
       const elements = [{ tag: 'div', text: { tag: 'lark_md', content: lines.join('\n') } }];
-      elements.push(...gateActionElements(index.replyLines, { pod, indexId, sentAt }));
+      for (const [position, line] of replyLines.entries()) {
+        elements.push({
+          tag: 'action',
+          actions: [{
+            tag: 'button',
+            text: { tag: 'plain_text', content: replyLines.length > 1 ? `批准 ${position + 1}` : '批准' },
+            type: 'primary',
+            value: {
+              kind: 'pod-gate-approve',
+              pod: String(pod),
+              slot: String(slot),
+              line,
+              indexId: String(indexId ?? ''),
+              sentAt,
+            },
+          }],
+        });
+      }
       elements.push({
         tag: 'note',
         elements: [{ tag: 'plain_text', content: '打回请回复本消息：打回 <原因> · 批准由按钮或回信注入 pod 队列' }],
@@ -570,18 +607,18 @@ data:
 
       return {
         config: { wide_screen_mode: true },
-        header: { template: 'orange', title: { tag: 'plain_text', content: `呈门 · ${gateLabelZh(index.gate)} · ${language}（${trackKey}）` } },
+        header: { template: 'orange', title: { tag: 'plain_text', content: `呈门 · ${gateLabelZh(index.gate)} · ${language} slot ${slot}（${trackKey}）` } },
         elements,
       };
     }
 
     // 文本降级面（卡片发送失败/无按钮环境）：保留完整批准行可复制 + 三件套内容。
-    function buildGateCardText({ index, pod, trackKey, language }) {
+    function buildGateCardText({ index, pod, slot, trackKey, language }) {
       const sourceText = sourceLarkMd(index.source);
       const impact = impactLarkMd(index.impact);
       const lines = [];
-      lines.push(`【呈门 · ${gateLabelZh(index.gate)} · ${language}（${trackKey}）】${index.title}`);
-      lines.push(`pod: ${pod} · 轨道: ${trackKey} · 语言: ${language} · 门: ${index.gate}`);
+      lines.push(`【呈门 · ${gateLabelZh(index.gate)} · ${language}-worker · slot ${slot} · ${trackKey}】${index.title}`);
+      lines.push(`pod: ${pod} · slot: ${slot} · 轨道: ${trackKey} · 语言: ${language} · 门: ${index.gate}`);
       if (sourceText) lines.push(sourceText);
       lines.push(impact.headline);
       const documents = impact.documents;
@@ -599,263 +636,6 @@ data:
       return lines.join('\n');
     }
 
-    // ---------- 战役常驻卡（2026-10-24 操作员裁定：一场战役一张卡，事件驱动 PATCH） ----------
-    //
-    // 旧方案（每扇门单发一张 v2 门卡，notify-gate）退役——消息刷屏、点过的按钮留在
-    // 旧卡上可再点。新方案：supervisor 是卡的所有者（它知道全部生命周期），每轨
-    // /workspace/runs/card-<trackKey>.json 存 {messageId, timeline, currentGate, status}，
-    // 生命周期事件（派单/呈门/批准/让出/终态）追加时间轴并 PATCH 同一张卡；当前门
-    // 非空时按钮长在卡上，--approved/--cleared-gate/--terminal 清门即按钮消失。
-
-    // PATCH 求证结论（2026-10-24，本机 @larksuiteoapi/node-sdk@1.68 types/index.d.ts
-    // 257483–257505 行）：im.v1.message.patch 入参 = {data:{content:string},
-    // path:{message_id:string}} → 裸 fetch 形态 PATCH
-    // `${host}/open-apis/im/v1/messages/${messageId}`，body {content:"<卡 JSON 字符串>"}。
-    // 同页注意事项：共享卡须在 config 显式 update_multi:true 才可全员更新；卡请求体
-    // ≤30KB；仅支持修改 14 天内的消息；单消息 5QPS——本卡体量与事件频度都远低于闸。
-
-    const TIMELINE_VISIBLE = 10;   // 时间轴只保留最近 10 条，更早的合并一行
-    const CAMPAIGN_CARD_STATUS = Object.freeze({ ACTIVE: 'active', COMPLETED: 'completed' });
-
-    // 事件文本的图标前缀拆分：supervisor 传来形如 "▶️ 派单 python-v3（…）"——首个
-    // 非 ASCII 连续段 = icon，其余 = text（▶️/⏱️ 这类 emoji 是 U+FE0F 变体选择符
-    // 结尾的双码点，一并吃进 icon 段）；无图标前缀则 icon=''，text 原样。
-    function splitEventIcon(event) {
-      const text = String(event ?? '');
-      const match = /^([^\x00-\x7F]+)\s+([\s\S]*)$/.exec(text.trim());
-      return match ? { icon: match[1], text: match[2] } : { icon: '', text };
-    }
-
-    // digest 短版：sha256:<64hex> → 前 12 hex + …；其余形态截 24 字符，绝不编造。
-    function shortDigest(digest) {
-      const text = String(digest ?? '');
-      const match = /^(sha256:)([0-9a-f]{64})$/.exec(text);
-      if (match) return `${match[1]}${match[2].slice(0, 12)}…`;
-      return text.length > 24 ? `${text.slice(0, 24)}…` : text;
-    }
-
-    // ISO ts → `MM-DD HH:mm`（直接切字符串，不做时区换算——pod 与事件账本同为 UTC）。
-    function timelineStamp(ts) {
-      const iso = String(ts ?? '');
-      return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(iso) ? iso.slice(5, 16).replace('T', ' ') : iso;
-    }
-
-    function timelineLarkMd(timeline) {
-      const lines = ['**时间轴**'];
-      const entries = Array.isArray(timeline) ? timeline : [];
-      const overflow = Math.max(0, entries.length - TIMELINE_VISIBLE);
-      if (overflow > 0) lines.push(`…更早 ${overflow} 条`);
-      for (const entry of entries.slice(-TIMELINE_VISIBLE)) {
-        const icon = entry.icon ? `${entry.icon} ` : '';
-        lines.push(`${icon}${timelineStamp(entry.ts)} ${entry.text}`);
-      }
-      return lines.join('\n');
-    }
-
-    // 战役概况区块（持久）：一场战役的身份面——来源/文档面/pod 归属三件套。首次
-    // 呈门时从 gate index 的 source/impact 捕获进 card state（state.summary），此后
-    // 整场战役常驻卡面（批准后、执行中、终态都不消失——操作员随时能看到这场战役
-    // 在写什么、为什么写、在哪个 pod）。
-    function summaryLarkMd(summary, { pod, trackKey, language }) {
-      const lines = ['**战役概况**'];
-      const sourceText = sourceLarkMd(summary?.source);
-      lines.push(sourceText ?? '来源：待呈门登记');
-      const impact = impactLarkMd(summary?.impact);
-      lines.push(impact.headline);
-      const documents = impact.documents;
-      if (documents.length > 10) {
-        for (const doc of documents.slice(0, 10)) lines.push(`${doc.title} —— ${impactDocumentLabel(doc.action)}`);
-        lines.push(`… 等共 ${impact.total} 篇（全清单见工件）`);
-      } else {
-        for (const doc of documents) lines.push(`${doc.title} —— ${impactDocumentLabel(doc.action)}`);
-      }
-      lines.push(`pod: ${pod} · 轨道: ${trackKey} · 语言: ${language}`);
-      return lines.join('\n');
-    }
-
-    // 当前门区块（currentGate 非空）：门名 + digest + 完整批准行（来源/文档面在概况
-    // 区块持久渲染，不在此重复）。按钮由 buildCampaignCard 单独 append（每行一个）。
-    function currentGateLarkMd(currentGate) {
-      const index = currentGate.index ?? {};
-      const lines = [];
-      lines.push(`**当前门 · ${gateLabelZh(index.gate)} — ${index.title ?? index.gate}**`);
-      lines.push(`会话: ${sessionShortName(index.sessionPath)} · digest: ${index.digest ? shortDigest(index.digest) : '（逐单元，见回行）'}`);
-      lines.push('批准行（按钮或逐字复制回信均可）:');
-      for (const line of index.replyLines || []) lines.push(line);
-      return lines.join('\n');
-    }
-
-    // header：有等待批准的门 → `【<门中文> · 等待批准】`；无门进行中 → `【进行中】`；
-    // 终态 → `【已完成】`。模板色随状态（橙=等批准 / 蓝=进行 / 绿=终态）。
-    function campaignHeaderTitle({ language, trackKey, status, currentGate }) {
-      if (status === CAMPAIGN_CARD_STATUS.COMPLETED) return { template: 'green', text: `【已完成】${language} · ${trackKey}` };
-      if (currentGate) return { template: 'orange', text: `【${gateLabelZh(currentGate.index?.gate)} · 等待批准】${language} · ${trackKey}` };
-      return { template: 'blue', text: `【进行中】${language} · ${trackKey}` };
-    }
-
-    // 纯函数：状态 → legacy interactive 卡 JSON。config.update_multi 按 PATCH 求证
-    // 结论必带（否则共享卡不可全员更新）。零依赖，tests 直测形状。区块序（自上而下）：
-    // 战役概况（持久）→ 时间轴 → 当前门（非空时）→ 当前门按钮 → 打回尾注。
-    function buildCampaignCard({ language, trackKey, pod, status = CAMPAIGN_CARD_STATUS.ACTIVE, summary = null, timeline = [], currentGate = null } = {}) {
-      if (!language || typeof language !== 'string' || !trackKey || typeof trackKey !== 'string' || !pod || typeof pod !== 'string') {
-        const error = new Error('buildCampaignCard: language/pod/trackKey 必填（一轨一 pod：pod 名即归属）');
-        error.code = 'CAMPAIGN_CARD_INPUT_INVALID';
-        throw error;
-      }
-      const header = campaignHeaderTitle({ language, trackKey, status, currentGate });
-      const elements = [{ tag: 'div', text: { tag: 'lark_md', content: summaryLarkMd(summary, { pod, trackKey, language }) } }];
-      elements.push({ tag: 'div', text: { tag: 'lark_md', content: timelineLarkMd(timeline) } });
-      if (currentGate) {
-        elements.push({ tag: 'div', text: { tag: 'lark_md', content: currentGateLarkMd(currentGate) } });
-        elements.push(...gateActionElements(currentGate.index?.replyLines, currentGate));
-      }
-      elements.push({
-        tag: 'note',
-        elements: [{ tag: 'plain_text', content: '打回请回复本消息：打回 <原因> · 批准由按钮或回信注入 pod 队列' }],
-      });
-      return {
-        config: { wide_screen_mode: true, update_multi: true },
-        header: { template: header.template, title: { tag: 'plain_text', content: header.text } },
-        elements,
-      };
-    }
-
-    function atomicWriteJson(file, value) {
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      const tmp = `${file}.tmp`;
-      fs.writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`);
-      fs.renameSync(tmp, file);
-    }
-
-    // campaignCard CLI 内核：追加时间轴 →（可选）换当前门 / 清门 / 终态 → 重算卡
-    // JSON → send（无 messageId）或 PATCH（有）→ 原子写回状态。PATCH 失败降级发新卡
-    // 并更新状态里的 messageId（stderr WARN + stdout mode=send-fallback，supervisor
-    // 捕获后入事件）。顺序按裁定原文：写回状态在飞书操作成功之后——发送失败即 typed
-    // 抛错、状态不落盘，绝不出现"状态说发了、飞书没有"的漂移。
-    async function campaignCard({
-      stateFile, repoRoot, event, presentationFile = null, indexId = null,
-      pod, trackKey, language,
-      approved = false, clearedGate = false, terminal = false, newCampaign = false,
-      openIdCachePath = null, fetchImpl = globalThis.fetch, now = () => new Date().toISOString(),
-    } = {}) {
-      void repoRoot; // 任务书钉死的 CLI 签名位（相对路径锚点；当前实现全部走绝对路径）
-      for (const [value, name] of [[stateFile, 'stateFile'], [event, 'event'], [pod, 'pod'], [trackKey, 'trackKey'], [language, 'language']]) {
-        if (value === undefined || value === null || value === '') {
-          const error = new Error(`campaignCard: ${name} is required`);
-          error.code = 'USAGE';
-          throw error;
-        }
-      }
-      let state;
-      if (fs.existsSync(stateFile)) {
-        try {
-          state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-        } catch (error) {
-          const wrapped = new Error(`campaignCard: state file unreadable (${stateFile}): ${error.message}`);
-          wrapped.code = 'CARD_STATE_INVALID';
-          throw wrapped;
-        }
-        if (typeof state !== 'object' || state === null || Array.isArray(state)) {
-          const error = new Error(`campaignCard: state file is not an object (${stateFile})`);
-          error.code = 'CARD_STATE_INVALID';
-          throw error;
-        }
-        state.timeline = Array.isArray(state.timeline) ? state.timeline : [];
-        state.summary = state.summary ?? null;
-      } else {
-        state = { messageId: null, summary: null, timeline: [], currentGate: null, status: CAMPAIGN_CARD_STATUS.ACTIVE };
-      }
-
-      if (newCampaign) {
-        // 新战役同卡续写：状态回 active、时间轴/概况/当前门清零（上一场的 ✔ 时间轴
-        // 归档在旧 PATCH 里），messageId 保留——还是同一张卡，PATCH 覆盖。
-        state.status = CAMPAIGN_CARD_STATUS.ACTIVE;
-        state.timeline = [];
-        state.summary = null;
-        state.currentGate = null;
-      }
-      const { icon, text } = splitEventIcon(event);
-      state.timeline.push({ ts: now(), icon, text });
-      if (presentationFile) {
-        const index = JSON.parse(fs.readFileSync(presentationFile, 'utf8'));
-        state.currentGate = {
-          pod: String(pod),
-          indexId: indexId ?? path.basename(presentationFile),
-          sentAt: now(),
-          index,
-        };
-        // 概况捕获：首次带 source/impact 的呈门把三件套钉进 card state——此后整场
-        // 战役常驻卡面（重呈门只换 currentGate，不覆盖已捕获的概况）。
-        if (!state.summary && (index.source || index.impact)) {
-          state.summary = { source: index.source ?? null, impact: index.impact ?? null };
-        }
-      }
-      if (approved || clearedGate || terminal) state.currentGate = null;   // 按钮随之消失
-      if (terminal) state.status = CAMPAIGN_CARD_STATUS.COMPLETED;
-
-      const host = process.env.FEISHU_HOST;
-      const appId = process.env.BOT_APP_ID;
-      const appSecret = process.env.BOT_APP_SECRET;
-      const missing = Object.entries({ FEISHU_HOST: host, BOT_APP_ID: appId, BOT_APP_SECRET: appSecret })
-        .filter(([, value]) => !value).map(([key]) => key);
-      if (missing.length > 0) {
-        const error = new Error(`campaignCard: 缺 env ${missing.join(',')}（secret sdk-env）`);
-        error.code = 'FEISHU_ENV_MISSING';
-        throw error;
-      }
-
-      const card = buildCampaignCard({ language, trackKey, pod, status: state.status, summary: state.summary ?? null, timeline: state.timeline, currentGate: state.currentGate });
-      const token = await fetchTenantToken({ host, appId, appSecret, fetchImpl });
-      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
-
-      let mode = 'send';
-      let messageId = state.messageId;
-      if (messageId) {
-        mode = 'patch';
-        const response = await fetchImpl(`${host}/open-apis/im/v1/messages/${messageId}`, {
-          method: 'patch',
-          headers,
-          body: JSON.stringify({ content: JSON.stringify(card) }),
-        });
-        const payload = await response.json();
-        if (payload.code !== 0) {
-          mode = 'send-fallback';
-          process.stderr.write(`deploy/lib: CARD_PATCH_FAILED messageId=${messageId} code=${payload.code} msg=${payload.msg} — 降级发新卡，状态里的 messageId 将更新\n`);
-        }
-      }
-      if (mode !== 'patch') {
-        const email = process.env.OPERATOR_EMAIL;
-        if (!email) {
-          const error = new Error('campaignCard: 缺 env OPERATOR_EMAIL（首发/降级发新卡需要 open_id）');
-          error.code = 'FEISHU_ENV_MISSING';
-          throw error;
-        }
-        const openId = await resolveOperatorOpenId({ host, token, email, cachePath: openIdCachePath, fetchImpl });
-        const payload = await fetchImpl(`${host}/open-apis/im/v1/messages?receive_id_type=open_id`, {
-          method: 'post',
-          headers,
-          body: JSON.stringify({ receive_id: openId, msg_type: 'interactive', content: JSON.stringify(card) }),
-        }).then((response) => response.json());
-        if (payload.code !== 0) {
-          const error = new Error(`im/v1/messages failed: ${payload.code} ${payload.msg}`);
-          error.code = 'FEISHU_SEND_FAILED';
-          throw error;
-        }
-        messageId = typeof payload?.data?.message_id === 'string' ? payload.data.message_id : null;
-        if (!messageId) {
-          const error = new Error('im/v1/messages returned no message_id — 常驻卡后续 PATCH 无钥匙，fail-loud');
-          error.code = 'FEISHU_MESSAGE_ID_MISSING';
-          throw error;
-        }
-      }
-
-      state.messageId = messageId;
-      state.updatedAt = now();
-      atomicWriteJson(stateFile, state);
-      process.stdout.write(`messageId=${messageId}\nmode=${mode}\n`);
-      return { state, messageId, mode, card };
-    }
-
     // ---------- message_id 入账（规格 4：现发完即弃=撤不回，先入账） ----------
 
     function appendSentCardRecords(sentCardsPath, records) {
@@ -864,10 +644,7 @@ data:
       fs.appendFileSync(sentCardsPath, `${records.map((record) => JSON.stringify(record)).join('\n')}\n`);
     }
 
-    // @deprecated 2026-10-24 战役常驻卡上线：gate_watch 改走 campaign-card（per-track
-    // 一卡 PATCH，messageId 由 card state 文件持有，sent-cards.jsonl 语义随之退役）。
-    // 本函数保留仅为存量测试兼容与人工兜底，supervisor 不再调用。
-    async function notifyGate({ indexFile, pod, trackKey, language, cachePath, indexId, sentCardsPath, fetchImpl = globalThis.fetch } = {}) {
+    async function notifyGate({ indexFile, pod, slot, trackKey, language, cachePath, indexId, sentCardsPath, fetchImpl = globalThis.fetch } = {}) {
       const host = process.env.FEISHU_HOST;
       const appId = process.env.BOT_APP_ID;
       const appSecret = process.env.BOT_APP_SECRET;
@@ -880,7 +657,7 @@ data:
         throw error;
       }
       const index = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
-      const text = buildGateCardText({ index, pod, trackKey, language });
+      const text = buildGateCardText({ index, pod, slot, trackKey, language });
       const token = await fetchTenantToken({ host, appId, appSecret, fetchImpl });
       const openId = await resolveOperatorOpenId({ host, token, email, cachePath, fetchImpl });
       // 首选卡片（interactive，带批准按钮），失败降级纯文本 —— 两者都走 im/v1/messages。
@@ -890,7 +667,7 @@ data:
         body: JSON.stringify({ receive_id: openId, msg_type: msgType, content: JSON.stringify(content) }),
       }).then((response) => response.json());
 
-      const card = buildGateCard({ index, pod, trackKey, language, indexId: indexId ?? path.basename(indexFile) });
+      const card = buildGateCard({ index, pod, slot, trackKey, language, indexId: indexId ?? path.basename(indexFile) });
       let payload = await post('interactive', card);
       let mode = 'interactive';
       if (payload.code !== 0) {
@@ -915,6 +692,7 @@ data:
         appendSentCardRecords(sentCardsPath, (index.replyLines || []).map((line) => ({
           messageId,
           pod,
+          slot,
           track: trackKey,
           indexId: indexId ?? path.basename(indexFile),
           line,
@@ -926,23 +704,12 @@ data:
       return { text, openId, messageId, mode };
     }
 
-    // 布尔旗标（出现即 true，不吞下一个参数）——campaign-card 的状态开关。历史上
-    // parseCli 严格两两配对；campaign-card 的 `--approved|--cleared-gate|--terminal`
-    // 不带值，登记在名单里豁免配对（其余子命令不使用这些名字，行为不变）。
-    const CLI_BOOLEAN_FLAGS = new Set(['approved', 'cleared-gate', 'terminal', 'new-campaign']);
-
     function parseCli(argv) {
       const args = {};
-      for (let i = 0; i < argv.length; i += 1) {
+      for (let i = 0; i < argv.length; i += 2) {
         const flag = argv[i];
         if (!flag.startsWith('--')) throw new Error(`unexpected argument: ${flag}`);
-        const name = flag.slice(2);
-        if (CLI_BOOLEAN_FLAGS.has(name)) {
-          args[name] = true;
-          continue;
-        }
-        args[name] = argv[i + 1];
-        i += 1;
+        args[flag.slice(2)] = argv[i + 1];
       }
       return args;
     }
@@ -990,6 +757,7 @@ data:
           await notifyGate({
             indexFile: requireAbsolute(args['index-file'], '--index-file'),
             pod: requireValue(args.pod, '--pod'),
+            slot: requireValue(args.slot, '--slot'),
             trackKey: requireValue(args['track-key'], '--track-key'),
             language: requireValue(args.language, '--language'),
             cachePath: args['open-id-cache'] ?? null,
@@ -998,34 +766,18 @@ data:
           });
           return 0;
         }
-        case 'gate-label': {
-          // supervisor 拼 "⚑ <门中文>呈报" 事件文本用的查询口（GATE_LABELS_ZH 单源，
-          // 防 bash case 双真相）。
-          process.stdout.write(`${gateLabelZh(requireValue(args.gate, '--gate'))}\n`);
-          return 0;
-        }
-        case 'campaign-card': {
-          // 战役常驻卡唯一收口：追加时间轴 → 重算卡 JSON → send/PATCH → 原子写回状态。
-          await campaignCard({
-            stateFile: requireAbsolute(args.state, '--state'),
-            repoRoot: requireAbsolute(args['repo-root'], '--repo-root'),
-            event: requireValue(args.event, '--event'),
-            presentationFile: args.presentation ? path.resolve(args.presentation) : null,
-            indexId: args['index-id'] ?? null,
-            pod: requireValue(args.pod, '--pod'),
-            trackKey: requireValue(args['track-key'], '--track-key'),
-            language: requireValue(args.language, '--language'),
-            approved: args.approved === true,
-            clearedGate: args['cleared-gate'] === true,
-            terminal: args.terminal === true,
-            newCampaign: args['new-campaign'] === true,
-            openIdCachePath: args['open-id-cache'] ? path.resolve(args['open-id-cache']) : null,
-          });
+        case 'gate-slot': {
+          const tracks = String(requireValue(args.tracks, '--tracks')).split(',').map((value) => value.trim()).filter(Boolean);
+          const keys = String(args['track-keys'] ?? '').split(',').map((value) => value.trim());
+          const artifact = requireValue(args.artifact, '--artifact');
+          const slots = tracks.map((track, index) => ({ slot: index + 1, track, trackKey: keys[index] ?? '' }));
+          const attribution = deriveGateAttribution(artifact, slots);
+          process.stdout.write(`slot=${attribution.slot} trackKey=${attribution.trackKey}\n`);
           return 0;
         }
         case 'emit-event': {
           emitEvent(requireAbsolute(args.file, '--file'), requireValue(args.event, '--event'), {
-            track: args.track, count: args.count, exit: args.exit, code: args.code, detail: args.detail, messageId: args['message-id'],
+            slot: args.slot, track: args.track, count: args.count, exit: args.exit, code: args.code, detail: args.detail, messageId: args['message-id'],
           });
           return 0;
         }
@@ -1040,10 +792,9 @@ data:
             '  extract-backlog --ledger <jsonl> --language <lang> [--discovered-on <date>]',
             '  pending-count --ledger <jsonl> --language <lang>   (canonical daily-scan-core fold)',
             '  track-env --language <lang> --track <version>      prints BASE_TOKEN=<token>',
-            '  notify-gate --index-file <index.json> --pod <name> --track-key <key> --language <lang> [--open-id-cache <path>] [--index-id <id>] [--sent-cards <jsonl>]   (deprecated: supervisor 改走 campaign-card)',
-            '  campaign-card --state <card.json> --repo-root <repo> --event "<icon 短文本>" [--presentation <index.json>] [--index-id <id>] --pod <name> --track-key <key> --language <lang> [--open-id-cache <path>] [--new-campaign|--approved|--cleared-gate|--terminal]',
-            '  gate-label --gate <GATE_NAME>              中文门名（GATE_LABELS_ZH 单源查询口）',
-            '  emit-event --file <events.jsonl> --event <name> [--track --count --exit --code --detail --message-id]',
+            '  notify-gate --index-file <index.json> --pod <name> --slot <n> --track-key <key> --language <lang> [--open-id-cache <path>] [--index-id <id>] [--sent-cards <jsonl>]',
+            '  gate-slot --artifact <path> --tracks <v3.0.x,v2.6.x> [--track-keys <k1,k2>]   deterministic gate attribution',
+            '  emit-event --file <events.jsonl> --event <name> [--slot --track --count --exit --code --detail --message-id]',
           ].join('\n'));
           process.stdout.write('\n');
           return 0;
@@ -1082,34 +833,25 @@ data:
 
     module.exports = {
       APPROVE_LINE_RE,
-      CAMPAIGN_CARD_STATUS,
-      CLI_BOOLEAN_FLAGS,
       GATE_LABELS_ZH,
       OPENCODE_PROVIDER_KEY,
       RELEASE_TRACKS_RELATIVE_PATH,
-      TIMELINE_VISIBLE,
-      buildCampaignCard,
       buildGateCard,
       buildGateCardText,
-      campaignCard,
+      deriveGateAttribution,
       emitEvent,
       extractBacklogEntries,
       extractSessionId,
       fetchTenantToken,
-      gateActionElements,
       gateLabelZh,
       impactLarkMd,
       notifyGate,
       normalizeLlmBaseUrl,
-      parseCli,
       registryTrackKey,
       renderOpencodeConfig,
       resolveOperatorOpenId,
       sessionShortName,
-      shortDigest,
       sourceLarkMd,
-      splitEventIcon,
-      timelineStamp,
       trackEnvLine,
       validateApproveLine,
       runCli,
@@ -1121,19 +863,19 @@ data:
     // pod-approve.js — Mac 侧向 S2 worker pod 注入 APPROVE_* 批准行（deploy/README.md
     // 「Mac 侧批准注入」一节的唯一入口）。
     //
-    //   node scripts/dashboard/pod-approve.js --pod python-v3-worker \
-    //     --line 'APPROVE_CAMPAIGN sha256:<campaign-plan-digest>'
+    //   node scripts/dashboard/pod-approve.js --pod python-worker --slot 1 \
+    //     --line 'APPROVE_WRITES sha256:<batch-digest>'
     //   node scripts/dashboard/pod-approve.js --list
     //
     // 机制：行先过本地正则校验（与 pod 内 supervisor 消费端正则同源，require
     // deploy/lib.js），再 `kubectl exec -n sdk-doc-sync <pod> -- sh -c …` 追加进
-    // /workspace/inbound/approve.queue（一轨一 pod：单队列）。spawn 全程 argv 数组、无 shell 字符串
+    // /workspace/inbound/approve-<slot>.queue。spawn 全程 argv 数组、无 shell 字符串
     // 拼接；行内容在 pod 内以位置参数二次过同一正则后才落盘——注入面只有校验过的
     // 一行，杜绝换行/分号注入。
     //
     // 红线（照抄仓库治理语汇）：本工具只往队列文件追加一行，不直接驱动会话、不代替
     // 操作员判断；批准只有落成回执才生效；scan-state 只由 close-session/finalize 推进。
-    // supervisor 每 20s 轮询队列，首行匹配正则才会以 `opencode run -s <ses>` 续跑本轨会话。
+    // supervisor 每 20s 轮询队列，首行匹配正则才会以 `opencode run -s <ses>` 续跑该 slot。
 
     const { spawnSync } = require('node:child_process');
     const path = require('node:path');
@@ -1142,20 +884,23 @@ data:
 
     const NAMESPACE = 'sdk-doc-sync';
     const QUEUE_DIR = '/workspace/inbound';
+    const KNOWN_PODS = ['python-worker', 'java-worker'];
     const POD_NAME_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+    const SLOT_RE = /^[1-9][0-9]*$/;
 
     function usage(exitCode = 0) {
       process.stdout.write([
         'pod-approve.js — inject an APPROVE_* line into an S2 worker pod queue',
         '',
         'Usage:',
-        '  node scripts/dashboard/pod-approve.js --pod <trackKey>-worker --line "<APPROVE_… sha256:…>" [--json]',
+        '  node scripts/dashboard/pod-approve.js --pod <python-worker|java-worker> --slot <n> --line "<APPROVE_… sha256:…>" [--json]',
         '  node scripts/dashboard/pod-approve.js --list [--pod <name>]',
         '',
         'Options:',
-        '  --pod <name>    target pod（一轨一 pod：名=<trackKey>-worker，如 python-v3-worker）',
-            '  --line <text>   the exact gate reply line, e.g. "APPROVE_CAMPAIGN sha256:<64-hex>"',
-        '  --json          machine face: one line {"ok":…,"pod":…,"line":…,"note":…}',
+        '  --pod <name>    target pod (python-worker / java-worker)',
+        '  --slot <n>      slot number (1 = first TRACKS entry, 2 = second)',
+        '  --line <text>   the exact gate reply line, e.g. "APPROVE_WRITES sha256:<64-hex>"',
+        '  --json          machine face: one line {"ok":…,"pod":…,"slot":…,"line":…,"note":…}',
         '                  (成功注入或任何 typed 失败都输出这一行；默认文本输出不变)',
         '  --list          tail the last 20 events.jsonl lines of the worker pod(s)',
         '  --help          this text',
@@ -1171,7 +916,7 @@ data:
     function fail(message, { json = false, payload = null } = {}) {
       if (json) {
         // --json 机器面：一行 {ok:false,…}，card-approve.js 消费这一行分支。
-        process.stdout.write(`${JSON.stringify({ ok: false, pod: payload?.pod ?? null, line: payload?.line ?? null, note: message })}\n`);
+        process.stdout.write(`${JSON.stringify({ ok: false, pod: payload?.pod ?? null, slot: payload?.slot ?? null, line: payload?.line ?? null, note: message })}\n`);
         process.exit(1);
       }
       process.stderr.write(`pod-approve: ${message}\n`);
@@ -1194,8 +939,8 @@ data:
       return result;
     }
 
-    function appendLine({ pod, line }) {
-      const queueFile = `${QUEUE_DIR}/approve.queue`;
+    function appendLine({ pod, slot, line }) {
+      const queueFile = `${QUEUE_DIR}/approve-${slot}.queue`;
       // 注入安全的远端脚本：脚本本体是常量，行/正则/目录/队列文件全走位置参数
       // （$1 行、$2 正则、$3 目录、$4 队列文件）；pod 内二次过同一正则，两次校验
       // 之间没有第二个解释层。
@@ -1216,16 +961,8 @@ data:
     }
 
     function listEvents(podFilter) {
-      const args = ['get', 'pods', '-n', NAMESPACE, '-l', 'app.kubernetes.io/part-of=sdk-doc-sync',
-        '-o', 'jsonpath={range .items[*]}{.metadata.name}{"\\n"}{end}'];
-      const listed = podFilter
-        ? [podFilter]
-        : String(kubectl(args) || '').split('\n').map((name) => name.trim()).filter(Boolean);
-      if (listed.length === 0) {
-        process.stdout.write('(no worker pods found — label app.kubernetes.io/part-of=sdk-doc-sync)\n');
-        return;
-      }
-      for (const pod of listed) {
+      const pods = podFilter ? [podFilter] : KNOWN_PODS;
+      for (const pod of pods) {
         process.stdout.write(`===== ${pod} · /workspace/logs/events.jsonl (tail 20) =====\n`);
         kubectl([
           'exec', '-n', NAMESPACE, pod, '--',
@@ -1245,7 +982,7 @@ data:
         const podFilter = podAt !== -1 ? argv[podAt + 1] : null;
         if (podFilter && !POD_NAME_RE.test(podFilter)) fail(`--pod looks invalid: ${podFilter}`);
         listEvents(podFilter);
-        process.stdout.write('事件语义见 deploy/README.md §看门；批准注入用 --pod/--line。\n');
+        process.stdout.write('事件语义见 deploy/README.md §看门；批准注入用 --pod/--slot/--line。\n');
         return;
       }
 
@@ -1257,10 +994,17 @@ data:
         return argv[at + 1];
       };
       const pod = readValue('--pod');
+      const slot = readValue('--slot');
       const line = readValue('--line');
 
       if (!POD_NAME_RE.test(pod)) {
-        fail(`--pod looks invalid: ${pod}（expected dns-1035 name, e.g. python-v3-worker）`, { json: jsonMode, payload: { pod, line } });
+        fail(`--pod looks invalid: ${pod}（expected dns-1035 name, e.g. python-worker）`, { json: jsonMode, payload: { pod, slot, line } });
+      }
+      if (!SLOT_RE.test(slot)) {
+        fail(`--slot must be a positive integer (got ${JSON.stringify(slot)})`, { json: jsonMode, payload: { pod, slot, line } });
+      }
+      if (!KNOWN_PODS.includes(pod)) {
+        process.stderr.write(`pod-approve: WARN: ${pod} 不在已知清单 [${KNOWN_PODS.join(', ')}]——继续尝试（集群里可能有同名 pod）\n`);
       }
 
       // 本地校验（与 pod 内 supervisor/第二次校验同一正则，deploy/lib.js 单源）。
@@ -1268,25 +1012,26 @@ data:
       if (!verdict.ok) {
         fail(
           `APPROVE_LINE_INVALID: ${JSON.stringify(line)}\n  形态必须匹配 ${APPROVE_LINE_RE}\n  回现行请从呈门卡片/index.json 的 replyLines 逐字复制；重规划/重扫后旧 digest 作废，须重新走门。`,
-          { json: jsonMode, payload: { pod, line } },
+          { json: jsonMode, payload: { pod, slot, line } },
         );
       }
 
-      const queued = appendLine({ pod, line: verdict.line });
+      const queued = appendLine({ pod, slot, line: verdict.line });
       if (jsonMode) {
         // card-approve.js 消费的机器面：只此一行。
-        process.stdout.write(`${JSON.stringify({ ok: true, pod, line: verdict.line, note: queued || 'queued' })}\n`);
+        process.stdout.write(`${JSON.stringify({ ok: true, pod, slot, line: verdict.line, note: queued || 'queued' })}\n`);
         return;
       }
       process.stdout.write([
         '—— pod-approve 回执 ——',
         `pod:    ${pod}`,
-        `queue:  ${QUEUE_DIR}/approve.queue`,
+        `slot:   ${slot}`,
+        `queue:  ${QUEUE_DIR}/approve-${slot}.queue`,
         `line:   ${verdict.line}`,
         queued ? `remote: ${queued}` : null,
         '',
-        'supervisor ≤20s 内会出队并以 `opencode run -s <ses>` 续跑本轨会话；',
-        '批准只有落成回执才生效——回看该 pod 的 run 目录 opencode.jsonl / 门文件确认推进。',
+        'supervisor ≤20s 内会出队并以 `opencode run -s <ses>` 续跑该 slot；',
+        '批准只有落成回执才生效——回看该 slot 的 run 目录 opencode.jsonl / 门文件确认推进。',
         '看门：node scripts/dashboard/pod-approve.js --list',
       ].filter((value) => value !== null).join('\n'));
       process.stdout.write('\n');
@@ -1318,7 +1063,7 @@ data:
     //   - 去重窗持久化到 emptyDir /relay-work/dedupe.json（重启丢窗口可接受，
     //     5 分钟窗；card-approve 注入持久 Map，语义仍单源）。
     //   - 每次批准/拒绝除卡片 toast 外，回发一条 p2p 文本回执给操作员
-    //     （im/v1/messages：pod/行前 60 字符/失败原因）。
+    //     （im/v1/messages：pod/slot/行前 60 字符/失败原因）。
     //
     // 常驻语义：进程级错误 catch-all 不退出（WSClient 自带断线重连；首连失败与
     // terminal failed 由 redial 看门狗重拨）；SIGTERM/SIGINT 优雅退出（落盘去重窗）。
@@ -1361,14 +1106,15 @@ data:
       return { toast: { type: 'error', content: `批准被拒（fail-closed）：${reason}` } };
     }
 
-    // p2p 回执文本：pod/行前 60 字符/失败原因。extracted 是
+    // p2p 回执文本：pod/slot/行前 60 字符/失败原因。extracted 是
     // cardApprove.extractCardActionEvent 的产出（value 可能是 null/垃圾——解析失败
     // 时如实显示，绝不编）。
     function buildReceiptText(verdict, extracted) {
       const value = extracted?.value && typeof extracted.value === 'object' ? extracted.value : {};
       const pod = typeof value.pod === 'string' && value.pod ? value.pod : '?';
+      const slot = typeof value.slot === 'string' && value.slot ? value.slot : '?';
       const status = verdict.ok ? (verdict.deduped ? '去重命中（该批准已在处理中）' : '已批准') : '已拒绝';
-      const head = `呈门回执 · ${status} · pod ${pod}`;
+      const head = `呈门回执 · ${status} · pod ${pod} · slot ${slot}`;
       const linePart = value.line ? `\n行: ${truncateLine(value.line)}` : '';
       const tail = verdict.ok ? '' : `\n原因: ${truncateLine(verdict.text, 200)}`;
       return `${head}${linePart}${tail}`;
@@ -1408,6 +1154,7 @@ data:
           outcome: verdict.ok ? (verdict.deduped ? 'deduped' : 'approved') : 'rejected',
           operator: extracted.operatorOpenId,
           pod: extracted.value?.pod ?? null,
+          slot: extracted.value?.slot ?? null,
           detail: verdict.text,
         });
         if (sendReceipt) {

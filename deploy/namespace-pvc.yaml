@@ -1,14 +1,41 @@
-# deploy/namespace-pvc.yaml — S2 命名空间（一轨一 pod：PVC 随各轨 deployment
-# 生成，见 deploy/gen-worker-deployment.sh）。
+# deploy/namespace-pvc.yaml — S2 双 pod 的命名空间与工作区卷。
 #
 # PVC storageClass 省略 = 用集群默认（milvus-cell vCluster 当前默认 cbs，
-# com.tencent.cloud.csi.cbs）。腾讯云 CBS 按量计费约 ¥0.35/GB/月：每轨 10Gi
-# ≈ ¥3.5/月，teardown 删 PVC 即停止计费。AccessMode RWO：每个 PVC 只被本轨
-# pod 挂——这也是"重启 worker 用 kubectl delete pod 而非 rollout restart"的
-# 根因（rollout 先建新 pod 等 RWO 卷，旧 pod 不退就双双死锁，见 README 故障表）。
+# com.tencent.cloud.csi.cbs）。腾讯云 CBS 按量计费约 ¥0.35/GB/月：两块 10Gi ≈
+# ¥7/月，teardown 删 PVC 即停止计费。AccessMode RWO：每个 PVC 只被一个 pod 挂。
 apiVersion: v1
 kind: Namespace
 metadata:
   name: sdk-doc-sync
   labels:
     app.kubernetes.io/part-of: sdk-doc-sync
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: workspace-python
+  namespace: sdk-doc-sync
+  labels:
+    app.kubernetes.io/part-of: sdk-doc-sync
+    app.kubernetes.io/language: python
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: workspace-java
+  namespace: sdk-doc-sync
+  labels:
+    app.kubernetes.io/part-of: sdk-doc-sync
+    app.kubernetes.io/language: java
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi

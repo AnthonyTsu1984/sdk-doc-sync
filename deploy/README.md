@@ -1,37 +1,31 @@
-# deploy/ — S2 战役 pod 部署脚手架（一轨一 pod）
+# deploy/ — S2 双 pod 试运行部署脚手架（python + java worker）
 
-跑在 **milvus-cell vCluster**（kubeconfig `~/.milvus-cell/kubeconfig`；运维收口
-`deploy/milvus-cell-ops.sh`——战役期休眠策略/RWO 安全重启/退役盘点）。**拓扑裁定
-（2026-10-25）：一个 pod 只跑一条版本轨**——pymilvus 的 v3.0.x 与 v2.6.x = 两个
-pod（`python-v3-worker` / `python-v26-worker`）。同语言两轨的 SDK 检出钉不同
-commit、文档树并发写两类竞态由 pod 边界整体隔离，无 slot、无跨轨串行守卫。
-部署清单不手写：`deploy/gen-worker-deployment.sh <language> <track>` 生成
-（PVC `workspace-<trackKey>` + Deployment `<trackKey>-worker` 一体）。
+跑在已建好的 **milvus-cell vCluster**（kubeconfig `~/.milvus-cell/kubeconfig`，
+node v1.36 Ready，egress 已冒烟：github / api.github.com / open.feishu.cn /
+open.bigmodel.cn / api.z.ai / npmjs 全连通）。每个 pod = `node:22-bookworm` 单容器，
+bootstrap 装环境 + clone 三仓到 PVC，然后 exec supervisor 常驻：
 
 ```
-                     ┌─────────── sdk-doc-sync namespace ────────────┐
- Mac（操作员）        │  python-v3-worker   python-v26-worker   …    │
- ┌─────────────┐     │  ┌───────────────┐  ┌───────────────┐        │
- │ milvus-cell │     │  │ supervisor    │  │ supervisor    │  每轨：│
- │  -ops.sh    │     │  │ ①30min scan   │  │ （同构，       │        │
- │ pod-approve │────▶│  │ ②简报+opencode│  │  v2.6.x 轨）  │        │
- │  --list     │queue│  │ ③战役常驻卡   │  │               │        │
- └─────────────┘     │  │ ④批准队列→-s  │  │               │        │
- 飞书（操作员）◀──────────│ ⑤logs/…      │  │               │        │
-                     │  └──────┬────────┘  └──────┬────────┘        │
-                     │  PVC workspace-<trackKey>（10Gi RWO/轨）      │
-                     └──────────────────────────────────────────────┘
+                        ┌──────────── sdk-doc-sync namespace ────────────┐
+ Mac（操作员）           │  python-worker                  java-worker    │
+ ┌──────────────┐       │  ┌──────────────────────┐   ┌──────────────────────┐
+ │ pod-approve  │ exec  │  │ supervisor           │   │ supervisor           │
+ │ --list       │──────▶│  │ ①30min daily-scan    │   │ （同构，java 轨）    │
+ │ 注入 APPROVE │ queue │  │ ②简报+opencode 战役  │   │                      │
+ └──────────────┘       │  │ ③门铃→飞书卡片       │   │                      │
+ 飞书（操作员）◀────────────│ ④批准队列→-s 续跑    │   │                      │
+                        │  │ ⑤logs/{supervisor.log│   │                      │
+                        │  │   events.jsonl}      │   │                      │
+                        │  └──────┬───────────────┘   └──────────┬───────────┘
+                        │   PVC workspace-python        PVC workspace-java │
+                        │   （10Gi，默认 cbs ≈¥0.35/GB/月）                │
+                        └─────────────────────────────────────────────────┘
 ```
 
-配额提示：vCluster 每用户 16 CPU / 64 GiB；worker 限 2CPU/4Gi ⇒ 十二个 pod 内
-安全（六语言×双轨全开也在界内）。
-
-目录内文件：`namespace-pvc.yaml`（仅 Namespace——PVC 随各轨 deployment 生成）、
-`gen-worker-deployment.sh`（一轨一 pod 清单生成器）、
-`milvus-cell-ops.sh`（宿主平台运维收口）、`secret-template.yaml.example`
-（形态示例，真值永不入库）、`configmap-scripts.yaml`
-（bootstrap/supervisor/seed-backlog 部署镜像）、`configmap-backlog.yaml`
-（python 6 条 / java 8 条 pending backlog 快照）、`lib.js`（双端共享内核，
+目录内文件：`namespace-pvc.yaml`、`secret-template.yaml.example`（形态示例，真值
+永不入库）、`configmap-scripts.yaml`（bootstrap/supervisor/seed-backlog 部署镜像）、
+`configmap-backlog.yaml`（python 6 条 / java 8 条 pending backlog 快照）、
+`deployment-python.yaml`、`deployment-java.yaml`、`lib.js`（双端共享内核，
 tests/skills/deploy-scaffold.test.js 直测）。控制面云化（2026-10-24 裁定）新增：
 `relay-entry.js`/`relay-entry.sh`（回调常驻入口）、`relay-kubectl-fetch.sh`
 （initContainer 从 pkgs.k8s.io 官方包仓库取 kubectl：gpg 验 InRelease → SHA256
@@ -48,7 +42,7 @@ tests/skills/deploy-scaffold.test.js 直测）。控制面云化（2026-10-24 �
   `~/.milvus-cell/kubeconfig`（或每条命令前缀 `KUBECONFIG=~/.milvus-cell/kubeconfig`）。
 - 仓库根有 `.env`（git-ignored），至少含：`LLM_BASE_URL` `LLM_API_KEY`
   `LLM_MODEL` `GITHUB_TOKEN` `BOT_APP_ID` `BOT_APP_SECRET` `FEISHU_HOST`
-  `OPERATOR_EMAIL`（战役 worker 走 Bitable/Drive 写入还需 `DOC_APP_ID`
+  `OPERATOR_EMAIL`（战役 worker 走 Bitable/Drive 写门还需 `DOC_APP_ID`
   `DOC_APP_SECRET`）。键名全集见 `secret-template.yaml.example`。
 - 本任务产物只做文件 + 本地校验；**apply 由操作员执行**。
 
@@ -66,18 +60,11 @@ kubectl create secret generic sdk-env --from-env-file=.env -n sdk-doc-sync
 # 3) 脚本 + backlog 两张 ConfigMap
 kubectl apply -f deploy/configmap-scripts.yaml -f deploy/configmap-backlog.yaml
 
-# 4) 生成并 apply 各轨 deployment（一轨一 pod：要几轨生成几个；
-#    例=pymilvus 双轨。SDK_REPO env 指该语言的 SDK 仓库名）
-SDK_REPO=pymilvus bash deploy/gen-worker-deployment.sh python v3.0.x  > deploy/out/python-v3.yaml
-SDK_REPO=pymilvus bash deploy/gen-worker-deployment.sh python v2.6.x  > deploy/out/python-v26.yaml
-kubectl apply -f deploy/out/python-v3.yaml -f deploy/out/python-v26.yaml
+# 4) 两个 deployment（bootstrap 前台跑完 exec supervisor）
+kubectl apply -f deploy/deployment-python.yaml -f deploy/deployment-java.yaml
 
-# 5) 战役期宿主设置：关定时休眠（默认每日 23:00 睡=战役中途全灭）+ 确认唤醒
-bash deploy/milvus-cell-ops.sh sleep-off
-bash deploy/milvus-cell-ops.sh ensure-awake
-
-# 6) 盯首次引导（apt/gh/opencode 安装 + clone + npm ci，约 3–6 分钟）
-kubectl -n sdk-doc-sync logs -f deploy/python-v3-worker
+# 5) 盯首次引导（apt/gh/opencode 安装 + clone + npm ci，约 3–6 分钟）
+kubectl -n sdk-doc-sync logs -f deploy/python-worker
 kubectl -n sdk-doc-sync get pods -w
 ```
 
@@ -86,10 +73,11 @@ bootstrap 幂等（PVC 上 marker `/workspace/.bootstrap-done` 短路重装）�
 重种 backlog（import-backlog 天然幂等）。
 
 **BASE_TOKEN 结论**：`.claude/skills/api-reference-sync/config/release-tracks.json`
-机器可读、每轨带 `bitable.baseToken`，bootstrap 按 `TRACK`（本 pod 唯一轨）导出
-`/workspace/runs/track-env/<version>.env`——一轨一 pod 后 BASE_TOKEN 恒为本轨，
-**操作员无需补任何 env**。若注册表不可读或该轨缺 baseToken，bootstrap 以 typed
-错误退出（`BASE_TOKEN_UNAVAILABLE`），绝不带空 BASE_TOKEN 起战役。
+机器可读、每轨带 `bitable.baseToken`，bootstrap 自动导出 per-track env 到
+`/workspace/runs/track-env/<version>.env`（slot 1 = v3.0.x → python-v3 / java-v30，
+slot 2 = v2.6.x → python / java-v26），**操作员无需补任何 env**。若注册表不可读或
+某轨缺 baseToken，bootstrap 以 typed 错误退出（`BASE_TOKEN_UNAVAILABLE`），绝不带
+空 BASE_TOKEN 起战役。
 
 ## 2. 日常运维
 
@@ -97,73 +85,66 @@ bootstrap 幂等（PVC 上 marker `/workspace/.bootstrap-done` 短路重装）�
 
 ```bash
 K="kubectl -n sdk-doc-sync"
-$K logs --tail 100 deploy/python-v3-worker     # supervisor 运行日志（亦持久化在 PVC）
-node scripts/dashboard/pod-approve.js --list   # 全部 worker pod events.jsonl 尾 20 行（按 part-of 标签枚举）
+$K logs --tail 100 deploy/python-worker        # supervisor 运行日志（亦持久化在 PVC）
+node scripts/dashboard/pod-approve.js --list   # 两 pod events.jsonl 尾 20 行（每动作一行 JSON）
 
 # 账本/水位/呈门产物都在 PVC 的 repo 主树里，可直接 exec 看：
-$K exec deploy/python-v3-worker -- sh -c 'tail -5 /workspace/feishu-markdown-bridge/tmp/api-reference-sync/daily-scan/pr-findings.jsonl'
-$K exec deploy/python-v3-worker -- sh -c 'ls /workspace/feishu-markdown-bridge/tmp/api-reference-sync/gate-presentation/'
-$K exec deploy/python-v3-worker -- sh -c 'cat /workspace/feishu-markdown-bridge/tmp/api-reference-sync/gate-presentation/latest-index.json'
+$K exec deploy/python-worker -- sh -c 'tail -5 /workspace/feishu-markdown-bridge/tmp/api-reference-sync/daily-scan/pr-findings.jsonl'
+$K exec deploy/python-worker -- sh -c 'ls /workspace/feishu-markdown-bridge/tmp/api-reference-sync/gate-presentation/'
+$K exec deploy/python-worker -- sh -c 'cat /workspace/feishu-markdown-bridge/tmp/api-reference-sync/gate-presentation/latest-index.json'
 ```
 
-### 战役常驻卡与批准注入（一场战役一张卡）
+### 门铃与批准注入（Mac 侧）
 
 战役 worker 停在 APPROVE_* 门 → supervisor 检出新
-`gate-presentation/<sessionKey>/*-<gate>.index.json` → **PATCH 本轨的战役常驻卡**
-（`deploy/lib.js campaign-card`；卡状态 `/workspace/runs/card-<trackKey>.json` 持有
-messageId——首发后所有事件都 PATCH 同一张卡，不再每门单发新卡）。卡面（自上而下）：
+`gate-presentation/<sessionKey>/*-<gate>.index.json` → 用 `BOT_*` 走飞书 IM 发卡片
+给 `OPERATOR_EMAIL` 求解出的 p2p open_id（`/workspace/runs/operator-openid` 缓存）。
+卡片（呈门 v2）内容三件套：
 
-- **header**：`【战役批准 · 等待批准】python · python-v3`（橙）/【进行中】（蓝）/
-  【已完成】（绿）——当前门非空时按钮长在卡上，批准/清门即消失（UX 裁定）。
-- **战役概况（持久区块）**：首次呈门从 gate index（`gate-presentation --source`
-  透传）捕获，此后整场战役常驻——来源（`来源 PR intake：[#1184](…) [#1188](…)`，
-  >5 条尾部"等 N 条"；仓库扫描形态 `来源 仓库扫描：<baseline> → <target>`）、
-  文档面（`文档 N 篇 · CREATE x · UPDATE y` + 清单 ≤10 条；工件没有分类数据时如实
-  显示"待 dry-run 细化"，绝不编数）、pod 归属（`pod: <trackKey>-worker · 轨道 ·
-  语言`——一轨一 pod，pod 名即归属，无 slot）。
-- **时间轴**：`▶️ 派单 / ⚑ 战役批准呈报 / ✅ 战役批准已批准（注入，续跑中）/
-  ⏱️ 宽限过期，轨道让出 / ✔ 战役终态`（最近 10 条，更早合并计数）。新战役
-  `--new-campaign` 同卡续写（状态/时间轴/概况清零，messageId 复用）。
-- **当前门**（未批准时）：门名 + 会话短名 + digest 短版 + 完整批准行；每条精确
-  回现行一个 primary「批准」按钮，回传 `card.action.trigger` 由 relay pod 的
-  `scripts/dashboard/card-approve.js` 接住：操作员身份比对 → 形状校验 → 5 分钟
-  去重窗（键=pod:indexId:line）→ spawn `pod-approve.js --json` 注入。尾注保留
-  "打回请回复本消息：打回 <原因>"。
+- **来源**：派单时 supervisor 从账本提取本轨 pending PR 清单落 `rundir/source.json`，
+  呈门时经 `gate-presentation --source` 透传——`来源 PR intake：#1184 #1188`（可点
+  链接，>5 条尾部"等 N 条"）；仓库扫描来源为 `{origin:"repo-scan",baselineTag,targetTag}`
+  占位形态，渲染 `来源 仓库扫描：<baseline> → <target>`。
+- **动作面**：`文档 N 篇 · CREATE x · UPDATE y` + 清单（≤10 条 `标题 —— 动作`，超出
+  尾部"… 等共 N 篇（全清单见工件）"）。工件没有分类数据时如实显示"待 dry-run 细化"，
+  绝不编数。
+- **pod 归属**：pod 名、slot、轨道、语言；会话标识只用工件自带 sessionPath 的短形态
+  （去 sync-session.json 后缀的目录名）。每条精确回现行配一个 primary「批准」按钮
+  （多行时 `批准 1/2/…`），回传事件 `card.action.trigger` 由看板
+  `scripts/dashboard/card-approve.js` 接住：操作员身份比对 → 形状校验 → 5 分钟去重窗
+  → spawn `pod-approve.js --json` 注入。尾注保留"打回请回复本消息：打回 <原因>"。
 
-**归因**：一轨一 pod——本 pod 检出里的一切呈门工件都属本轨（TRACK_KEY），无歧义；
-旧 slot 反解/启发式归因随 slot 模型删除。
+**slot 归因（确定性，v2 重写）**：从工件路径反解——路径含
+`gate-presentation/<sessionKey>/`（sessionKey 由 sessionPath 派生），先按
+`SLOT_TRACKKEY` 长 key 反查（`python-v3` 先于裸 `python`，防 `python-v30-*` 被裸
+key 吞掉）；查不到回退 **TRACKS 顺序固定映射：slot 1 = 第 1 轨（v3.0.x）、
+slot 2 = 第 2 轨（v2.6.x），与派单顺序一致**（`deploy/lib.js deriveGateAttribution`
+单源）。落空才 unknown。旧"检测瞬间恰在跑的 slot"启发式已删除（实测错配）。
+
+**message_id 入账**：`notifyGate` 把发出消息的 message_id 返回并按 replyLine 逐行
+落 `/workspace/runs/sent-cards.jsonl`（{messageId,pod,slot,track,indexId,line,digest,sentAt}；
+事件 `gate_notified` 同带 messageId）——将来撤回/更新卡片靠它，现只入账不撤回。
 
 无按钮环境（卡片发送失败降级为纯文本，或复制回信）：操作员从卡片（或
 latest-index.json 的 `replyLines`）**逐字复制**回现行，Mac 上：
 
 ```bash
-node scripts/dashboard/pod-approve.js --pod python-v3-worker \
-  --line 'APPROVE_CAMPAIGN sha256:<campaign-plan-digest>'
-node scripts/dashboard/pod-approve.js --pod java-v26-worker \
-  --line 'APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>'
+node scripts/dashboard/pod-approve.js --pod python-worker --slot 1 \
+  --line 'APPROVE_GROUPING sha256:<digest>'
+node scripts/dashboard/pod-approve.js --pod java-worker --slot 2 \
+  --line 'APPROVE_WRITES sha256:<batch-digest>'
 ```
 
 - 行先过本地正则 `^APPROVE_[A-Z]+( \S+)? sha256:[0-9a-f]{64}$`（与 pod 内消费端
   同源，`deploy/lib.js` 单源），再 argv 数组 spawn `kubectl exec`，pod 内以位置参数
-  **二次过同一正则**后追加进 `/workspace/inbound/approve.queue`（一轨一 pod：单队列）。
-- supervisor ≤20s 轮询出队，`opencode run -s <ses_…>` 续跑本轨原会话
-  （sessionID 在派出时从 `--format json` 事件流捕获，存
-  `/workspace/runs/campaign.session`）。
-- 战役忙时批准行**留在队列原地**（不出队不作废）；无在役会话时该行出队并记
+  **二次过同一正则**后追加进 `/workspace/inbound/approve-<slot>.queue`。
+- supervisor ≤20s 轮询出队，`opencode run -s <ses_…>` 续跑该 slot 的原会话
+  （sessionID 在派出时从 `--format json` 事件流捕获，存 `/workspace/runs/slot-<n>.session`）。
+- slot 忙时批准行**留在队列原地**（不出队不作废）；slot 无在役会话时该行出队并记
   typed 事件 `approve_no_session`。
-- 战役停门后若 `CAMPAIGN_GRACE_SECS`（默认 6h，人工门节奏）无批准注入，supervisor
-  让出轨道（typed 事件 `track_released`）；pending 仍在时该轨可被重新派出——新
-  会话按盘上 durable 状态续办，绝不凭记忆。
-
-### 宿主平台运维（milvus-cell 收口）
-
-战役期的宿主操作全部走 `bash deploy/milvus-cell-ops.sh <cmd>`（`status /
-ensure-awake / sleep-off / sleep-on / refresh-kubeconfig / restart-pod <pod> /
-teardown-check`）。三条实测纪律（详见 skill milvus-cell §Unattended worker
-fleets）：**全天跑批前 sleep-off**（默认每日 23:00 休眠=战役中途全灭）；**改
-ConfigMap/代码后重启 worker 用 `restart-pod`**（RWO PVC 下 rollout restart 新旧
-pod 互等死锁，delete pod 才是安全原语）；**退役时 teardown-check 先盘点**（PVC
-随 namespace 删、COS bucket 不随 milvus-cell delete 删）。
+- 战役停门后若 15 分钟（`CAMPAIGN_GRACE_SECS`，可调）无批准注入，supervisor 让出
+  轨道（typed 事件 `slot_released`）；pending 仍在时该轨可被重新派出——新会话按盘上
+  durable 状态续办，绝不凭记忆。
 
 ### 呈门回调常驻 relay（控制面云化裁定，2026-10-24）
 
@@ -175,7 +156,7 @@ pod 互等死锁，delete pod 才是安全原语）；**退役时 teardown-check
 Mac 上 `pod-approve.js --pod … --line …` 仍可手工注入。与 Mac relay 的差异
 （day one 收紧）：操作员身份（`OPERATOR_EMAIL` → batch_get_id）解析不出来=只记
 日志拒批（fail-closed），绝不降级为仅形状校验；每次批准/拒绝回发一条 p2p 文本
-回执（pod/行前 60 字符/失败原因）；去重窗持久化 emptyDir
+回执（pod/slot/行前 60 字符/失败原因）；去重窗持久化 emptyDir
 `/relay-work/dedupe.json`（重启丢窗口可接受，5 分钟窗）。
 
 ```bash
@@ -221,14 +202,11 @@ node .claude/skills/api-reference-sync/scripts/daily-scan.js --language python \
 ## 4. teardown
 
 ```bash
-bash deploy/milvus-cell-ops.sh teardown-check   # 先盘点：PVC/pods/COS 各会失去什么
 export KUBECONFIG=~/.milvus-cell/kubeconfig
-kubectl delete namespace sdk-doc-sync   # 连带全部 per-track PVC/ConfigMap/Secret
-bash deploy/milvus-cell-ops.sh sleep-on  # 战役毕复原定时休眠
+kubectl -n sdk-doc-sync delete deploy/python-worker deploy/java-worker
+kubectl delete namespace sdk-doc-sync   # 连带 PVC/ConfigMap/Secret 一起删
 # 注意：PVC 删除即停止 CBS 计费（≈¥0.35/GB/月）；workspace 内未收官的战役
 # run/journal 会随之消失——teardown 前先把要留证的 tmp 产物拷回主树归档。
-# milvus-cell delete --confirm 不删 COS bucket——退役时用 milvus-cell storage rm
-# 单独清，或留生命周期 14 天自然过期。
 ```
 
 ## 5. 故障排查
@@ -237,11 +215,9 @@ bash deploy/milvus-cell-ops.sh sleep-on  # 战役毕复原定时休眠
 | --- | --- | --- |
 | pod CrashLoop，日志 `FAIL: <VAR> is empty` | secret 键 | `kubectl create secret … --from-env-file=.env` 后 `rollout restart` |
 | 日志 `BASE_TOKEN unavailable … BASE_TOKEN_UNAVAILABLE` | `runs/track-env/<track>.err` | release-tracks.json 未随 clone 到位或该轨缺 baseToken；修注册表后重启 pod |
-| 日志 `sessionID NOT captured` | `runs/<ts>-<track>/opencode.err` | opencode/LLM 侧失败；修复 env 后批准注入会报 `SESSION_NOT_ARMED`，需等下一次派出 |
+| 日志 `sessionID NOT captured` | `runs/<ts>-<track>/opencode.err` | opencode/LLM 侧失败；修复 env 后该 slot 批准注入会报 `SESSION_NOT_ARMED`，需等下一次派出 |
 | 门铃无飞书消息，`gate_notify_failed` | `BOT_*`/`OPERATOR_EMAIL`/网络 | 卡片未发出时看板镜像仍在：`gate-presentation/latest-index.json`；修复后重启 pod，已 seen 的门不会重发，人工看 index 补批 |
 | `kubectl exec` 注入报 exit 3 | 行形态 | pod 内二次校验没过：回现行不是逐字复制（或旧 digest 已作废） |
-| 改代码/ConfigMap 后 worker 不生效 | 更新面 | ConfigMap 就地更新对运行中 pod 安全但旧进程持旧字节；用 `milvus-cell-ops.sh restart-pod <pod>` 重启（**勿 rollout restart**——RWO PVC 新旧互等死锁） |
-| kubectl 连接拒绝/EOF | 宿主相位 | vCluster Sleeping/Pending——`milvus-cell-ops.sh status` 先看相位，Sleeping 则 `ensure-awake`；TLS 报错则是 kubeconfig 陈旧，`refresh-kubeconfig` |
 
 ## 6. 求证结论（本脚手架依赖的外部事实，2026-10-24 实测）
 

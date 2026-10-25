@@ -158,14 +158,14 @@ fi
 
 # ---------- 8. per-track BASE_TOKEN 导出（fail-loud；BASE_TOKEN 教训） ----------
 # 结论：release-tracks.json 机器可读、每轨带 bitable.baseToken，无需操作员补 env。
-# 导出成 /workspace/runs/track-env/<version>.env（supervisor 按 slot eval）。
-TRACKS="${TRACKS:?TRACKS env is required (e.g. 'v3.0.x,v2.6.x')}"
+# 导出成 /workspace/runs/track-env/<version>.env（一轨一 pod：本 pod 只导本轨）。
+TRACK="${TRACK:?TRACK env is required (single version track, e.g. 'v3.0.x')}"
+case "$TRACK" in
+  *,*) fail "TRACK must be a single version track（一轨一 pod）——多轨请各起一个 pod: $TRACK" ;;
+esac
 TRACK_ENV_DIR="$WORKSPACE/runs/track-env"
 mkdir -p "$TRACK_ENV_DIR"
-IFS=',' read -r -a TRACK_LIST <<< "$TRACKS"
-for track in "${TRACK_LIST[@]}"; do
-  track="$(echo "$track" | tr -d '[:space:]')"
-  [ -n "$track" ] || continue
+for track in "$TRACK"; do
   err_file="$WORKSPACE/runs/track-env/${track}.err"
   if line="$(node "$REPO/deploy/lib.js" track-env --language "$LANGUAGE" --track "$track" 2>"$err_file")" \
     && case "$line" in BASE_TOKEN=[A-Za-z0-9]*) true ;; *) false ;; esac; then
@@ -187,7 +187,7 @@ else
   fail "/opt/scripts/seed-backlog.sh missing — configmap-scripts 挂载不完整"
 fi
 touch "$MARKER"
-event bootstrap_done "track=$TRACKS"
+event bootstrap_done "track=$TRACK"
 log "bootstrap done — exec supervisor"
 
 # ---------- 10. 前台交棒 ----------

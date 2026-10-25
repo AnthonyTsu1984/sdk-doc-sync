@@ -12,15 +12,14 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const cardApprove = require(path.join(REPO_ROOT, 'scripts', 'dashboard', 'card-approve.js'));
 
 const HEX64 = 'a'.repeat(64);
-const LINE = `APPROVE_WRITES sha256:${HEX64}`;
+const LINE = `APPROVE_CAMPAIGN sha256:${HEX64}`;
 const OPERATOR = 'ou_operator';
 const STRANGER = 'ou_stranger';
 const VALUE = {
   kind: 'pod-gate-approve',
-  pod: 'python-worker',
-  slot: '1',
+  pod: 'python-v3-worker',
   line: LINE,
-  indexId: 'tmp-api-…-python-v30-sync-sync-session.json/20261024-030000-APPROVE_WRITES.index.json',
+  indexId: 'tmp-api-…-python-v3-sync-sync-session.json/20261024-030000-APPROVE_CAMPAIGN.index.json',
   sentAt: '2026-10-24T03:00:00.000Z',
 };
 
@@ -40,12 +39,12 @@ function spySpawn(receipt) {
 
 const okReceipt = (line = LINE) => ({
   status: 0,
-  stdout: `${JSON.stringify({ ok: true, pod: 'python-worker', slot: '1', line, note: 'queued' })}\n`,
+  stdout: `${JSON.stringify({ ok: true, pod: 'python-v3-worker', line, note: 'queued' })}\n`,
   stderr: '',
 });
 const failReceipt = (detail) => ({
   status: 1,
-  stdout: `${JSON.stringify({ ok: false, pod: 'python-worker', slot: '1', line: LINE, note: detail })}\n`,
+  stdout: `${JSON.stringify({ ok: false, pod: 'python-v3-worker', line: LINE, note: detail })}\n`,
   stderr: '',
 });
 
@@ -80,18 +79,16 @@ test('extractCardActionEvent: WS 直包与 event 包络两种形态都取到 (op
 
 // ---------- value 形状校验 ----------
 
-test('parseCardValue: 合法载荷通过；kind/pod/slot/indexId/sentAt/line 任一非法都 typed 拒绝', () => {
+test('parseCardValue: 合法载荷通过；kind/pod/indexId/sentAt/line 任一非法都 typed 拒绝', () => {
   const { validateApproveLine } = require(path.join(REPO_ROOT, 'deploy', 'lib.js'));
   const good = cardApprove.parseCardValue(VALUE, { validateApproveLine });
   assert.equal(good.ok, true);
-  assert.deepEqual(good.action, { pod: 'python-worker', slot: '1', line: LINE, indexId: VALUE.indexId, sentAt: VALUE.sentAt });
+  assert.deepEqual(good.action, { pod: 'python-v3-worker', line: LINE, indexId: VALUE.indexId, sentAt: VALUE.sentAt });
   const bad = [
     ['value 不是对象', 'not-an-object'],
     ['value 是数组', [VALUE]],
     ['kind 错', { ...VALUE, kind: 'approve-everything' }],
     ['pod 注入', { ...VALUE, pod: '../evil' }],
-    ['slot 非正整数', { ...VALUE, slot: '0' }],
-    ['slot 缺失', { ...VALUE, slot: undefined }],
     ['indexId 缺失', { ...VALUE, indexId: '' }],
     ['sentAt 非 ISO', { ...VALUE, sentAt: 'yesterday' }],
     ['line 非法批准行', { ...VALUE, line: 'APPROVE_WRITES sha256:short' }],
@@ -155,27 +152,26 @@ test('handleCardAction: 合法批准 → argv 向量 spawn pod-approve --json，
   });
   assert.equal(verdict.ok, true);
   assert.equal(verdict.deduped, false);
-  assert.match(verdict.text, /已批准 slot 1（python-worker）/);
+  assert.match(verdict.text, /已批准（python-v3-worker）/);
   assert.equal(calls.length, 1);
   const call = calls[0];
   // 绝不 shell 拼接：file 是 node 本体，参数是纯向量
   assert.equal(call.file, process.execPath);
   assert.deepEqual(call.argv, [
     path.join(REPO_ROOT, 'scripts', 'dashboard', 'pod-approve.js'),
-    '--pod', 'python-worker', '--slot', '1', '--line', LINE, '--json',
+    '--pod', 'python-v3-worker', '--line', LINE, '--json',
   ]);
   assert.equal(call.options.cwd, repo);
   assert.equal(outbox.length, 1);
   assert.equal(outbox[0].kind, 'card-approved');
-  assert.equal(outbox[0].pod, 'python-worker');
-  assert.equal(outbox[0].slot, '1');
-  assert.equal(outbox[0].line, LINE);
+  assert.equal(outbox[0].pod, 'python-v3-worker');
+    assert.equal(outbox[0].line, LINE);
   assert.equal(outbox[0].indexId, VALUE.indexId);
-  assert.equal(outbox[0].dedupeKey, `python-worker:1:${LINE}`);
+  assert.equal(outbox[0].dedupeKey, `python-v3-worker:${VALUE.indexId}:${LINE}`);
   assert.doesNotThrow(() => Date.parse(outbox[0].at));
 });
 
-test('handleCardAction: 同一 (pod,slot,line) 5 分钟窗内去重——不 spawn、不重复落账', async () => {
+test('handleCardAction: 同一 (pod,line) 5 分钟窗内去重——不 spawn、不重复落账', async () => {
   const repo = tmpRepo('dedupe');
   const { calls, spawnImpl } = spySpawn(okReceipt());
   const outbox = [];
@@ -200,7 +196,7 @@ test('handleCardAction: 同一 (pod,slot,line) 5 分钟窗内去重——不 spa
   nowMs += 60_000;
   const other = await approver.handleCardAction({
     operator: { open_id: OPERATOR },
-    action: { value: { ...VALUE, line: `APPROVE_WRITES sha256:${'b'.repeat(64)}` } },
+    action: { value: { ...VALUE, line: `APPROVE_CAMPAIGN sha256:${'b'.repeat(64)}` } },
   });
   assert.equal(other.ok, true);
   assert.equal(other.deduped, false);
@@ -212,6 +208,35 @@ test('handleCardAction: 同一 (pod,slot,line) 5 分钟窗内去重——不 spa
   assert.equal(expired.deduped, false);
   assert.equal(calls.length, 3);
   assert.equal(outbox.length, 3);
+});
+
+test('handleCardAction: 去重键含 indexId——同 digest 重呈现（新工件）放行，同卡双击（同工件）去重', async () => {
+  const repo = tmpRepo('dedupe-indexid');
+  const { calls, spawnImpl } = spySpawn(okReceipt());
+  const outbox = [];
+  let nowMs = 1_000_000;
+  const approver = cardApprove.createCardApprover({
+    operatorOpenId: OPERATOR, repoRoot: repo,
+    now: () => nowMs, spawnImpl,
+    appendOutbox: (records) => outbox.push(...records),
+  });
+  const event = { operator: { open_id: OPERATOR }, action: { value: VALUE } };
+  assert.equal((await approver.handleCardAction(event)).ok, true);
+  assert.equal(calls.length, 1);
+  // 同 pod/line 但不同 indexId（同 digest 重呈现的新按钮）→ 新键，放行注入
+  nowMs += 60_000;
+  const represented = await approver.handleCardAction({
+    operator: { open_id: OPERATOR },
+    action: { value: { ...VALUE, indexId: 'k/20261024-090000-APPROVE_CAMPAIGN.index.json' } },
+  });
+  assert.equal(represented.ok, true);
+  assert.equal(represented.deduped, false);
+  assert.equal(calls.length, 2);
+  // 回到原 indexId（窗口内）→ 仍被去重（同卡双击语义不变）
+  nowMs += 60_000;
+  const sameCard = await approver.handleCardAction(event);
+  assert.equal(sameCard.deduped, true);
+  assert.equal(calls.length, 2);
 });
 
 test('handleCardAction: spawn 失败 → 失败文本携带 pod-approve 的一行 JSON note', async () => {
@@ -260,7 +285,7 @@ test('defaultAppendOutbox: 写 tmp/dashboard-events/notify-outbox.jsonl（与回
 
 test('createCardApprover: dedupeState 注入——预置键命中去重窗；新键写回同一 Map；非 Map 回退新 Map', async () => {
   const repo = tmpRepo('dedupe-state');
-  const shared = new Map([[`python-worker:1:${LINE}`, 1_001_000]]); // 读回的持久状态
+  const shared = new Map([[`python-v3-worker:${VALUE.indexId}:${LINE}`, 1_001_000]]); // 读回的持久状态
   let nowMs = 1_100_000; // 距预置键 99s，窗内
   const outbox = [];
   const { spawnImpl } = spySpawn(okReceipt());
@@ -280,7 +305,7 @@ test('createCardApprover: dedupeState 注入——预置键命中去重窗；新
     action: { value: { ...VALUE, line: otherLine } },
   });
   assert.equal(shared.size, 2);
-  assert.ok(shared.has(`python-worker:1:${otherLine}`));
+  assert.ok(shared.has(`python-v3-worker:${VALUE.indexId}:${otherLine}`));
   // 非 Map → 回退内部新 Map（Mac 侧默认语义不变）
   const fallback = cardApprove.createCardApprover({
     operatorOpenId: OPERATOR, repoRoot: tmpRepo('dedupe-fallback'), now: fixedNow(), spawnImpl,

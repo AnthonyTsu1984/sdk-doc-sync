@@ -22,7 +22,7 @@
 //   - 去重窗持久化到 emptyDir /relay-work/dedupe.json（重启丢窗口可接受，
 //     5 分钟窗；card-approve 注入持久 Map，语义仍单源）。
 //   - 每次批准/拒绝除卡片 toast 外，回发一条 p2p 文本回执给操作员
-//     （im/v1/messages：pod/slot/行前 60 字符/失败原因）。
+//     （im/v1/messages：pod/行前 60 字符/失败原因）。
 //
 // 常驻语义：进程级错误 catch-all 不退出（WSClient 自带断线重连；首连失败与
 // terminal failed 由 redial 看门狗重拨）；SIGTERM/SIGINT 优雅退出（落盘去重窗）。
@@ -65,15 +65,14 @@ function failClosedToast(reason) {
   return { toast: { type: 'error', content: `批准被拒（fail-closed）：${reason}` } };
 }
 
-// p2p 回执文本：pod/slot/行前 60 字符/失败原因。extracted 是
+// p2p 回执文本：pod/行前 60 字符/失败原因。extracted 是
 // cardApprove.extractCardActionEvent 的产出（value 可能是 null/垃圾——解析失败
 // 时如实显示，绝不编）。
 function buildReceiptText(verdict, extracted) {
   const value = extracted?.value && typeof extracted.value === 'object' ? extracted.value : {};
   const pod = typeof value.pod === 'string' && value.pod ? value.pod : '?';
-  const slot = typeof value.slot === 'string' && value.slot ? value.slot : '?';
   const status = verdict.ok ? (verdict.deduped ? '去重命中（该批准已在处理中）' : '已批准') : '已拒绝';
-  const head = `呈门回执 · ${status} · pod ${pod} · slot ${slot}`;
+  const head = `呈门回执 · ${status} · pod ${pod}`;
   const linePart = value.line ? `\n行: ${truncateLine(value.line)}` : '';
   const tail = verdict.ok ? '' : `\n原因: ${truncateLine(verdict.text, 200)}`;
   return `${head}${linePart}${tail}`;
@@ -113,7 +112,6 @@ function createCardActionHandler({ getOperatorOpenId, approver, sendReceipt = nu
       outcome: verdict.ok ? (verdict.deduped ? 'deduped' : 'approved') : 'rejected',
       operator: extracted.operatorOpenId,
       pod: extracted.value?.pod ?? null,
-      slot: extracted.value?.slot ?? null,
       detail: verdict.text,
     });
     if (sendReceipt) {

@@ -174,61 +174,6 @@ async function sendOperatorText({ host, appId, appSecret, openId, text, lib, fet
   return payload?.data?.message_id ?? null;
 }
 
-// ---------- 写入进展定时探针（2026-10-25 操作员裁定：resident 于 relay，Mac 退场） ----------
-//
-// 每 PROGRESS_INTERVAL_SECS（默认 900s；RELAY_PROGRESS_INTERVAL_SECS<=0 关闭）
-// 对每个 worker pod（part-of 标签枚举、label 过滤 relay 自身）kubectl exec 跑
-// `lib.js campaign-progress`：worker 内读 sync.log 计数 + runner 存活 → 与卡
-// state.progress 相同则跳过，变化才 PATCH 概况区块（不进时间轴）。探针在 worker
-// 内跑（state/lib/env 全在 worker 侧），relay 只做编排与日志。单进程内 spawnSync
-// 串行执行——interval 远大于探针耗时，无重叠。
-
-// worker 侧探针脚本本体为常量（无注入面；env 取 worker 容器自身）。
-const PROGRESS_PROBE_SCRIPT = [
-  'cd /workspace/feishu-markdown-bridge || exit 9',
-  'TK="$(node deploy/lib.js track-env --language "$LANGUAGE" --track "$TRACK" 2>&1 >/dev/null | sed -n \'s/^trackKey=//p\')"',
-  'exec node deploy/lib.js campaign-progress --repo-root /workspace/feishu-markdown-bridge \\',
-  '  --state "/workspace/runs/card-${TK}.json" --language "$LANGUAGE" --track-key "$TK" --pod "$POD_NAME" \\',
-  '  --open-id-cache /workspace/runs/operator-openid',
-].join('\n');
-
-// 纯编排（kubectl 注入可测）：枚举 worker → 逐个探针 → 返回 {updated, total}。
-// 单 pod 失败只记日志继续（一个 pod 探针挂了不许拖垮其它轨的进展刷新）。
-function runProgressTick({ log, kubectlArgs }) {
-  const listed = spawnSync('kubectl', kubectlArgs ?? [
-    'get', 'pods', '-n', 'sdk-doc-sync',
-    '-l', 'app.kubernetes.io/part-of=sdk-doc-sync', '-o', 'json',
-  ], { encoding: 'utf8', timeout: 30_000, maxBuffer: 16 * 1024 * 1024 });
-  if (listed.status !== 0) {
-    log({ event: 'progress', outcome: 'kubectl-failed', detail: String(listed.stderr || listed.stdout || '').trim().slice(0, 200) });
-    return { updated: 0, total: 0 };
-  }
-  let items = [];
-  try {
-    items = JSON.parse(listed.stdout)?.items ?? [];
-  } catch {
-    log({ event: 'progress', outcome: 'kubectl-parse-failed' });
-    return { updated: 0, total: 0 };
-  }
-  let updated = 0;
-  const workers = items.filter((item) => item.metadata?.labels?.['app.kubernetes.io/name'] !== 'relay');
-  for (const item of workers) {
-    const name = item.metadata?.name;
-    if (!name) continue;
-    const probe = spawnSync('kubectl', ['exec', '-n', 'sdk-doc-sync', name, '--', 'bash', '-c', PROGRESS_PROBE_SCRIPT], {
-      encoding: 'utf8', timeout: 120_000, maxBuffer: 1024 * 1024,
-    });
-    const detail = String(probe.stdout || probe.stderr || '').trim().split('\n').filter(Boolean).pop() ?? '';
-    if (probe.status === 0) {
-      if (/^progress-updated:/.test(detail)) updated += 1;
-      log({ event: 'progress', pod: name, outcome: detail || 'ok' });
-    } else {
-      log({ event: 'progress', pod: name, outcome: 'probe-failed', detail: detail.slice(0, 200) });
-    }
-  }
-  return { updated, total: workers.length };
-}
-
 // ---------- main：真实 IO 接线 ----------
 
 function log(record) {
@@ -343,28 +288,6 @@ function main() {
   }, 60_000);
   identityTimer.unref();
 
-  // 写入进展定时探针（RELAY_PROGRESS_INTERVAL_SECS<=0 关闭；首 tick 20s）。
-  const progressIntervalSecs = Number(process.env.RELAY_PROGRESS_INTERVAL_SECS ?? 900);
-  if (Number.isFinite(progressIntervalSecs) && progressIntervalSecs > 0) {
-    log({ event: 'progress', outcome: 'timer-armed', intervalSecs: progressIntervalSecs });
-    const progressTimer = setInterval(() => {
-      try {
-        const { updated, total } = runProgressTick({ log });
-        if (updated > 0) log({ event: 'progress', outcome: 'cards-updated', updated, total });
-      } catch (error) {
-        log({ event: 'progress', outcome: 'tick-error', detail: error?.message ?? String(error) });
-      }
-    }, progressIntervalSecs * 1000);
-    progressTimer.unref();
-    setTimeout(() => {
-      try {
-        runProgressTick({ log });
-      } catch (error) {
-        log({ event: 'progress', outcome: 'tick-error', detail: error?.message ?? String(error) });
-      }
-    }, 20_000).unref();
-  }
-
   connect();
   // WSClient 自带断线重连；redial 只兜它自己不救的态：首连失败 / terminal failed
   // / 从未连上。connected/reconnecting 态交给 SDK 内部重连，不重复拨。
@@ -407,14 +330,12 @@ if (require.main === module) main();
 module.exports = {
   DEDUPE_PATH,
   LARK_SDK_SPEC,
-  PROGRESS_PROBE_SCRIPT,
   WORK_DIR,
   buildReceiptText,
   createCardActionHandler,
   failClosedToast,
   loadDedupeState,
   persistDedupeState,
-  runProgressTick,
   sendOperatorText,
   toastFor,
   truncateLine,

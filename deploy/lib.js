@@ -451,7 +451,7 @@ function timelineLarkMd(timeline) {
 // 呈门时从 gate index 的 source/impact 捕获进 card state（state.summary），此后
 // 整场战役常驻卡面（批准后、执行中、终态都不消失——操作员随时能看到这场战役
 // 在写什么、为什么写、在哪个 pod）。
-function summaryLarkMd(summary, { pod, trackKey, language }) {
+function summaryLarkMd(summary, { pod, trackKey, language, progress = null }) {
   const lines = ['**战役概况**'];
   const sourceText = sourceLarkMd(summary?.source);
   lines.push(sourceText ?? '来源：待呈门登记');
@@ -465,6 +465,9 @@ function summaryLarkMd(summary, { pod, trackKey, language }) {
     for (const doc of documents) lines.push(`${doc.title} —— ${impactDocumentLabel(doc.action)}`);
   }
   lines.push(`pod: ${pod} · 轨道: ${trackKey} · 语言: ${language}`);
+  // 写入进展（--progress，概况区块持久渲染、不进时间轴——进度刷时间轴会稀释
+  // 派单/呈门/批准关键行）。2026-10-25 go-v3 首战裁定。
+  if (progress) lines.push(`写入进展: ${progress}`);
   return lines.join('\n');
 }
 
@@ -491,14 +494,14 @@ function campaignHeaderTitle({ language, trackKey, status, currentGate }) {
 // 纯函数：状态 → legacy interactive 卡 JSON。config.update_multi 按 PATCH 求证
 // 结论必带（否则共享卡不可全员更新）。零依赖，tests 直测形状。区块序（自上而下）：
 // 战役概况（持久）→ 时间轴 → 当前门（非空时）→ 当前门按钮 → 打回尾注。
-function buildCampaignCard({ language, trackKey, pod, status = CAMPAIGN_CARD_STATUS.ACTIVE, summary = null, timeline = [], currentGate = null } = {}) {
+function buildCampaignCard({ language, trackKey, pod, status = CAMPAIGN_CARD_STATUS.ACTIVE, summary = null, timeline = [], currentGate = null, progress = null } = {}) {
   if (!language || typeof language !== 'string' || !trackKey || typeof trackKey !== 'string' || !pod || typeof pod !== 'string') {
     const error = new Error('buildCampaignCard: language/pod/trackKey 必填（一轨一 pod：pod 名即归属）');
     error.code = 'CAMPAIGN_CARD_INPUT_INVALID';
     throw error;
   }
   const header = campaignHeaderTitle({ language, trackKey, status, currentGate });
-  const elements = [{ tag: 'div', text: { tag: 'lark_md', content: summaryLarkMd(summary, { pod, trackKey, language }) } }];
+  const elements = [{ tag: 'div', text: { tag: 'lark_md', content: summaryLarkMd(summary, { pod, trackKey, language, progress }) } }];
   elements.push({ tag: 'div', text: { tag: 'lark_md', content: timelineLarkMd(timeline) } });
   if (currentGate) {
     elements.push({ tag: 'div', text: { tag: 'lark_md', content: currentGateLarkMd(currentGate) } });
@@ -531,15 +534,23 @@ async function campaignCard({
   stateFile, repoRoot, event, presentationFile = null, indexId = null,
   pod, trackKey, language,
   approved = false, clearedGate = false, terminal = false, newCampaign = false,
+  progress,
   openIdCachePath = null, fetchImpl = globalThis.fetch, now = () => new Date().toISOString(),
 } = {}) {
   void repoRoot; // 任务书钉死的 CLI 签名位（相对路径锚点；当前实现全部走绝对路径）
-  for (const [value, name] of [[stateFile, 'stateFile'], [event, 'event'], [pod, 'pod'], [trackKey, 'trackKey'], [language, 'language']]) {
+  for (const [value, name] of [[stateFile, 'stateFile'], [pod, 'pod'], [trackKey, 'trackKey'], [language, 'language']]) {
     if (value === undefined || value === null || value === '') {
       const error = new Error(`campaignCard: ${name} is required`);
       error.code = 'USAGE';
       throw error;
     }
+  }
+  // 事件文本必填，唯一例外=纯进展更新（--progress：概况区块刷进度、不进时间轴
+  // ——进度刷时间轴会稀释派单/呈门/批准关键行，2026-10-25 go-v3 首战裁定）。
+  if ((event === undefined || event === null || event === '') && progress === undefined) {
+    const error = new Error('campaignCard: event is required (or --progress for a progress-only update)');
+    error.code = 'USAGE';
+    throw error;
   }
   let state;
   if (fs.existsSync(stateFile)) {
@@ -568,9 +579,13 @@ async function campaignCard({
     state.timeline = [];
     state.summary = null;
     state.currentGate = null;
+    state.progress = null;
   }
-  const { icon, text } = splitEventIcon(event);
-  state.timeline.push({ ts: now(), icon, text });
+  if (progress !== undefined) state.progress = progress === null ? null : String(progress);
+  if (event) {
+    const { icon, text } = splitEventIcon(event);
+    state.timeline.push({ ts: now(), icon, text });
+  }
   if (presentationFile) {
     const index = JSON.parse(fs.readFileSync(presentationFile, 'utf8'));
     state.currentGate = {
@@ -599,7 +614,7 @@ async function campaignCard({
     throw error;
   }
 
-  const card = buildCampaignCard({ language, trackKey, pod, status: state.status, summary: state.summary ?? null, timeline: state.timeline, currentGate: state.currentGate });
+  const card = buildCampaignCard({ language, trackKey, pod, status: state.status, summary: state.summary ?? null, timeline: state.timeline, currentGate: state.currentGate, progress: state.progress ?? null });
   const token = await fetchTenantToken({ host, appId, appSecret, fetchImpl });
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
 
@@ -661,6 +676,88 @@ async function campaignCard({
   atomicWriteJson(stateFile, state);
   process.stdout.write(`messageId=${messageId}\nmode=${mode}\n`);
   return { state, messageId, mode, card };
+}
+
+// ---------- 写入进展探针（relay pod 定时 exec 的 resident 能力，2026-10-25 裁定） ----------
+//
+// 纯函数：sync.log 解析计数 + runner 存活 → 卡面进展文本。零失败不显示失败数；
+// 总数缺失（log 还没打出 (N/总)）绝不编数，退化为单元计数。
+function composeSyncProgress({ done, failed, total, runnerAlive }) {
+  if (!Number.isInteger(done) || done < 0) return null;
+  const parts = [Number.isInteger(total) && total > 0 ? `写入 ${done}/${total}` : `写入 ${done} 单元`];
+  if (Number.isInteger(failed) && failed > 0) parts.push(`失败 ${failed}`);
+  parts.push(runnerAlive ? 'runner 运行中' : 'runner 已结束');
+  return parts.join(' · ');
+}
+
+// 从一段 sync.log 文本提取 {done, failed, total}。行形态（runner 约定）：
+//   "done review:go:<Family>:<Unit> (N/118)" / "FAILED review:… — <CODE>（继续下一个单元）"
+function parseSyncLogText(text) {
+  const lines = String(text ?? '').split('\n');
+  const done = lines.filter((line) => /^done review:/.test(line)).length;
+  const failed = lines.filter((line) => /^FAILED review:/.test(line)).length;
+  let total = null;
+  for (const line of lines) {
+    const match = line.match(/\((\d+)\/(\d+)\)/);
+    if (match) total = Number(match[2]);
+  }
+  return { done, failed, total };
+}
+
+// 进展探针编排：定位最近 sync.log → 解析 → runner 存活（sync.pid + kill 0）→
+// 组文本 → 与 state.progress 相同则跳过（PATCH 省流）→ 纯进展 PATCH（无时间轴
+// 行）。返回单行结果供调用方记日志：no-sync-log / no-card-state / progress-
+// unchanged / progress-updated: <text>。卡状态读写与 PATCH 全走 campaignCard
+// 单收口（原子写+字节守卫同款纪律）。
+async function campaignProgress({
+  stateFile, repoRoot, language, trackKey, pod,
+  syncLogPath = null, openIdCachePath = null, fetchImpl = globalThis.fetch, now = () => new Date().toISOString(),
+} = {}) {
+  for (const [value, name] of [[stateFile, 'stateFile'], [repoRoot, 'repoRoot'], [language, 'language'], [trackKey, 'trackKey'], [pod, 'pod']]) {
+    if (value === undefined || value === null || value === '') {
+      const error = new Error(`campaignProgress: ${name} is required`);
+      error.code = 'USAGE';
+      throw error;
+    }
+  }
+  let logPath = syncLogPath;
+  if (!logPath) {
+    const runsDir = path.join(repoRoot, 'tmp', 'sdk-doc-sync-runs');
+    let candidates = [];
+    try {
+      candidates = fs.readdirSync(runsDir)
+        .map((name) => path.join(runsDir, name, 'sync.log'))
+        .filter((candidate) => { try { return fs.statSync(candidate).isFile(); } catch { return false; } })
+        .sort((left, right) => fs.statSync(right).mtimeMs - fs.statSync(left).mtimeMs);
+    } catch {
+      // runs 目录不存在=尚无写入 runner
+    }
+    if (candidates.length === 0) return 'no-sync-log';
+    logPath = candidates[0];
+  }
+  const parsed = parseSyncLogText(fs.readFileSync(logPath, 'utf8'));
+  let runnerAlive = false;
+  try {
+    const pid = Number(fs.readFileSync(path.join(path.dirname(logPath), 'sync.pid'), 'utf8').trim());
+    process.kill(pid, 0);
+    runnerAlive = true;
+  } catch (error) {
+    runnerAlive = error?.code === 'EPERM'; // EPERM=进程在但无权发信号，也算活
+  }
+  const text = composeSyncProgress({ done: parsed.done, failed: parsed.failed, total: parsed.total, runnerAlive });
+  if (!text) return 'no-sync-log';
+  if (!fs.existsSync(stateFile)) return 'no-card-state';
+  let state;
+  try {
+    state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  } catch {
+    return 'no-card-state';
+  }
+  if (state.progress === text) return 'progress-unchanged';
+  await campaignCard({
+    stateFile, repoRoot, event: null, progress: text, pod, trackKey, language, openIdCachePath, fetchImpl, now,
+  });
+  return `progress-updated: ${text}`;
 }
 
 // ---------- message_id 入账（规格 4：现发完即弃=撤不回，先入账） ----------
@@ -813,10 +910,12 @@ async function runCli(argv = process.argv.slice(2)) {
     }
     case 'campaign-card': {
       // 战役常驻卡唯一收口：追加时间轴 → 重算卡 JSON → send/PATCH → 原子写回状态。
+      // --progress 例外：纯进展更新（无事件、不进时间轴），见 campaignCard 注释。
       await campaignCard({
         stateFile: requireAbsolute(args.state, '--state'),
         repoRoot: requireAbsolute(args['repo-root'], '--repo-root'),
-        event: requireValue(args.event, '--event'),
+        event: args.event ?? null,
+        progress: args.progress !== undefined ? args.progress : undefined,
         presentationFile: args.presentation ? path.resolve(args.presentation) : null,
         indexId: args['index-id'] ?? null,
         pod: requireValue(args.pod, '--pod'),
@@ -828,6 +927,21 @@ async function runCli(argv = process.argv.slice(2)) {
         newCampaign: args['new-campaign'] === true,
         openIdCachePath: args['open-id-cache'] ? path.resolve(args['open-id-cache']) : null,
       });
+      return 0;
+    }
+    case 'campaign-progress': {
+      // 写入进展探针（relay pod 定时 exec 调；也可人工跑一次）。与 state.progress
+      // 相同则跳过 PATCH（省流），结果单行走 stdout 供调用方记日志。
+      const result = await campaignProgress({
+        stateFile: requireAbsolute(args.state, '--state'),
+        repoRoot: requireAbsolute(args['repo-root'], '--repo-root'),
+        language: requireValue(args.language, '--language'),
+        trackKey: requireValue(args['track-key'], '--track-key'),
+        pod: requireValue(args.pod, '--pod'),
+        syncLogPath: args['sync-log'] ? path.resolve(args['sync-log']) : null,
+        openIdCachePath: args['open-id-cache'] ? path.resolve(args['open-id-cache']) : null,
+      });
+      process.stdout.write(`${result}\n`);
       return 0;
     }
     case 'emit-event': {
@@ -894,8 +1008,11 @@ module.exports = {
   GATE_LABELS_ZH,
   OPENCODE_PROVIDER_KEY,
   RELEASE_TRACKS_RELATIVE_PATH,
-  TIMELINE_VISIBLE,
   buildCampaignCard,
+  campaignProgress,
+  composeSyncProgress,
+  parseSyncLogText,
+  TIMELINE_VISIBLE,
   buildGateCard,
   buildGateCardText,
   campaignCard,

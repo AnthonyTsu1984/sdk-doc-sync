@@ -789,8 +789,74 @@ test('campaign-card CLI 状态机: PATCH 返回非 JSON（网关 HTML 400 页）
   });
 });
 
-test('campaign-card CLI: 必填参数缺失 typed USAGE；--approved 等布尔旗标可置于带值旗标之前（parseCli 豁免名单）', async () => {
-  const work = tmpdir('campaign-cli-usage');
+// ---------- 5c. 写入进展探针（relay resident 定时 exec 的 worker 侧能力） ----------
+
+test('composeSyncProgress: 三形态（总数有/无、零失败省略、runner 存亡）；parseSyncLogText 计数与总数', () => {
+  const { composeSyncProgress, parseSyncLogText } = require(path.join(REPO_ROOT, 'deploy', 'lib.js'));
+  assert.equal(composeSyncProgress({ done: 49, failed: 6, total: 118, runnerAlive: true }), '写入 49/118 · 失败 6 · runner 运行中');
+  assert.equal(composeSyncProgress({ done: 49, failed: 0, total: 118, runnerAlive: false }), '写入 49/118 · runner 已结束');
+  assert.equal(composeSyncProgress({ done: 3, failed: 0, total: null, runnerAlive: true }), '写入 3 单元 · runner 运行中');
+  assert.equal(composeSyncProgress({ done: -1, failed: 0, total: 118, runnerAlive: true }), null);
+
+  const parsed = parseSyncLogText([
+    'done review:go:Authentication:CreateUser (6/118)',
+    'FAILED review:go:Authentication:DropUser — NO_EXECUTION_BATCH（继续下一个单元）',
+    'done review:go:Authentication:DropRole (8/118)',
+    'noise line',
+  ].join('\n'));
+  assert.deepEqual(parsed, { done: 2, failed: 1, total: 118 });
+});
+
+test('buildCampaignCard: --progress 渲染进概况区块（不进时间轴）；无 progress 不出该行', () => {
+  const { buildCampaignCard } = require(path.join(REPO_ROOT, 'deploy', 'lib.js'));
+  const base = { language: 'go', trackKey: 'go-v3', pod: 'go-v3-worker' };
+  const withProgress = buildCampaignCard({ ...base, progress: '写入 49/118 · 失败 6 · runner 运行中' });
+  assert.match(withProgress.elements[0].text.content, /写入进展: 写入 49\/118 · 失败 6 · runner 运行中/);
+  assert.equal(withProgress.elements.length, 3);   // 概况+时间轴+尾注（无门无按钮）
+  const without = buildCampaignCard({ ...base });
+  assert.doesNotMatch(without.elements[0].text.content, /写入进展/);
+});
+
+test('campaign-card CLI: --progress 纯进展更新——不刷时间轴、state.progress 落盘、PATCH 同卡', async () => {
+  const work = tmpdir('campaign-progress');
+  const stateFile = path.join(work, 'card-go-v3.json');
+  const stub = campaignCardFetchStub({ nextMessageId: 'om_card_1' });
+  await withCampaignCardEnv(work, async (runCli, io) => {
+    // 先发一张卡（1 条时间轴）
+    await runCli(['campaign-card', '--state', stateFile, '--repo-root', work,
+      '--event', '▶️ 派单 go-v3（PR intake 4 条）',
+      '--pod', 'go-v3-worker', '--track-key', 'go-v3', '--language', 'go']);
+    assert.equal(stub.calls.length, 1);
+    // 纯进展更新：无 --event，PATCH 同卡，时间轴不增长
+    await runCli(['campaign-card', '--state', stateFile, '--repo-root', work,
+      '--progress', '写入 49/118 · 失败 6 · runner 运行中',
+      '--pod', 'go-v3-worker', '--track-key', 'go-v3', '--language', 'go']);
+    assert.equal(stub.calls.length, 2);
+    assert.equal(stub.calls[1].method, 'PATCH');
+    assert.match(stub.calls[1].url, /\/open-apis\/im\/v1\/messages\/om_card_1$/);
+    assert.match(JSON.parse(stub.calls[1].body.content).elements[0].text.content, /写入进展: 写入 49\/118/);
+    const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    assert.equal(state.progress, '写入 49/118 · 失败 6 · runner 运行中');
+    assert.equal(state.timeline.length, 1);   // 不刷时间轴
+    // 相同进展再刷 → 仍 PATCH（CLI 层不管去重，campaignProgress 层守卫）；但 event+progress 同给=时间轴也走
+    await runCli(['campaign-card', '--state', stateFile, '--repo-root', work,
+      '--event', '✅ 战役批准已批准（注入，续跑中）',
+      '--pod', 'go-v3-worker', '--track-key', 'go-v3', '--language', 'go']);
+    assert.equal(JSON.parse(fs.readFileSync(stateFile, 'utf8')).timeline.length, 2);
+  });
+});
+
+test('campaign-card CLI: 无 event 且无 progress → typed USAGE（进展例外不吞事件必填纪律）', async () => {
+  const work = tmpdir('campaign-usage-progress');
+  const { runCli } = campaignCardModule();
+  await assert.rejects(
+    runCli(['campaign-card', '--state', path.join(work, 'card.json'), '--repo-root', work,
+      '--pod', 'p', '--track-key', 'k', '--language', 'python']),
+    (error) => error.code === 'USAGE',
+  );
+});
+
+test('campaign-card CLI: 必填参数缺失 typed USAGE；--approved 等布尔旗标可置于带值旗标之前（parseCli 豁免名单）', async () => {  const work = tmpdir('campaign-cli-usage');
   const { runCli, CLI_BOOLEAN_FLAGS } = campaignCardModule();
   await assert.rejects(
     runCli(['campaign-card', '--state', path.join(work, 'card.json'), '--repo-root', work, '--event', 'x']),

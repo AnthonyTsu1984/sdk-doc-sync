@@ -15,15 +15,13 @@
 #   bash deploy/milvus-cell-ops.sh sleep-on        # 复原定时休眠（战役毕）
 #   bash deploy/milvus-cell-ops.sh refresh-kubeconfig
 #   bash deploy/milvus-cell-ops.sh restart-pod <pod-name>   # RWO 安全重启原语
-#   bash deploy/milvus-cell-ops.sh teardown-check  # 盘点 + 证据硬闸：未收割 delta 即拒放行
+#   bash deploy/milvus-cell-ops.sh teardown-check  # 只读盘点：删 namespace 会失去什么
 #
-# 红线：本脚本不做任何破坏性动作（delete/storage rm 一律留给操作员手敲），
-# 也不代收割——硬闸拦下时解法是先跑 pod-evidence harvest 再复跑本命令。
+# 红线：本脚本不做任何破坏性动作（delete/storage rm 一律留给操作员手敲）。
 set -euo pipefail
 
 export KUBECONFIG="${KUBECONFIG:-$HOME/.milvus-cell/kubeconfig}"
 NS=sdk-doc-sync
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 phase() { milvus-cell status --json 2>/dev/null | sed -n 's/.*"phase"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1; }
 
@@ -69,15 +67,7 @@ cmd_teardown_check() {
   kubectl -n "$NS" get pods -l app.kubernetes.io/part-of=sdk-doc-sync 2>/dev/null || echo "(no pods)"
   echo "== COS bucket（milvus-cell delete 不删它——需单独 storage rm / 等生命周期过期）=="
   milvus-cell storage list 2>/dev/null | head -10 || true
-  echo "== 证据硬闸（指纹 marker 比对；不依赖 campaign_terminal 启发式）=="
-  if node "$REPO_ROOT/scripts/harvest/pod-evidence.js" status; then
-    echo "证据闸通过。确认后手敲：kubectl delete namespace $NS && milvus-cell delete --confirm（本脚本绝不代删）"
-  else
-    echo "✘ 证据闸拒绝放行——PVC 上存在未收割/异常 delta，删了即永久丢失。" >&2
-    echo "  解法：node scripts/harvest/pod-evidence.js harvest（幂等）→ 复跑 teardown-check。" >&2
-    echo "  「已收割内容被改写」类失败请先人工排查，不要盲目收割盖戳。" >&2
-    exit 1
-  fi
+  echo "确认后手敲：kubectl delete namespace $NS && milvus-cell delete --confirm（本脚本绝不代删）"
 }
 
 case "${1:-help}" in

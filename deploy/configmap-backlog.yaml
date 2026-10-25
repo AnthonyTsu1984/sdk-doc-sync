@@ -1,4 +1,4 @@
-# deploy/configmap-backlog.yaml — S2 worker pod 种账本用的 per-language backlog。
+# deploy/configmap-backlog.yaml — S2 双 pod 种账本用的 per-language backlog。
 #
 # 数据来源（机械提取，可复算）：从主树账本
 # tmp/api-reference-sync/daily-scan/pr-findings.jsonl（批 17 扫描产物，快照日
@@ -6,7 +6,6 @@
 # --discovered-on 2026-10-24` 提取该语言 pending 条目：
 #   - python 6 条（#1184 #1188 #1191 #1198 #1199 #1207）
 #   - java   8 条（#1174 #1175 #1178 #1186 #1190 #1198 #1200 #1204）
-#   - go     4 条（#1179 #1195 #1196 #1198）——2026-10-25 go-v3 冒烟补块
 # 口径：discovered 事件且 languages 含目标语言、同 prNumber 的 languages 取并集
 # （#1198 是 go/java/node/python 四语联合条目）；已 disposed 的 #1173/#1181 排除；
 # discoveredOn 统一快照日 2026-10-24。字段：prNumber/languages/title/url/mergedAt。
@@ -37,8 +36,3 @@ data:
     {"prNumber":1198,"languages":["go","java","python","node"],"title":"Fix pymilvus API reference issues and clarify hybrid_search pagination","url":"https://github.com/milvus-io/web-content/pull/1198","mergedAt":"2026-10-22T04:12:48Z","discoveredOn":"2026-10-24"}
     {"prNumber":1200,"languages":["java"],"title":"Add MilvusClientException type page to java SDK API reference","url":"https://github.com/milvus-io/web-content/pull/1200","mergedAt":"2026-10-22T07:54:28Z","discoveredOn":"2026-10-24"}
     {"prNumber":1204,"languages":["java"],"title":"Add missing standalone type pages to Java SDK API reference","url":"https://github.com/milvus-io/web-content/pull/1204","mergedAt":"2026-10-22T10:40:48Z","discoveredOn":"2026-10-24"}
-  go.jsonl: |
-    {"prNumber":1179,"languages":["go"],"title":"Reconcile milvus-sdk-go API reference docs (v2.6.x, v3.0.x)","url":"https://github.com/milvus-io/web-content/pull/1179","mergedAt":"2026-10-15T00:00:00Z","discoveredOn":"2026-10-24"}
-    {"prNumber":1195,"languages":["go"],"title":"Reconcile Go SDK v2.6.x and v3.0.x API reference","url":"https://github.com/milvus-io/web-content/pull/1195","mergedAt":"2026-10-21T10:42:17Z","discoveredOn":"2026-10-24"}
-    {"prNumber":1196,"languages":["go"],"title":"Document unexported state in Go SDK task structs","url":"https://github.com/milvus-io/web-content/pull/1196","mergedAt":"2026-10-21T10:50:09Z","discoveredOn":"2026-10-24"}
-    {"prNumber":1198,"languages":["go","java","python","node"],"title":"Fix pymilvus API reference issues and clarify hybrid_search pagination","url":"https://github.com/milvus-io/web-content/pull/1198","mergedAt":"2026-10-22T04:12:48Z","discoveredOn":"2026-10-24"}

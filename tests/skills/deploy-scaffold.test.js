@@ -165,34 +165,26 @@ function readConfigMapBlock(file, key) {
   return block.join('\n');
 }
 
-test('configmap-backlog.yaml: python 6 / java 8 / go 4 entries, all discoveredOn 2026-10-24, extractor-idempotent', () => {
+test('configmap-backlog.yaml: python 6 entries / java 8 entries, all discoveredOn 2026-10-24, extractor-idempotent', () => {
   const pythonText = readConfigMapBlock('deploy/configmap-backlog.yaml', 'python.jsonl');
   const javaText = readConfigMapBlock('deploy/configmap-backlog.yaml', 'java.jsonl');
-  const goText = readConfigMapBlock('deploy/configmap-backlog.yaml', 'go.jsonl');
   const parse = (text) => text.split('\n').filter((line) => line.trim()).map((line) => JSON.parse(line));
   const python = parse(pythonText);
   const java = parse(javaText);
-  const go = parse(goText);
   assert.equal(python.length, 6, 'python backlog 条数');
   assert.equal(java.length, 8, 'java backlog 条数');
-  assert.equal(go.length, 4, 'go backlog 条数');
   assert.deepEqual(python.map((entry) => entry.prNumber), [1184, 1188, 1191, 1198, 1199, 1207]);
   assert.deepEqual(java.map((entry) => entry.prNumber), [1174, 1175, 1178, 1186, 1190, 1198, 1200, 1204]);
-  assert.deepEqual(go.map((entry) => entry.prNumber), [1179, 1195, 1196, 1198]);
-  for (const entry of [...python, ...java, ...go]) {
+  for (const entry of [...python, ...java]) {
     assert.equal(entry.discoveredOn, '2026-10-24');
     assert.ok(Array.isArray(entry.languages) && entry.languages.length > 0);
   }
   // 快照数据本身满足提取器幂等（再提一遍形状不变）。
   const repython = extractBacklogEntries(python.map((entry) => ({ type: 'discovered', ...entry })), 'python', { discoveredOn: '2026-10-24' });
   assert.deepEqual(repython, python);
-  // #1198 四语联合条目在各语言 backlog 中一致。
+  // #1198 四语联合条目在两份 backlog 中一致。
   assert.deepEqual(
     python.find((entry) => entry.prNumber === 1198).languages.sort(),
-    java.find((entry) => entry.prNumber === 1198).languages.sort(),
-  );
-  assert.deepEqual(
-    go.find((entry) => entry.prNumber === 1198).languages.sort(),
     java.find((entry) => entry.prNumber === 1198).languages.sort(),
   );
 });

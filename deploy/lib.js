@@ -607,27 +607,15 @@ async function campaignCard({
   let messageId = state.messageId;
   if (messageId) {
     mode = 'patch';
-    // method 必须大写：fetch 规范只自动大写 POST/GET/PUT/DELETE/HEAD/OPTIONS，
-    // 小写 'patch' 按字面量上线（HTTP 方法区分大小写）→ 飞书边缘网关路由不进
-    // JSON API、回 HTML 400 页（2026-10-25 go-v3 首战实测，UNDICI-FETCH-patch
-    // 警告即此坑）。响应统一 text→JSON.parse：非 JSON（HTML 错误页）也走降级
-    // 发新卡，降级路径不可被响应形状短路。
     const response = await fetchImpl(`${host}/open-apis/im/v1/messages/${messageId}`, {
-      method: 'PATCH',
+      method: 'patch',
       headers,
       body: JSON.stringify({ content: JSON.stringify(card) }),
     });
-    const responseText = await response.text();
-    let payload = null;
-    try {
-      payload = JSON.parse(responseText);
-    } catch {
-      payload = null;
-    }
-    if (!payload || payload.code !== 0) {
+    const payload = await response.json();
+    if (payload.code !== 0) {
       mode = 'send-fallback';
-      const detail = payload ? `code=${payload.code} msg=${payload.msg}` : `non-JSON response head=${JSON.stringify(responseText.slice(0, 80))}`;
-      process.stderr.write(`deploy/lib: CARD_PATCH_FAILED messageId=${messageId} ${detail} — 降级发新卡，状态里的 messageId 将更新\n`);
+      process.stderr.write(`deploy/lib: CARD_PATCH_FAILED messageId=${messageId} code=${payload.code} msg=${payload.msg} — 降级发新卡，状态里的 messageId 将更新\n`);
     }
   }
   if (mode !== 'patch') {

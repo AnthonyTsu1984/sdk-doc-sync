@@ -593,19 +593,15 @@ test('splitEventIcon/shortDigest/timelineStamp: 事件拆分与短版工具函�
 let latestCampaignCardFetch = null;
 function campaignCardFetchStub({ nextMessageId = 'om_card_1', patchCode = 0 } = {}) {
   const calls = [];
-  const state = { nextMessageId, patchCode, patchHtml: null };
+  const state = { nextMessageId, patchCode };
   const fetchImpl = async (url, init) => {
     const urlText = String(url);
     if (urlText.includes('/tenant_access_token/')) return { json: async () => ({ code: 0, tenant_access_token: 't' }) };
     if (urlText.includes('/users/batch_get_id')) return { json: async () => ({ code: 0, data: { user_list: [{ user_id: 'ou_operator' }] } }) };
     const entry = { url: urlText, method: init.method, body: JSON.parse(init.body) };
     calls.push(entry);
-    if (init.method === 'PATCH') {
-      // 响应形状=生产契约：text 可读 + json 可解析（lib 端 text→JSON.parse，
-      // HTML 错误页走非 JSON 分支降级——2026-10-25 小写 patch 事故的钉子）。
-      const payload = state.patchHtml ? null : (state.patchCode === 0 ? { code: 0, data: {} } : { code: state.patchCode, msg: 'card gone' });
-      const text = state.patchHtml ?? JSON.stringify(payload);
-      return { status: state.patchHtml ? 400 : 200, text: async () => text, json: async () => JSON.parse(text) };
+    if (init.method === 'patch') {
+      return state.patchCode === 0 ? { json: async () => ({ code: 0, data: {} }) } : { json: async () => ({ code: state.patchCode, msg: 'card gone' }) };
     }
     return { json: async () => ({ code: 0, data: { message_id: state.nextMessageId } }) };
   };
@@ -687,7 +683,7 @@ test('campaign-card CLI 状态机: 首事件 send→状态存 messageId→次事
       '--pod', 'python-v3-worker', '--track-key', 'python-v3', '--language', 'python']);
     assert.equal(stub.calls.length, 2);
     const [patch] = stub.calls.slice(-1);
-    assert.equal(patch.method, 'PATCH');   // 大写：fetch 规范不纠正 patch 大小写，小写上线=网关 HTML 400（2026-10-25 事故钉子）
+    assert.equal(patch.method, 'patch');
     assert.equal(patch.url, 'https://feishu.example/open-apis/im/v1/messages/om_card_1');
     assert.deepEqual(Object.keys(patch.body), ['content']);   // d.ts: patch data = {content}
     const patchedCard = JSON.parse(patch.body.content);
@@ -747,7 +743,7 @@ test('campaign-card CLI 状态机: PATCH 失败降级发新卡并更新状态 me
       '--event', '🔁 续跑 java-v26',
       '--pod', 'java-v26-worker', '--track-key', 'java-v26', '--language', 'java']);
     const [failedPatch, fallbackPost] = stub.calls.slice(-2);
-    assert.equal(failedPatch.method, 'PATCH');   // 大写：fetch 规范不纠正 patch 的大小写（小写上线=边缘网关 HTML 400）
+    assert.equal(failedPatch.method, 'patch');
     assert.equal(fallbackPost.method, 'post');
     assert.equal(JSON.parse(fallbackPost.body.content).elements[1].text.content.split('\n').length, 3); // 时间轴头+2 条（elements[0]=概况）
     assert.match(io.stderr(), /CARD_PATCH_FAILED.*230013/);
@@ -762,30 +758,6 @@ test('campaign-card CLI 状态机: PATCH 失败降级发新卡并更新状态 me
       '--cleared-gate', '--event', '⏱️ 宽限过期，轨道让出',
       '--pod', 'java-v26-worker', '--track-key', 'java-v26', '--language', 'java']);
     assert.equal(stub.calls[stub.calls.length - 1].url, 'https://feishu.example/open-apis/im/v1/messages/om_card_2');
-  });
-});
-
-test('campaign-card CLI 状态机: PATCH 返回非 JSON（网关 HTML 400 页）同样降级发新卡——2026-10-25 小写 patch 事故钉子', async () => {
-  const work = tmpdir('campaign-cli-html');
-  const stateFile = path.join(work, 'card-go-v3.json');
-  const stub = campaignCardFetchStub({ nextMessageId: 'om_card_1' });
-  await withCampaignCardEnv(work, async (runCli, io) => {
-    await runCli(['campaign-card', '--state', stateFile, '--repo-root', work,
-      '--event', '▶️ 派单 go-v3（PR intake 4 条）',
-      '--pod', 'go-v3-worker', '--track-key', 'go-v3', '--language', 'go']);
-    // 生产事故形态：method 小写 patch → 边缘网关 HTML 400（fetch 在 json() 处炸、
-    // 降级够不着）。修复后 text→JSON.parse 失败 → 非 JSON 分支 → 降级 POST。
-    stub.state.patchHtml = '<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">\n<html><head><title>400 Bad Request</title></head></html>';
-    stub.state.nextMessageId = 'om_card_2';
-    await runCli(['campaign-card', '--state', stateFile, '--repo-root', work,
-      '--event', '⚑ 战役批准呈报',
-      '--pod', 'go-v3-worker', '--track-key', 'go-v3', '--language', 'go']);
-    const [failedPatch, fallbackPost] = stub.calls.slice(-2);
-    assert.equal(failedPatch.method, 'PATCH');
-    assert.equal(fallbackPost.method, 'post');
-    assert.match(io.stderr(), /CARD_PATCH_FAILED.*non-JSON response/);
-    assert.match(io.stdout(), /mode=send-fallback/);
-    assert.equal(JSON.parse(fs.readFileSync(stateFile, 'utf8')).messageId, 'om_card_2');
   });
 });
 

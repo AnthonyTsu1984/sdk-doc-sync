@@ -1,10 +1,10 @@
 'use strict';
 
-// Campaign batch presentation (2026-10-01 batch ruling): the campaign
-// approval may cover a batch of documents at once — fewer than 20 pending
-// documents are one batch; 20 or more are presented in order in batches of
-// 20. Ordering follows the review-unit manifest; chunking never reorders,
-// drops, or deduplicates.
+// Write-approval batch presentation (2026-10-01 two-gate ruling): the
+// APPROVE_WRITE gate may present a batch of documents at once — fewer than 20
+// pending documents are one batch; 20 or more are presented in order in
+// batches of 20. Ordering follows the review-unit manifest; chunking never
+// reorders, drops, or deduplicates.
 
 const WRITE_APPROVAL_BATCH_SIZE = 20;
 

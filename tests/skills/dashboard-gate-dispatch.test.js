@@ -31,38 +31,38 @@ function cardFixture(overrides = {}) {
     language: 'node',
     checkout: 'main',
     health: 'active',
-    nextGate: { gate: 'APPROVE_CAMPAIGN', digest: DIGEST },
+    nextGate: { gate: 'APPROVE_WRITE', digest: DIGEST },
     workers: [{ sessionId: 'sess_w', status: 'idle' }],
     ...overrides,
   };
 }
 
-function campaignIndexFixture() {
+function writesIndexFixture() {
   return {
     schema: 1,
     sessionKey: SESSION_PATH.split(path.sep).join('/').replace(/[^A-Za-z0-9._-]/g, '-'),
     sessionPath: SESSION_PATH,
-    gate: 'APPROVE_CAMPAIGN',
-    title: 'APPROVE_CAMPAIGN — 战役门',
+    gate: 'APPROVE_WRITES',
+    title: 'APPROVE_WRITES — 批准门',
     generatedAt: '2026-10-20T01:00:00.000Z',
     digest: DIGEST,
-    replyLines: [`APPROVE_CAMPAIGN ${DIGEST}`],
+    replyLines: [`APPROVE_WRITES ${DIGEST}`],
     units: [],
     notes: '',
   };
 }
 
-function rollbackIndexFixture() {
+function documentIndexFixture() {
   return {
     schema: 1,
     sessionPath: SESSION_PATH,
-    gate: 'APPROVE_ROLLBACK',
-    title: 'APPROVE_ROLLBACK — 2 单元',
+    gate: 'APPROVE_DOCUMENT',
+    title: 'APPROVE_DOCUMENT — 2 单元',
     generatedAt: '2026-10-20T01:00:00.000Z',
     digest: null,
     replyLines: [
-      `APPROVE_ROLLBACK review:u1 ${UNIT_DIGEST}`,
-      `APPROVE_ROLLBACK review:u2 ${UNIT2_DIGEST}`,
+      `APPROVE_DOCUMENT review:u1 ${UNIT_DIGEST}`,
+      `APPROVE_DOCUMENT review:u2 ${UNIT2_DIGEST}`,
     ],
     units: [],
     notes: '',
@@ -71,11 +71,16 @@ function rollbackIndexFixture() {
 
 // ---------- approval-line grammar (moved verbatim from server.js) ----------
 
-test('validateApproveLine: campaign and rollback lines pass, prose fails', () => {
-  assert.ok(validateApproveLine(`APPROVE_CAMPAIGN ${DIGEST}`));
+test('validateApproveLine: every registered digest-bound gate passes, prose fails', () => {
+  assert.ok(validateApproveLine(`APPROVE_GROUPING ${DIGEST}`));
+  assert.ok(validateApproveLine(`APPROVE_WRITES ${DIGEST}`));
   assert.ok(validateApproveLine(`APPROVE_ROLLBACK review:u1 ${DIGEST}`));
-  assert.ok(validateApproveLine(`  APPROVE_ROLLBACK review:u1 ${UNIT_DIGEST}  `));
-  assert.ok(!validateApproveLine(`APPROVE_CAMPAIGN not-a-digest`));
+  assert.ok(validateApproveLine(`APPROVE_ACCEPTANCE ${DIGEST}`));
+  // slice B: the merged campaign gate joined the grammar (registry carried it
+  // since batch-16; the old endpoint copy predated it).
+  assert.ok(validateApproveLine(`APPROVE_CAMPAIGN ${DIGEST}`));
+  assert.ok(validateApproveLine(`  APPROVE_DOCUMENT review:u1 ${UNIT_DIGEST}  `));
+  assert.ok(!validateApproveLine(`APPROVE_GROUPING not-a-digest`));
   assert.ok(!validateApproveLine(`批准`));
   assert.ok(!validateApproveLine(''));
   assert.match(APPROVE_LINE_RE.source, /CAMPAIGN/);
@@ -88,8 +93,8 @@ test('approve happy path returns the resume action with the injected line and ch
     intent: 'approve',
     card: cardFixture(),
     sessionId: 'sess_w',
-    line: `APPROVE_CAMPAIGN ${DIGEST}`,
-    presentationIndex: campaignIndexFixture(),
+    line: `APPROVE_WRITES ${DIGEST}`,
+    presentationIndex: writesIndexFixture(),
     checkoutRoot: '/repo/main',
   });
   assert.equal(plan.ok, true);
@@ -97,7 +102,7 @@ test('approve happy path returns the resume action with the injected line and ch
   assert.deepEqual(plan.action, {
     type: 'resume',
     sessionId: 'sess_w',
-    line: `APPROVE_CAMPAIGN ${DIGEST}`,
+    line: `APPROVE_WRITES ${DIGEST}`,
     checkoutRoot: '/repo/main',
   });
 });
@@ -114,16 +119,16 @@ test('approve guard: malformed line → 400 with the exact endpoint text', () =>
 
 test('approve guard: rejectInFlight → 409 with the exact endpoint text', () => {
   const plan = planCampaignGateDecision({
-    intent: 'approve', card: cardFixture({ rejectInFlight: true }), sessionId: 'sess_w', line: `APPROVE_CAMPAIGN ${DIGEST}`,
+    intent: 'approve', card: cardFixture({ rejectInFlight: true }), sessionId: 'sess_w', line: `APPROVE_WRITES ${DIGEST}`,
   });
   assert.equal(plan.code, 'REJECT_IN_FLIGHT_APPROVE');
   assert.equal(plan.status, 409);
-  assert.equal(plan.message, '该门已打回、新会话重规划中——旧批准行随打回失效，等新战役门呈报后再批');
+  assert.equal(plan.message, '该门已打回、新会话重规划中——旧批准行随打回失效，等新写门呈报后再批');
 });
 
 test('approve guard: non-board worker → 404 with the exact endpoint text', () => {
   const plan = planCampaignGateDecision({
-    intent: 'approve', card: cardFixture(), sessionId: 'sess_stranger', line: `APPROVE_CAMPAIGN ${DIGEST}`,
+    intent: 'approve', card: cardFixture(), sessionId: 'sess_stranger', line: `APPROVE_WRITES ${DIGEST}`,
   });
   assert.equal(plan.code, 'NOT_BOARD_WORKER_APPROVE');
   assert.equal(plan.status, 404);
@@ -135,7 +140,7 @@ test('approve guard: worker mid-turn → 409 with the exact endpoint text', () =
     intent: 'approve',
     card: cardFixture({ workers: [{ sessionId: 'sess_w', status: 'running' }] }),
     sessionId: 'sess_w',
-    line: `APPROVE_CAMPAIGN ${DIGEST}`,
+    line: `APPROVE_WRITES ${DIGEST}`,
   });
   assert.equal(plan.code, 'WORKER_BUSY_APPROVE');
   assert.equal(plan.status, 409);
@@ -152,7 +157,7 @@ test('approve guard: sibling running → 409 with the exact endpoint text', () =
       ],
     }),
     sessionId: 'sess_w',
-    line: `APPROVE_CAMPAIGN ${DIGEST}`,
+    line: `APPROVE_WRITES ${DIGEST}`,
   });
   assert.equal(plan.code, 'SIBLING_RUNNING');
   assert.equal(plan.status, 409);
@@ -161,7 +166,7 @@ test('approve guard: sibling running → 409 with the exact endpoint text', () =
 
 test('approve guard: recent transcript write (injected IO) → 409 with the seconds text', () => {
   const plan = planCampaignGateDecision({
-    intent: 'approve', card: cardFixture(), sessionId: 'sess_w', line: `APPROVE_CAMPAIGN ${DIGEST}`,
+    intent: 'approve', card: cardFixture(), sessionId: 'sess_w', line: `APPROVE_WRITES ${DIGEST}`,
     sessionRecentlyActiveOf: () => 34_000,
   });
   assert.equal(plan.code, 'RECENTLY_ACTIVE');
@@ -174,7 +179,7 @@ test('approve guard: guard order — rejectInFlight wins over worker attribution
     intent: 'approve',
     card: cardFixture({ rejectInFlight: true }),
     sessionId: 'sess_stranger',
-    line: `APPROVE_CAMPAIGN ${DIGEST}`,
+    line: `APPROVE_WRITES ${DIGEST}`,
   });
   assert.equal(plan.code, 'REJECT_IN_FLIGHT_APPROVE');
 });
@@ -186,8 +191,8 @@ test('approve binding: line must be verbatim one of the re-read index replyLines
     intent: 'approve',
     card: cardFixture(),
     sessionId: 'sess_w',
-    line: `APPROVE_CAMPAIGN ${OTHER_DIGEST}`, // well-formed, but not what the artifact binds
-    presentationIndex: campaignIndexFixture(),
+    line: `APPROVE_WRITES ${OTHER_DIGEST}`, // well-formed, but not what the artifact binds
+    presentationIndex: writesIndexFixture(),
   });
   assert.equal(plan.ok, false);
   assert.equal(plan.code, 'LINE_NOT_IN_PRESENTATION');
@@ -200,8 +205,8 @@ test('approve binding: re-read index bound to another session/gate refuses as mi
     intent: 'approve',
     card: cardFixture({ sessionPath: 'tmp/sdk-doc-sync-runs/other/review-session.json' }),
     sessionId: 'sess_w',
-    line: `APPROVE_CAMPAIGN ${DIGEST}`,
-    presentationIndex: campaignIndexFixture(),
+    line: `APPROVE_WRITES ${DIGEST}`,
+    presentationIndex: writesIndexFixture(),
   });
   assert.equal(plan.code, 'PRESENTATION_MISMATCH');
   assert.equal(plan.message, '呈门工件与当前战役门不一致（gate/会话不匹配）——以看板最新呈现为准');
@@ -212,13 +217,13 @@ test('approve binding: notification-time digest disagreement → STALE with inva
     intent: 'approve',
     card: cardFixture(),
     sessionId: 'sess_w',
-    line: `APPROVE_CAMPAIGN ${DIGEST}`,
-    presentationIndex: campaignIndexFixture(),
-    notifyBinding: { key: 'gate:main::x:APPROVE_CAMPAIGN', digest: OTHER_DIGEST, replyLine: `APPROVE_CAMPAIGN ${DIGEST}` },
+    line: `APPROVE_WRITES ${DIGEST}`,
+    presentationIndex: writesIndexFixture(),
+    notifyBinding: { key: 'gate:main::x:APPROVE_WRITES', digest: OTHER_DIGEST, replyLine: `APPROVE_WRITES ${DIGEST}` },
   });
   assert.equal(plan.ok, false);
   assert.equal(plan.code, 'STALE_PRESENTATION');
-  assert.equal(plan.invalidateKey, 'gate:main::x:APPROVE_CAMPAIGN');
+  assert.equal(plan.invalidateKey, 'gate:main::x:APPROVE_WRITES');
   assert.match(plan.message, /已变化/);
 });
 
@@ -227,7 +232,7 @@ test('approve binding: relay path requires an index at all (bindingRequired)', (
     intent: 'approve',
     card: cardFixture(),
     sessionId: 'sess_w',
-    line: `APPROVE_CAMPAIGN ${DIGEST}`,
+    line: `APPROVE_WRITES ${DIGEST}`,
     bindingRequired: true,
     presentationIndex: null,
   });
@@ -240,25 +245,25 @@ test('approve binding: HTTP path without an attached index keeps the shape-only 
     intent: 'approve',
     card: cardFixture(),
     sessionId: 'sess_w',
-    line: `APPROVE_CAMPAIGN ${DIGEST}`,
+    line: `APPROVE_WRITES ${DIGEST}`,
     presentationIndex: null,
   });
   assert.equal(plan.ok, true, 'legacy cards (no index attached) dispatch exactly as before');
 });
 
-test('approve binding: unit-scoped rollback disambiguation by targetUnitId', () => {
-  const card = cardFixture({ nextGate: { gate: 'APPROVE_ROLLBACK', reviewUnitId: 'review:u1' } });
-  const index = rollbackIndexFixture();
+test('approve binding: multi-unit DOCUMENT disambiguation by targetUnitId', () => {
+  const card = cardFixture({ nextGate: { gate: 'APPROVE_DOCUMENT', reviewUnitId: 'review:u1' } });
+  const index = documentIndexFixture();
   const good = planCampaignGateDecision({
     intent: 'approve', card, sessionId: 'sess_w',
-    line: `APPROVE_ROLLBACK review:u2 ${UNIT2_DIGEST}`, targetUnitId: 'review:u2',
+    line: `APPROVE_DOCUMENT review:u2 ${UNIT2_DIGEST}`, targetUnitId: 'review:u2',
     presentationIndex: index,
   });
   assert.equal(good.ok, true, 'the matching unit line passes');
 
   const wrongUnit = planCampaignGateDecision({
     intent: 'approve', card, sessionId: 'sess_w',
-    line: `APPROVE_ROLLBACK review:u2 ${UNIT2_DIGEST}`, targetUnitId: 'review:u1',
+    line: `APPROVE_DOCUMENT review:u2 ${UNIT2_DIGEST}`, targetUnitId: 'review:u1',
     presentationIndex: index,
   });
   assert.equal(wrongUnit.ok, false);
@@ -339,7 +344,7 @@ test('reject guard texts mirror the request-changes endpoint byte for byte', () 
     intent: 'reject', card: cardFixture({ rejectInFlight: true }), sessionId: 'sess_w', rejectMode: 'write', reason: 'x',
   });
   assert.equal(inFlight.code, 'REJECT_IN_FLIGHT_REJECT');
-  assert.equal(inFlight.message, '该门已打回、新会话重规划中——先等它重呈新战役门；对新门再提打回或修改');
+  assert.equal(inFlight.message, '该门已打回、新会话重规划中——先等它重呈新写门；对新门再提打回或修改');
 
   const stranger = planCampaignGateDecision({
     intent: 'reject', card: cardFixture(), sessionId: 'sess_stranger', rejectMode: 'write', reason: 'x',

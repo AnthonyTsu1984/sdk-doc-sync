@@ -36,7 +36,7 @@ function sessionFixture(overrides = {}) {
     language: 'go',
     sdkName: 'milvus-sdk-go',
     track: 'v3.0.x',
-    acceptanceFlow: 'campaign',
+    acceptanceFlow: 'two-gate',
     status: 'in_progress',
     reviewUnitManifest: { units: [{ reviewUnitId: 'u1' }, { reviewUnitId: 'u2' }] },
     acceptedReviewUnits: [],

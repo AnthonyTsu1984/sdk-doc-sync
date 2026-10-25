@@ -1,7 +1,7 @@
 'use strict';
 
-// Campaign plan approval — the merged gate (batch 18 W-C). The legacy batch
-// campaign stopped three times (grouping / batch-write / batch-review); the
+// Campaign plan approval — the merged gate (batch 18 W-C). The two-gate batch
+// campaign stops three times (grouping / batch-write / batch-review); the
 // collapse under "呈门尽量少" fuses the first two into ONE approval that binds
 // the whole plan:
 //
@@ -11,10 +11,11 @@
 //                                          candidateSpecDigest, batchDigest })
 //
 // The digest is an ENVELOPE, not a replacement: the scopeDigest component is
-// retained so the scope staleness floor still fires — a presented release
+// retained so the grouping staleness gate still fires — a presented release
 // scope whose semantic digest drifted from the approved one is refused with
-// GROUPING_STALE (api.grouping-proposal-staleness). A drift in any other
-// component (candidate spec, batch) is CAMPAIGN_DIGEST_STALE.
+// GROUPING_STALE (api.grouping-proposal-staleness), exactly as the standalone
+// grouping receipt refuses it. A drift in any other component (candidate spec,
+// batch) is CAMPAIGN_DIGEST_STALE.
 //
 // The receipt is a SEPARATE file keyed by the campaignPlanDigest (the same
 // first-write-wins discipline as the grouping receipt): appending approval

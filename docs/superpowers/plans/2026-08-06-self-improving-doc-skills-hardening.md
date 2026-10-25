@@ -486,7 +486,7 @@ git commit -m "test: add governed skill learning evaluations"
 Reject `approve loc-scan-1`. Accept only commands that bind the task and current digest:
 
 ```text
-APPROVE_CAMPAIGN loc-scan-1 sha256:<batch-digest>
+APPROVE_WRITES loc-scan-1 sha256:<batch-digest>
 REJECT_WRITES loc-scan-1 sha256:<batch-digest>: <reason>
 REQUEST_CHANGES loc-scan-1 sha256:<batch-digest>: <instruction>
 ```

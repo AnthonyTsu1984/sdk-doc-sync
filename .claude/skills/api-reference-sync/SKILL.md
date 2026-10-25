@@ -15,7 +15,7 @@ Do not use for a narrative guide, localization, code-only checks, or missing lan
 
 ## Permission Boundary
 
-- Write requires explicit approval of the campaign plan by the operator, via the single `APPROVE_CAMPAIGN` gate — one card per campaign; `sync` shows the unit list and waits (`--yes` is for unattended scheduled runs only). The approval line is sha256-bound and carried by the card button; the operator approves WHAT will be written and never handles a digest by hand.
+- Write requires explicit approval of the unit list by the operator (`sync` shows the list and waits; `--yes` is for unattended scheduled runs only). No digest ceremony: the operator approves WHAT will be written, never a sha256 line.
 - Keep the older-version doc as a historical snapshot — never patch or delete it during a newer release sync.
 - Every unit is verified after write: the executor refetches live state (dry-run first, then write, then refetch verification) before a record finalizes `WIP→Draft`.
 - `Slug` never written (TOPOLOGY_RECORD_SLUG_URL); `Targets` come from the targets artifact, never the executor's guess; rollback only via `bin/sdk-document-rollback.js`.
@@ -79,6 +79,10 @@ npm run api-reference-sync -- --sdk-dir repos/pymilvus --language python \
 - 语言细则：[sdk-python.md](sdk-python.md)、[sdk-java.md](sdk-java.md)、[sdk-go.md](sdk-go.md)、[sdk-node.md](sdk-node.md)、[sdk-cpp.md](sdk-cpp.md)、[sdk-alignment.md](sdk-alignment.md)
 - intake 链细节：`scripts/intake-assemble.js` 头注释与 `scripts/compare-update-spec-context.js`
 
+## 已退役的机制（不要再引入）
+
+2026-10-23 重设计裁定：以下机制**整体移除**——digest 门禁仪式（APPROVE_* sha256）、战役收据与三链复验、会话状态机的操作员可见面、执行 journal 对账（EXECUTION_RECONCILIATION）、failure-class 预算重试环、dwf 编排模板（十阶段）、campaign freeze/settle、campaign plan/settle/approval/presentation CLI。引擎内部的批次 digest 保留为**纯内部身份**（幂等去重用），操作员不接触、不比对、不批准任何摘要。
+
 ## Domain Invariants
 
 引擎层的内容保证（重设计只换了编排层，这些引擎不变量原样有效；生产代码逐条强制）：
@@ -98,8 +102,8 @@ npm run api-reference-sync -- --sdk-dir repos/pymilvus --language python \
 - Every organization rule keeps a tracked evidence manifest, never an untracked dump. [api.organization-evidence-manifest]
 - SDK artifacts: reviewed evidence, versioned layout profile, block-safety validation, immutable plan; full-body repair needs exact token approval. [api.reviewed-artifact-evidence]
 - After writes verify tenant host, ancestry, record metadata, older-source preservation, human-visible access. [api.post-write-verification]
-- The campaign approval binds the campaign to the exact release scope it covers (one-shot); later dry-runs/resumes/writes must match the approved lineage scopeDigest (GROUPING_STALE) — any newer candidate spec, reviewed context, scoped dry-run, or execution artifact requires a fresh campaign gate. [api.grouping-proposal-staleness]
-- Grouping proposals come only from scripts/build-grouping-proposal.js. [api.grouping-proposal-governance]
+- A grouping approval binds the campaign to the exact release scope it covers (one-shot, GROUPING_APPROVAL_ALREADY_BOUND); later dry-runs/resumes/writes must match the approved lineage scopeDigest (GROUPING_STALE, GROUPING_APPROVAL_CHAIN_INVALID) — any newer candidate spec, reviewed context, scoped dry-run, or execution artifact requires a fresh grouping gate. [api.grouping-proposal-staleness]
+- Grouping proposals come only from scripts/build-grouping-proposal.js (receipt recording retired with the operator ceremony, 2026-10-23). [api.grouping-proposal-governance]
 - Governed markdown converts losslessly: unrepresentable tokens refuse; native table blocks. [api.markdown-block-fidelity]
 - Repo-relative URLs never reach documents: intake preflight and the writer refuse non-absolute links. [api.absolute-link-urls]
 - Pages carrying user-authored `<include target="...">` markers never take a body rebuild (INCLUDE_REBUILD_FORBIDDEN). [api.literal-include-preserved]

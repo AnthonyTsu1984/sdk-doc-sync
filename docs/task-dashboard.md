@@ -67,7 +67,7 @@
 
 - **worker 注册表**（server 内存运行态，非 durable 真相）：派会话时以 `--json` 运行并在进程退出时捕获 `sessionId` → `card.workers [{sessionId, spawnedAt, status}]`；`idle`（进程已退、会话持久化）才允许注入，运行中 409 拒绝。
 - **`POST /api/approve {target, sessionId, line}`**：`--allow-approve` 显式开启（默认关，与 `--allow-spawn` 相互独立）；行格式服务端硬校验（`^APPROVE_(GROUPING|WRITES|DOCUMENT|ROLLBACK|ACCEPTANCE)( \S+)? sha256:[a-f0-9]{64}$`）；sessionId 必须属于该战役的看板 worker（fail-closed，操作员手开的会话不接受界面注入）；argv 向量派发无 shell。
-- **UI 批准表单**（卡片 ⛩ 批准按钮 → 抽屉）：门类型按 nextGate 预填、review-unit-id 预填、**APPROVE_ROLLBACK 的 journal digest 从 `pendingExecutions[].executionJournalDigest` 原样预填**（ledger 只透传不推导），其余门从呈门材料粘贴；实时行预览 + 前端正则与确认弹窗。
+- **UI 批准表单**（卡片 ⛩ 批准按钮 → 抽屉）：门类型按 nextGate 预填、review-unit-id 预填、**APPROVE_DOCUMENT 的 journal digest 从 `pendingExecutions[].executionJournalDigest` 原样预填**（ledger 只透传不推导），其余门从呈门材料粘贴；实时行预览 + 前端正则与确认弹窗。
 - 已知边界：仅看板派出的 headless worker 可注入（防并发写同一会话）；操作员在桌面端手开的会话走原流程（手打批准行）。
 
 ## 4d. 信息架构重排（批 5，本 PR）
@@ -79,18 +79,18 @@
 - **语种卡片**（`buildSkillTracks`，registry 驱动）：release-tracks.json 列语种×版本轨道（新版本需登记才受治，live 内容统计批 6 接入）；卡片显示战役计数 + 版本下拉入口 → 轨道页（scan-state 基线 + 该轨战役清单）。未登记轨道的战役在页脚如实列出，不静默丢弃。
 - **战役清单**：表格 + 状态筛选（finalized 默认折叠），行内快捷"复制挂载命令"；点击进战役详情页。并行矩阵区块删除（被本层级取代）。
 - **战役详情页**（`campaign-detail.js` + `GET /api/campaign?path=`，替代抽屉）：工作流 stepper（发现→分组→写入·验收→收口）、规模行（单元/动作/PR 文件/SDK 源码变更/版本区间）、**文件表**（文件名主显+全路径悬停，join 键 = release-scope `actions[].stableId` ≡ 单元 `documentStableId`；BACKFILL 无 PR 文件如实标注"源码证据"；未入组 PR 文件尾列"未入组"）、回执折叠、工件/journal 折叠。
-- **一键批准**：当前门的人话摘要 + 「批准并继续」——前端用批 4 已有的预填链（nextGate + `pendingExecutions[].executionJournalDigest` 原样透传）自动组装精确 APPROVE 行，digest 收"技术详情"折叠；digest 不能自动预填的门引导去高级表单（批 4 手组表单保留为兜底）。**战役门呈门修复（2026-10-13）**：状态机门名 `APPROVE_WRITE`（单数）与呈门工件 `<h1>` 的 `APPROVE_CAMPAIGN`（回复行协议名）词表不一致，`attachGatePresentation` 严格比对导致战役门呈门永不挂卡——比对经 `presentationMatchesCard` 归一到行词表；呈门工件的 `bound digest`（dry-run 一手字段）与 `file://` 预览链接（解析器已收，前端转 `/api/file` 白名单视图）随卡透传，战役门批准行 = `APPROVE_CAMPAIGN sha256:<bound digest>`（不带 unit token——批次绑定单元清单而非逐篇 digest）。服务端 `/api/approve` 语法硬校验与 worker 注册表约束不变。**战役门/文档门操作组扩充（2026-10-13 晚）**：① 战役门「打回（写意见）」——弹框收集意见（≤2000 字符），`/api/request-changes` `mode:'write'` 注入 idle worker（`composeRejectWritePrompt`：本批不写入、按意见调整规划、重呈新战役门；战役门未写入故无飞书评论可读，与文档门「打回（读飞书评论）」并存）；② 呈门卡片「在新会话中执行」**复选框**（战役门+文档门）——勾选后「批准并继续」与「打回」都改走新会话：`/api/spawn-session` 收 `approveLine` 或 `reject:{mode:'write'|'comments', reason?, unitId?}`（互斥；`validateApproveLine`/`validateRejectWriteInput` 硬校验 + 需 `--allow-approve` + 仅评审会话战役 + 该战役无 running worker），`appendApproveDirective`/`appendRejectDirective` 把批复/打回原文接在确定性简报后派新会话（42% 轮换的批准形态；digest 仍由 canonical CLI 执行时执法，新会话被指示先对照盘上状态、不一致即停）；复选框勾选态经 snapshot/restore 跨渲染持久。无 worker 分支保留直发按钮（无注入路径可切）。③ 会话窗口表加上下文列（`campaignUsage` sessions 携 `contextTokens`=最新回合 input+缓存读，≥42%×1M 黄牌 ⚠）+ 操作列「换新会话」（= 战役级 spawn 派单）。**呈门/门 chip 闪烁修复**：nextGate 缓存改 stale-while-revalidate（TTL 只控制刷新调度不再门控可见性——原实现 TTL 过期到 60s 刷新之间会推出无门载荷，worker 频繁写 tmp 触发 fs.watch 时肉眼可见闪烁）；呈门工件重写瞬间的半截读增加 last-known-good 60s 宽限（真失配仍丢弃）。**打回在途语义（2026-10-13）**：经复选框派单的打回在 worker 注册表条目上盖 `directive` 戳（运行态，与 status 同类）；`rejectDispatchState` 推导——打回时间晚于当前呈门工件 `generatedAt` 即视为**旧呈门已作废**（重呈新门后自动解除）：卡片/收件箱显示「打回处理中」、呈门链接标注「旧呈门存档」、`/api/approve` 与 `/api/request-changes` 对该卡 409 拒绝旧 digest 批准（防双写冲突）；`loadWorkerRegistry` 放宽 null sessionId 过滤（运行中未解析 id 的条目曾在每次重启被当畸形丢弃，连同 directive 戳一起失踪）；`wireSpawnedWorker` 增量捕获 sessionId（CLI 一输出即入注册表+归因+重算，不再等进程退出）且两个派单端点派单即 recompute。**防闪屏**：首页改分段脏渲染（`renderSections` 六段独立比对，未变段落 DOM 原样保留）；详情页 `setStaticPageHtml` 整页脏写入 + 文件表/批准卡/用量面板脏写入；SSE/轮询驱动的渲染 250ms 去抖（hashchange 导航仍即时）。
+- **一键批准**：当前门的人话摘要 + 「批准并继续」——前端用批 4 已有的预填链（nextGate + `pendingExecutions[].executionJournalDigest` 原样透传）自动组装精确 APPROVE 行，digest 收"技术详情"折叠；digest 不能自动预填的门引导去高级表单（批 4 手组表单保留为兜底）。**写门呈门修复（2026-10-13）**：状态机门名 `APPROVE_WRITE`（单数）与呈门工件 `<h1>` 的 `APPROVE_WRITES`（回复行协议名）词表不一致，`attachGatePresentation` 严格比对导致写门呈门永不挂卡——比对经 `presentationMatchesCard` 归一到行词表；呈门工件的 `bound digest`（dry-run 一手字段）与 `file://` 预览链接（解析器已收，前端转 `/api/file` 白名单视图）随卡透传，写门批准行 = `APPROVE_WRITES sha256:<bound digest>`（不带 unit token——批次绑定单元清单而非逐篇 digest）。服务端 `/api/approve` 语法硬校验与 worker 注册表约束不变。**写门/文档门操作组扩充（2026-10-13 晚）**：① 写门「打回（写意见）」——弹框收集意见（≤2000 字符），`/api/request-changes` `mode:'write'` 注入 idle worker（`composeRejectWritePrompt`：本批不写入、按意见调整规划、重呈新写门；写门未写入故无飞书评论可读，与文档门「打回（读飞书评论）」并存）；② 呈门卡片「在新会话中执行」**复选框**（写门+文档门）——勾选后「批准并继续」与「打回」都改走新会话：`/api/spawn-session` 收 `approveLine` 或 `reject:{mode:'write'|'comments', reason?, unitId?}`（互斥；`validateApproveLine`/`validateRejectWriteInput` 硬校验 + 需 `--allow-approve` + 仅评审会话战役 + 该战役无 running worker），`appendApproveDirective`/`appendRejectDirective` 把批复/打回原文接在确定性简报后派新会话（42% 轮换的批准形态；digest 仍由 canonical CLI 执行时执法，新会话被指示先对照盘上状态、不一致即停）；复选框勾选态经 snapshot/restore 跨渲染持久。无 worker 分支保留直发按钮（无注入路径可切）。③ 会话窗口表加上下文列（`campaignUsage` sessions 携 `contextTokens`=最新回合 input+缓存读，≥42%×1M 黄牌 ⚠）+ 操作列「换新会话」（= 战役级 spawn 派单）。**呈门/门 chip 闪烁修复**：nextGate 缓存改 stale-while-revalidate（TTL 只控制刷新调度不再门控可见性——原实现 TTL 过期到 60s 刷新之间会推出无门载荷，worker 频繁写 tmp 触发 fs.watch 时肉眼可见闪烁）；呈门工件重写瞬间的半截读增加 last-known-good 60s 宽限（真失配仍丢弃）。**打回在途语义（2026-10-13）**：经复选框派单的打回在 worker 注册表条目上盖 `directive` 戳（运行态，与 status 同类）；`rejectDispatchState` 推导——打回时间晚于当前呈门工件 `generatedAt` 即视为**旧呈门已作废**（重呈新门后自动解除）：卡片/收件箱显示「打回处理中」、呈门链接标注「旧呈门存档」、`/api/approve` 与 `/api/request-changes` 对该卡 409 拒绝旧 digest 批准（防双写冲突）；`loadWorkerRegistry` 放宽 null sessionId 过滤（运行中未解析 id 的条目曾在每次重启被当畸形丢弃，连同 directive 戳一起失踪）；`wireSpawnedWorker` 增量捕获 sessionId（CLI 一输出即入注册表+归因+重算，不再等进程退出）且两个派单端点派单即 recompute。**防闪屏**：首页改分段脏渲染（`renderSections` 六段独立比对，未变段落 DOM 原样保留）；详情页 `setStaticPageHtml` 整页脏写入 + 文件表/批准卡/用量面板脏写入；SSE/轮询驱动的渲染 250ms 去抖（hashchange 导航仍即时）。
 - **按钮改名**：「复制挂载命令」（原"复制 /attach"）、「一键派出执行会话」（原"派会话"），均带 tooltip；总览页常驻"看板怎么用"折叠说明。
 - **红线不变**：新增端点全部 GET 只读；`/api/campaign` 对不可发现路径 fail-closed（须在扫描根内、且为 durable 会话契约）。
 
 ## 4e. live 飞书统计与发现呈门（批 6，本 PR）
 
-**红线修订（操作员已确认）**："哨兵只发现不处置"修订为——发现物呈门后可**一键派出只读 intake 会话**（仍属人工动作），**战役门=开工门**：worker 停在 APPROVE_CAMPAIGN，操作员批准分组后才进入写作；写路径仍全走 canonical CLI + digest 门禁。
+**红线修订（操作员已确认）**："哨兵只发现不处置"修订为——发现物呈门后可**一键派出只读 intake 会话**（仍属人工动作），**分组门=开工门**：worker 停在 APPROVE_GROUPING，操作员批准分组后才进入写作；写路径仍全走 canonical CLI + digest 门禁。
 
 - **live 统计**（`live-stats.js` + `GET /api/live-stats`）：registry 驱动逐轨拉取——Bitable 记录总数（tables 解析 + `page_size=1` 读 `data.total`，一页即得）+ Drive release 根 BFS 计 docx 文档数/目录数（cap 2000 节点防失控）。TTL 10min 后台刷新、单飞（single-flight）、逐轨隔离失败（一轨坏不沉全船）、无凭证/无网降级为"live 拉取失败（registry 静态）"chip——降级是载荷不是错误码。认证复用技能侧 `larkTokenFetcher`（node-fetch/dotenv，仓内依赖；token/fetch 可注入故测试零网络）。语种卡片显示聚合 chip，轨道页显示该轨明细行。
 - **每日发现**（`scout-findings.js` + `GET /api/scout?language=`）：只认**当日**精确日更工件 `daily/<date>-<lang>-v<N>.json`（带额外后缀的战役制品如 `-grantpriv`/`-reviewed` 一律不算；扫描器对未处理发现每日重发、处理完成后次日不再产出——昨日工件=已处理历史，呈门会误导，故当日无工件即无待办，哨兵卡当日结论为权威）；`actions[]` 人话字段（symbol/type/reason/证据定位）原样透传，绝不重推导。语种卡片黄牌"今日发现 N 项待处理"→ 语种页发现表（方法/类型/原因/证据/轨道）。
-- **一键开始处理**（`intake-brief.js` + `POST /api/spawn-intake`，需 `--allow-spawn`）：以发现工件为种生成确定性处理简报（发现清单原文 + 工作指令：只读 intake→停在战役门 + 门禁格式/铁律），`scout:<工件路径>` 登记 worker；工件路径 fail-closed（必须是该语种当日允许集内成员）。UI 按钮文案"开始处理"并注明"先分组审批"。
-- **轨道页常驻「启动该轨道工作」**（批 9，`buildTrackIntakeBrief`，`mode: "track"`）：不依赖当日工件——侦察由会话现场完成（tag 对照/web-content PR/源码变更），有发现建评审会话停战役门、无发现明确报告不建会话；registry fail-closed（未登记轨道拒绝）；检出可选（多检出时下拉，默认主检出），worker 以该检出为 --cwd，登记键 `track:<检出>:<轨道键>`。这补上了"页面启动工作但永远显示无战役"的缺口：入口常在，会话建立后卡片自然出现。
+- **一键开始处理**（`intake-brief.js` + `POST /api/spawn-intake`，需 `--allow-spawn`）：以发现工件为种生成确定性处理简报（发现清单原文 + 工作指令：只读 intake→停在分组门 + 门禁格式/铁律），`scout:<工件路径>` 登记 worker；工件路径 fail-closed（必须是该语种当日允许集内成员）。UI 按钮文案"开始处理"并注明"先分组审批"。
+- **轨道页常驻「启动该轨道工作」**（批 9，`buildTrackIntakeBrief`，`mode: "track"`）：不依赖当日工件——侦察由会话现场完成（tag 对照/web-content PR/源码变更），有发现建评审会话停分组门、无发现明确报告不建会话；registry fail-closed（未登记轨道拒绝）；检出可选（多检出时下拉，默认主检出），worker 以该检出为 --cwd，登记键 `track:<检出>:<轨道键>`。这补上了"页面启动工作但永远显示无战役"的缺口：入口常在，会话建立后卡片自然出现。
 
 ## 4f. token 消耗（批 7，本 PR）
 
@@ -111,16 +111,16 @@
 
 ## 4h. 修订战役卡与交接（批 10，本 PR）
 
-修订战役（sweep 后修订轮）不走评审会话状态机——durable 状态=工作单（发现清单/裁定）+ 战役门 manifest + 每页一份 apply-review run-manifest。此前这类战役在看板上不可见，会话一结束就消失，交接只能翻记忆。
+修订战役（sweep 后修订轮）不走评审会话状态机——durable 状态=工作单（发现清单/裁定）+ 分组门 manifest + 每页一份 apply-review run-manifest。此前这类战役在看板上不可见，会话一结束就消失，交接只能翻记忆。
 
-- **修订卡**（`buildRevisionCards`，载荷 `revisions[]`）：逐检出扫 `tmp/api-reference-sync/*worklist*.json`；范围口径优先取战役门所链**活体 revision-scope**（新于工作单）；进度=apply-review run-manifest 逐页对账（revision / pr-polish 两流）；战役门 digest 展示；**同 stem 跨检出去重**——活的（进度更深/带门）胜出，主检出筹备期残留副本出局。API 参考页与语种页新增"修订战役"区，语种卡计数并入。
-- **交接=/attach 第三类目标**：`/attach <工作单 stem>`（如 `java-revision-worklist`，`rev:` 前缀/全键均可）→ 确定性简报=工作树指引（一切以该检出为准）+ 裁定原文 + 战役门 digest（提示确认已批）+ 已写页面逐条对账 + 待写页数 + 续接规则（governed writer 逐页 manifest/共享页 in-place/需决策即停）+ 铁律。`buildBrief` 在战役解析失败后自动尝试修订目标；CLI 与 spawn 派单同一入口（修订 worker 以工作树为 --cwd）。
+- **修订卡**（`buildRevisionCards`，载荷 `revisions[]`）：逐检出扫 `tmp/api-reference-sync/*worklist*.json`；范围口径优先取分组门所链**活体 revision-scope**（新于工作单）；进度=apply-review run-manifest 逐页对账（revision / pr-polish 两流）；分组门 digest 展示；**同 stem 跨检出去重**——活的（进度更深/带门）胜出，主检出筹备期残留副本出局。API 参考页与语种页新增"修订战役"区，语种卡计数并入。
+- **交接=/attach 第三类目标**：`/attach <工作单 stem>`（如 `java-revision-worklist`，`rev:` 前缀/全键均可）→ 确定性简报=工作树指引（一切以该检出为准）+ 裁定原文 + 分组门 digest（提示确认已批）+ 已写页面逐条对账 + 待写页数 + 续接规则（governed writer 逐页 manifest/共享页 in-place/需决策即停）+ 铁律。`buildBrief` 在战役解析失败后自动尝试修订目标；CLI 与 spawn 派单同一入口（修订 worker 以工作树为 --cwd）。
 
 ## 4i. 门铃通知（批 14，本 PR）
 
 解决"操作员盯板"（自动化路线 S1 的注意力回路）：worker 停门、哨兵停摆、待关账等可行动项主动推送到操作员飞书**点对点会话**（绝不发群），把"人盯板"翻转为"板找人"。
 
-- **事件派生**（`gate-watch.js`，纯函数，载荷零第二真相）：战役门（nextGate 停在 APPROVE_*/RESOLVE_ROLLBACK）、僵尸会话、待关账（awaiting-close）、回执未落（staleReceipts）、**未批战役门**（intakes 卡 approved=false——含会话建立前的首门，dwell 用真实 presentedAt）、哨兵停摆（stale）与具备条件却从未运行（never-run 且 capabilityReady）、失联 worker（派单台账有 dispatch 无 exit，2–24h 窗口）。
+- **事件派生**（`gate-watch.js`，纯函数，载荷零第二真相）：战役门（nextGate 停在 APPROVE_*/RESOLVE_ROLLBACK）、僵尸会话、待关账（awaiting-close）、回执未落（staleReceipts）、**未批分组门**（intakes 卡 approved=false——含会话建立前的首门，dwell 用真实 presentedAt）、哨兵停摆（stale）与具备条件却从未运行（never-run 且 capabilityReady）、失联 worker（派单台账有 dispatch 无 exit，2–24h 窗口）。
 - **发送决策**（同一模块）：追加式 `tmp/dashboard-events/notify-ledger.jsonl`（send/resolve 两类记录，最新记录定夺）——未发过才发、同事件**2h 升级重提醒**、事件消失记 resolve（再出现视为新）、**静默窗 22:00–07:59 只记账不发送**（攒到早窗合并成一条）；发送记录只在消息真发出后落账，失败的下扫重试。
 - **消息形态**：纯文本、合并单条（一次扫一条消息列全部待决项）、按事件真实时间戳算 dwell（"已等待 48.0 小时"）、**无链接无 digest**（卡片链接不可点与 digest 仅展示两条既有裁定），处理入口指向看板。
 - **发送器**（`notify-feishu.js`）：复用 skill 的 larkTokenFetcher（.env APP_ID/APP_SECRET）；收件人=OPERATOR_OPEN_ID 直用或 OPERATOR_EMAIL 经 contact batch_get_id 反查（需只读 scope contact:user.id:readonly，open_id 进程内缓存）；fetch/token 全可注入，测试零网络。CLI 冒烟：`node scripts/dashboard/notify-feishu.js --text "..."`。
@@ -130,10 +130,10 @@
 
 `--notify-relay`（隐含 --notify）在同一私聊里接收操作员指令：**长连接**事件订阅（`@larksuiteoapi/node-sdk` WSClient，无公网端点，拨出式）。语法确定性（bot-integration 契约，绝不自由解释）：
 
-- **回复（引用）某条通知消息 + 「批准」** → 批准该通知的战役门。信任链：回复 root_id → 发件台账（`notify-outbox.jsonl`，发送通知时落 message_id→事件绑定）→ 唯一战役门事件 → **digest 执行时从工件重读**（绝不取自消息文本；工件变了=STALE_DIGEST 拒批并失效旧通知键等重发新通知）→ 组装精确 `APPROVE_CAMPAIGN sha256:<digest>` 行 → 与 /api/approve 同一条 resume 注入链（`dispatchResumeTurn` 共用核：注册回合+usage 边界归因+退场重响门铃）。worker 会话从派单台账 dispatch/exit 对（trackKey 精确 join 优先、歧义即拒）；重复回复幂等；非操作员/群聊消息整体忽略。
+- **回复（引用）某条通知消息 + 「批准」** → 批准该通知的分组门。信任链：回复 root_id → 发件台账（`notify-outbox.jsonl`，发送通知时落 message_id→事件绑定）→ 唯一分组门事件 → **digest 执行时从工件重读**（绝不取自消息文本；工件变了=STALE_DIGEST 拒批并失效旧通知键等重发新通知）→ 组装精确 `APPROVE_GROUPING sha256:<digest>` 行 → 与 /api/approve 同一条 resume 注入链（`dispatchResumeTurn` 共用核：注册回合+usage 边界归因+退场重响门铃）。worker 会话从派单台账 dispatch/exit 对（trackKey 精确 join 优先、歧义即拒）；重复回复幂等；非操作员/群聊消息整体忽略。
 - **「状态」** → 当前全部待决事件快照（同门铃派生）。
 - **「帮助」/未知指令** → 语法说明。
-- **v1 边界（诚实声明）**：消息通道只受理**战役门**——digest 是 gate manifest 的一手字段（读工件≠造第二真相）；战役门/文档门/回滚/验收的 digest 由 canonical CLI 派生呈报，看板重派即第二真相，一律回复指路看板。
+- **v1 边界（诚实声明）**：消息通道只受理**分组门**——digest 是 gate manifest 的一手字段（读工件≠造第二真相）；写门/文档门/回滚/验收的 digest 由 canonical CLI 派生呈报，看板重派即第二真相，一律回复指路看板。
 - 应用侧前置（一次性）：后台「事件与回调→事件配置」切**长连接**、订阅 `im.message.receive_v1`、事件详情勾上单聊权限（`im:message.p2p_msg:readonly`）、**发版生效**；未配置时长连接失败自动降级为纯门铃。
 
 
@@ -144,7 +144,7 @@
 - **批 3（PR #94）**：attach 命令 + nextGate 富集 + 并行矩阵 + 一键派会话（headless → desktop surface，官方 CLI）。
 - **批 4（PR #95）**：界面批准转发（§4c）。
 - **批 5（本 PR）**：信息架构重排（§4d）。
-- **批 6**：live 飞书统计（registry 驱动逐轨 Bitable 记录总数 + Drive 文档数，TTL 缓存失败降级）+ 每日发现呈门（scout 工件解析成人话清单，「开始处理」一键派只读 intake worker，**战役门=开工门**：worker 停在 APPROVE_CAMPAIGN 等操作员批准后才进入写作——"哨兵只发现不处置"修订为"呈门后的一键派单仍属人工动作，两道人工确认不变"）。
+- **批 6**：live 飞书统计（registry 驱动逐轨 Bitable 记录总数 + Drive 文档数，TTL 缓存失败降级）+ 每日发现呈门（scout 工件解析成人话清单，「开始处理」一键派只读 intake worker，**分组门=开工门**：worker 停在 APPROVE_GROUPING 等操作员批准后才进入写作——"哨兵只发现不处置"修订为"呈门后的一键派单仍属人工动作，两道人工确认不变"）。
 - **批 7**：token 消耗（harvest 宿主 `~/.zcode/cli/rollout/model-io-sess_*.jsonl` 逐回合 usage → `node:sqlite` 派生遥测库，approve 回合边界差分归因到单篇；战役详情加消耗面板：总计+分会话小计+分篇明细+采集覆盖率注记；历史无数据如实标注）。
 - **批 14**：门铃通知（§4i）——飞书 p2p 直达操作员，`--notify` opt-in；自动化路线 S1 注意力回路的第一段。
 
@@ -157,4 +157,4 @@
 - `tests/skills/dashboard-checkouts.test.js`（批 8）：worktree 清单解析（bare 跳过/主检出标签）、跨检出发现与键防碰撞（同相对路径双检出+各自 scan-state 僵尸判定）、绝对 sessionRef 只归因本检出、运行会话推导（窗口/最长根匹配检出推断/战役滚动归因）、resolveSessionTarget 键解析。
 - `tests/skills/dashboard-revision.test.js`（批 10）：修订卡发现（活体 scope 优先/apply-review 逐页对账/无关 run-manifest 不计）、跨检出去重（进度深者活）、目标解析三种形态与简报确定性。
 - `tests/skills/dashboard-usage.test.js`（批 7）：解析（嵌套 snake/camelCase、无 usage 行不算回合、坏行容忍）、增量采集（追加快路径/书签跳过/轮转重建无幽灵行）、事件归因（绝对路径归一化 join）、approve 边界差分（resume 回合归到单元）、空态诚实呈现。
-- `tests/skills/dashboard-notify.test.js`（批 14/14b）：事件派生（战役门/僵尸/待关账/回执未落四类一卡一事件、僵尸不重复报门、未批战役门与已批静默、哨兵 stale/never-ready/never-unready 三态、失联 worker 只在 2–24h 窗）、发送决策（首发、2h 内去重、升级重提醒、resolve 后再现视为新、静默窗记账不发送、force 越窗）、dwell 从事件真实时间戳起算、消息纯文本无链接无 digest、发送器（邮箱反查+请求形状、OPERATOR_OPEN_ID 优先且反查缓存、缺目标/无用户/scope 拒绝三类 typed 错误、线程内回复+无 id 回退平发）；relay（指令语法确定性、事件解码拒非文本/无发送者、worker 解析 trackKey join 优先/歧义拒/无 exit 跳过、planApprove 快乐路径拼精确行/STALE 拒且失效键/已批/多事件/工件不可读/无 worker 五类拒绝、handleIncoming 非操作员与群聊整体忽略/无引用与外来说明/幂等重批/状态与帮助）。
+- `tests/skills/dashboard-notify.test.js`（批 14/14b）：事件派生（战役门/僵尸/待关账/回执未落四类一卡一事件、僵尸不重复报门、未批分组门与已批静默、哨兵 stale/never-ready/never-unready 三态、失联 worker 只在 2–24h 窗）、发送决策（首发、2h 内去重、升级重提醒、resolve 后再现视为新、静默窗记账不发送、force 越窗）、dwell 从事件真实时间戳起算、消息纯文本无链接无 digest、发送器（邮箱反查+请求形状、OPERATOR_OPEN_ID 优先且反查缓存、缺目标/无用户/scope 拒绝三类 typed 错误、线程内回复+无 id 回退平发）；relay（指令语法确定性、事件解码拒非文本/无发送者、worker 解析 trackKey join 优先/歧义拒/无 exit 跳过、planApprove 快乐路径拼精确行/STALE 拒且失效键/已批/多事件/工件不可读/无 worker 五类拒绝、handleIncoming 非操作员与群聊整体忽略/无引用与外来说明/幂等重批/状态与帮助）。

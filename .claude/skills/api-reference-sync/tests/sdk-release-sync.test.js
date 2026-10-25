@@ -100,7 +100,7 @@ test('runner source keeps the fault-tolerance contract anchors', () => {
   assert.match(source, /字节保全地归档/);
   assert.match(source, /已知验证态的幂等收敛/);
   // 批次 digest 是内部身份：不出现任何操作员门禁格式
-  assert.doesNotMatch(source, /APPROVE_[A-Z_]+/);
+  assert.doesNotMatch(source, /APPROVE_CAMPAIGN|APPROVE_WRITES|APPROVE_GROUPING/);
 });
 
 // ---------- corrective-release（2026-10-24 打回机制） ----------

@@ -78,7 +78,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     writeJson(args.output, plan);
     saveAuthoringSession(args.session, createAuthoringSession({ sessionId: args.sessionId, plan }), { expectedPreviousDigest: null });
     out(`Authoring plan: ${plan.planDigest}`);
-    out(`If approved, reply exactly: APPROVE_PLAN verified-doc-authoring ${plan.actionBatch.batchDigest}`);
+    out(`If approved, reply exactly: APPROVE_WRITES verified-doc-authoring ${plan.actionBatch.batchDigest}`);
     return plan;
   }
   if (args.command === 'execute') {

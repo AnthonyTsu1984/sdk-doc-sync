@@ -29,9 +29,9 @@ const gateWatch = require('./gate-watch.js');
 
 // The exact approval grammar the campaign gates accept; L1 still enforces
 // semantics and digest binding downstream — this is shape-only pre-validation.
-// APPROVE_CAMPAIGN is the single campaign gate; APPROVE_ROLLBACK is the
-// unit-scoped destructive-op confirmation riding the same channel.
-const APPROVE_LINE_RE = /^APPROVE_(CAMPAIGN|ROLLBACK)(?: [^\s]+)? sha256:[a-f0-9]{64}$/;
+// APPROVE_CAMPAIGN joins the set in slice B (the registry has carried it since
+// batch-16; the old endpoint copy predated it).
+const APPROVE_LINE_RE = /^APPROVE_(GROUPING|WRITES|DOCUMENT|ROLLBACK|ACCEPTANCE|CAMPAIGN)(?: [^\s]+)? sha256:[a-f0-9]{64}$/;
 
 function validateApproveLine(line) {
   return APPROVE_LINE_RE.test(String(line || '').trim());
@@ -45,8 +45,8 @@ const REFUSALS = Object.freeze({
   UNIT_ID_INVALID: { status: 400, message: '单元 id 无效' },
   MISSING_SESSION: { status: 400, message: 'missing sessionId' },
   NO_CARD: { status: 404, message: '该战役会话已不在看板上（已归档或扫描失败）——到看板核实后再处理' },
-  REJECT_IN_FLIGHT_APPROVE: { status: 409, message: '该门已打回、新会话重规划中——旧批准行随打回失效，等新战役门呈报后再批' },
-  REJECT_IN_FLIGHT_REJECT: { status: 409, message: '该门已打回、新会话重规划中——先等它重呈新战役门；对新门再提打回或修改' },
+  REJECT_IN_FLIGHT_APPROVE: { status: 409, message: '该门已打回、新会话重规划中——旧批准行随打回失效，等新写门呈报后再批' },
+  REJECT_IN_FLIGHT_REJECT: { status: 409, message: '该门已打回、新会话重规划中——先等它重呈新写门；对新门再提打回或修改' },
   NOT_BOARD_WORKER_APPROVE: { status: 404, message: '该会话不是看板派出的 worker（界面批准仅限 dashboard 派出的会话）' },
   NOT_BOARD_WORKER_REJECT: { status: 404, message: '该会话不是看板派出的 worker（修改要求仅注入看板派出的会话）' },
   WORKER_BUSY_APPROVE: { status: 409, message: 'worker 仍在首轮运行中——等它停在门禁后再批准' },
@@ -74,12 +74,12 @@ function refuse(code, extra = {}) {
 }
 
 // The line must be one of the index's own reply lines; with a targetUnitId
-// (unit-scoped rollback confirmation) it must be THAT unit's line.
+// (multi-unit DOCUMENT gate) it must be THAT unit's line.
 function replyLinesInclude(index, line, targetUnitId = null) {
   const lines = Array.isArray(index?.replyLines) ? index.replyLines : [];
   if (typeof line !== 'string' || line === '') return false;
   if (targetUnitId) {
-    const prefix = `APPROVE_ROLLBACK ${targetUnitId} `;
+    const prefix = `APPROVE_DOCUMENT ${targetUnitId} `;
     return lines.some((candidate) => candidate === line && candidate.startsWith(prefix));
   }
   return lines.includes(line);

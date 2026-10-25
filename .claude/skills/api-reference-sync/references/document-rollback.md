@@ -11,7 +11,7 @@ Rollback supports both of these states:
 
 A session with `status: finalized` or `scanStateUpdated: true` cannot be reopened or rolled back in place. Correct it through a new reviewed release.
 
-Rollback is a destructive operation inside an approved campaign. Its authorization is the exact digest-bound confirmation emitted by the plan step, delivered through the campaign gate channel:
+Rollback is a new destructive operation. `APPROVE_WRITES` (and the retired document/acceptance gates) do not authorize it. The only valid authorization is:
 
 ```text
 APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>
@@ -115,7 +115,7 @@ Only a successfully completed rollback journal may update the review session:
 
 The receipt or active execution is removed only after rollback completion has been verified. A failed or partial rollback leaves both intact so resume remains fail-closed.
 
-After rollback, the unit must be regenerated against live state: rerun the runner against the same scope. A changed plan requires a fresh campaign gate; the replacement write gets a new execution batch digest and a new execution journal (it then finalizes via `--auto-accept`).
+After rollback, the unit must be regenerated against live state. A replacement write requires a new execution batch digest, a new `APPROVE_WRITES`, and a new execution journal (it then finalizes via `--auto-accept`).
 
 ## Verification Requirements
 

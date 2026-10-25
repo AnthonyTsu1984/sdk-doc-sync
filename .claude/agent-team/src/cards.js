@@ -37,7 +37,7 @@ function buildLiveWriteApprovalCard({ task, summaryText, actions = [], orphanCou
   if (!actionBatch?.batchDigest) throw new Error('actionBatch with batchDigest is required');
   const sourceRunSuffix = task.sourceRunId ? ` ${task.sourceRunId}` : '';
   const commands = [
-    `APPROVE_TASK ${task.id} ${actionBatch.batchDigest}${sourceRunSuffix}`,
+    `APPROVE_WRITES ${task.id} ${actionBatch.batchDigest}${sourceRunSuffix}`,
     `REJECT_WRITES ${task.id} ${actionBatch.batchDigest}${sourceRunSuffix}: <reason>`,
     `REQUEST_CHANGES ${task.id} ${actionBatch.batchDigest}${sourceRunSuffix}: <what to change>`,
   ];

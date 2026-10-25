@@ -50,15 +50,14 @@ test('api-reference-sync exposes deterministic convergence, recovery, and WIP sa
   assert.match(content, /单单元失败不冻结全局/);
   assert.match(content, /WIP 兜底/);
   assert.match(content, /recover/);
-  // 仪式面不得回流：多门词汇一律不得回到 SKILL.md
-  assert.doesNotMatch(content, /APPROVE_WRITES|APPROVE_GROUPING|APPROVE_DOCUMENT|APPROVE_ACCEPTANCE/);
+  // 仪式面不得回流：digest 门禁/收据对账已退役
+  assert.doesNotMatch(content, /APPROVE_WRITES sha256/);
   assert.doesNotMatch(content, /EXECUTION_RECONCILIATION_REQUIRED/);
 });
 
-test('api-reference-sync: the operator approves the campaign plan via the single APPROVE_CAMPAIGN gate, and write→verify→Draft is one convergence step', () => {
+test('api-reference-sync: the operator approves the unit list, and write→verify→Draft is one convergence step (2026-10-23 redesign)', () => {
   const content = skill('api-reference-sync');
-  assert.match(content, /explicit approval of the campaign plan/i);
-  assert.match(content, /APPROVE_CAMPAIGN/);
+  assert.match(content, /explicit approval of the unit list/i);
   assert.match(content, /写→验→Draft/);
   assert.match(content, /WIP→Draft/);
 });

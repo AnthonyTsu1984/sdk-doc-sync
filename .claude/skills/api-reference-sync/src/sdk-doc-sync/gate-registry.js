@@ -12,22 +12,24 @@
 //   - GATE_REPLY_LINES: the exact pre-filled reply line per gate (the card
 //     builder) — moved from gate-presentation.js
 //   - gateConstant(name): the canonical constant for receipt consumers
+//     (APPROVE_CAMPAIGN_GATE etc. become gateConstant('APPROVE_CAMPAIGN'))
 //
-// 2026-10-24 ruling: the operator approval surface is TWO gates, no more —
-//   APPROVE_CAMPAIGN sha256:<campaign-plan-digest>  (one card per campaign)
-//   APPROVE_ROLLBACK <review-unit-id> sha256:<digest> (unit-level
-//   destructive confirmation, same channel)
-// The per-unit document/acceptance stops are retired: a verified unit
-// finalizes automatically (journal-derived receipt). Consumers import from
-// here instead of hardcoding: gate-presentation-check.js (validator),
-// gate-presentation.js (card), campaign-approval.js (receipts). The dwf
-// template reads GATE_NAMES through the runner's `gates` subcommand
-// (dwf-payload-runner.js) — adding a gate in ONE file propagates to the
-// validator, the card, the receipts, and the template.
+// Consumers import from here instead of hardcoding: gate-presentation-check.js
+// (validator), gate-presentation.js (card), campaign-approval.js / grouping-
+// proposal.js (receipts). The dwf template reads GATE_NAMES through the
+// runner's `gates` subcommand (dwf-payload-runner.js) — adding a gate in ONE
+// file propagates to the validator, the card, the receipts, and the template.
 
 const GATE_NAMES = Object.freeze([
-  'APPROVE_CAMPAIGN',
+  'APPROVE_GROUPING',
+  'APPROVE_WRITES',
+  'APPROVE_DOCUMENT',
   'APPROVE_ROLLBACK',
+  'APPROVE_ACCEPTANCE',
+  // Campaign-level merged gate (batch-16 release-sync template): the only
+  // human stop of a whole campaign run, binding the campaignPlanDigest from
+  // the approval receipt.
+  'APPROVE_CAMPAIGN',
 ]);
 
 const GATE_SET = new Set(GATE_NAMES);
@@ -42,14 +44,23 @@ function gateConstant(name) {
 }
 
 // The exact reply line the operator echoes to approve. Each gate binds a
-// digest (sha256:<64 hex>).
+// digest (sha256:<64 hex>); APPROVE_DOCUMENT is the exception — the manifest
+// carries its exact replyLine (unit id + journal digest) because the digest
+// IS the combined batch value only when the presenter says so.
 function gateReplyLine(gate, manifest) {
   if (!isGateName(gate)) return null;
   const digest = manifest && manifest.digest;
   switch (gate) {
+    case 'APPROVE_WRITES':
+    case 'APPROVE_ACCEPTANCE':
+    case 'APPROVE_GROUPING':
     case 'APPROVE_ROLLBACK':
     case 'APPROVE_CAMPAIGN':
       return digest ? `${gate} ${digest}` : null;
+    case 'APPROVE_DOCUMENT':
+      return (typeof manifest.replyLine === 'string' && manifest.replyLine.trim() !== ''
+        ? manifest.replyLine.trim()
+        : null);
     default:
       return null;
   }

@@ -43,7 +43,7 @@ function campaignFixture(root, overrides = {}) {
     language: overrides.language || 'java',
     sdkName: 'milvus-sdk-java',
     track: overrides.track || 'v3.0.x',
-    acceptanceFlow: 'campaign',
+    acceptanceFlow: 'two-gate',
     status: overrides.status || 'in_progress',
     scanStateKey: overrides.scanStateKey || 'java-v30',
     reviewUnitManifest: { units: [{ reviewUnitId: 'u1' }, { reviewUnitId: 'u2' }] },
@@ -77,21 +77,21 @@ test('buildBrief: deterministic brief with stubbed status CLI', (t) => {
   });
   assert.equal(brief.ok, true);
   const text = brief.text;
-  assert.ok(text.includes('战役简报 · java · v3.0.x'));
+  assert.ok(text.includes('战役简报 · java · v3.0.x · two-gate'));
   assert.ok(text.includes(rel));
   assert.ok(text.includes('单元 1/2 已接受'));
   assert.ok(text.includes('**APPROVE_WRITE**'));
   assert.ok(text.includes('u2'));
-  assert.ok(text.includes('APPROVE_CAMPAIGN sha256:<campaign-plan-digest>'));
+  assert.ok(text.includes('APPROVE_GROUPING sha256:<digest>'));
   assert.ok(text.includes('铁律'));
   assert.ok(text.includes('勿凭记忆'));
-  // Execution critical path: the fresh chat starts from the runner handoff,
-  // never re-derives the loop from SKILL.md.
+  // Execution critical path (batch 12): the fresh chat starts from the
+  // materialized handoff, never re-derives the loop from SKILL.md.
   assert.ok(text.includes('写作/落盘关键路径'));
-  assert.ok(text.includes('sdk-release-sync.js status --config'));
-  assert.ok(text.includes('sync --config'));
+  assert.ok(text.includes('sdk-review-session.js handoff --session'));
+  assert.ok(text.includes('gate-presentation.js --from-dryrun'));
   assert.ok(text.includes('close-session'));
-  assert.ok(text.includes('mark-disposed'));
+  assert.ok(text.includes('grouping-approvals/'));
   // Workspace disciplines (batch 13): tmp layout, worktree, gate rounds.
   assert.ok(text.includes('工作空间契约'));
   assert.ok(text.includes('工作树原则'));
@@ -165,25 +165,25 @@ test('server helpers: spawn opt-in flag, headless args, prompt wrapper, status p
 
 test('approve forwarding: exact-line validation, worker-id capture, resume args', () => {
   const goodDigest = `sha256:${'a'.repeat(64)}`;
-  assert.equal(validateApproveLine(`APPROVE_CAMPAIGN ${goodDigest}`), true);
-  assert.equal(validateApproveLine(`APPROVE_ROLLBACK review:java:v2-Vector:get ${goodDigest}`), true);
-  assert.equal(validateApproveLine(`APPROVE_CAMPAIGN sha256:ABC`), false, 'uppercase/short digest rejected');
-  assert.equal(validateApproveLine('APPROVE_CAMPAIGN'), false);
-  assert.equal(validateApproveLine('approve_campaign ' + goodDigest), false, 'case-sensitive gate names');
-  assert.equal(validateApproveLine(`APPROVE_CAMPAIGN ${goodDigest} extra`), false, 'trailing tokens rejected');
+  assert.equal(validateApproveLine(`APPROVE_WRITES ${goodDigest}`), true);
+  assert.equal(validateApproveLine(`APPROVE_DOCUMENT review:java:v2-Vector:get ${goodDigest}`), true);
+  assert.equal(validateApproveLine(`APPROVE_WRITES sha256:ABC`), false, 'uppercase/short digest rejected');
+  assert.equal(validateApproveLine('APPROVE_WRITES'), false);
+  assert.equal(validateApproveLine('approve_writes ' + goodDigest), false, 'case-sensitive gate names');
+  assert.equal(validateApproveLine(`APPROVE_WRITES ${goodDigest} extra`), false, 'trailing tokens rejected');
   assert.equal(validateApproveLine(null), false);
 
   const stdout = JSON.stringify({ sessionId: 'sess_4adaa505-6b62-428f-aa4c-8e0cbacc88a3', response: 'OK' });
   assert.equal(parseSpawnSessionId(stdout), 'sess_4adaa505-6b62-428f-aa4c-8e0cbacc88a3');
   assert.equal(parseSpawnSessionId('no json here'), null);
 
-  const resume = buildResumeArgs('/Users/x/repo', 'sess_1', 'APPROVE_CAMPAIGN ' + goodDigest);
-  assert.deepEqual(resume, ['--cwd', '/Users/x/repo', '--surface', 'desktop', '--resume', 'sess_1', '--prompt', 'APPROVE_CAMPAIGN ' + goodDigest]);
+  const resume = buildResumeArgs('/Users/x/repo', 'sess_1', 'APPROVE_WRITES ' + goodDigest);
+  assert.deepEqual(resume, ['--cwd', '/Users/x/repo', '--surface', 'desktop', '--resume', 'sess_1', '--prompt', 'APPROVE_WRITES ' + goodDigest]);
 });
 
 test('approve-in-new-session: the approval line rides the brief verbatim with a verify-first directive', () => {
   const goodDigest = `sha256:${'b'.repeat(64)}`;
-  const line = `APPROVE_CAMPAIGN ${goodDigest}`;
+  const line = `APPROVE_WRITES ${goodDigest}`;
   const prompt = appendApproveDirective(buildHeadlessPrompt('简报正文'), line);
   assert.ok(prompt.startsWith(buildHeadlessPrompt('简报正文')), 'brief stays intact as the prefix');
   assert.ok(prompt.includes(`\n${line}\n`), 'approval line embedded as its own line, verbatim');

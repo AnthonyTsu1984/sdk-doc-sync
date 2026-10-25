@@ -55,8 +55,8 @@ test('revision card: live scope wins, progress reconciles apply-review manifests
     summary: { pages: 204, byCode: { RETURNS_MIN_DEPTH: 178 } },
     sharedPages: [{ documentToken: 'X', tracks: ['v2.6.x'] }],
   });
-  write('tmp/api-reference-sync/gate-manifest-campaign-java-v30-revision.json', {
-    gate: 'CAMPAIGN', digest: 'sha256:' + '7'.repeat(64), title: '范围工件',
+  write('tmp/api-reference-sync/gate-manifest-grouping-java-v30-revision.json', {
+    gate: 'GROUPING', digest: 'sha256:' + '7'.repeat(64), title: '范围工件',
     links: [{ label: 'scope', url: 'tmp/api-reference-sync/revision-scope-java-v30-2026-10-05.json' }],
   });
   write('tmp/api-reference-sync/run-manifest-revision-apply-review-java-v3-LexicalHighlighter.json', { schemaVersion: 1 });
@@ -72,9 +72,9 @@ test('revision card: live scope wins, progress reconciles apply-review manifests
   assert.equal(card.scope.findings, 3);
   assert.equal(card.scope.uniquePages, 2);
   assert.equal(card.ruling, '2026-10-05 live-scan ruling');
-  assert.equal(card.gateManifest.digest, 'sha256:' + '7'.repeat(64));
+  assert.equal(card.groupingGate.digest, 'sha256:' + '7'.repeat(64));
   assert.equal(card.writtenPages, 2);
-  assert.equal(card.gateApproved, true, 'pages written → grouping necessarily approved');
+  assert.equal(card.groupingApproved, true, 'pages written → grouping necessarily approved');
   assert.equal(card.remainingPages, 202);
   assert.deepEqual(
     card.pages.map((p) => `${p.page}:${p.codes.length}`),
@@ -144,13 +144,13 @@ test('resolveRevisionTarget + buildRevisionBrief determinism and content', (t) =
   t.after(() => fs.rmSync(empty.root, { recursive: true, force: true }));
   empty.write('tmp/api-reference-sync/fresh-revision-worklist.json', worklistFixture({ language: 'go' }));
   const [fresh] = buildRevisionCards([{ id: 'main', label: '主检出', root: empty.root }]);
-  assert.equal(fresh.gateApproved, false, 'nothing written yet → grouping still pending');
+  assert.equal(fresh.groupingApproved, false, 'nothing written yet → grouping still pending');
 });
 
 
 // ---------- intake grouping gates (batch 11) ----------
 
-test('intake cards surface campaign manifests with approval transitions', (t) => {
+test('intake cards surface grouping manifests with approval transitions', (t) => {
   const main = makeFixtureTree('dash-intake-main-');
   const sib = makeFixtureTree('dash-intake-sib-');
   t.after(() => {
@@ -158,17 +158,17 @@ test('intake cards surface campaign manifests with approval transitions', (t) =>
     fs.rmSync(sib.root, { recursive: true, force: true });
   });
   // api-reference-sync style (revision flow) — approved via written pages.
-  main.write('tmp/api-reference-sync/gate-manifest-campaign-java-rev.json', {
-    gate: 'CAMPAIGN', digest: 'sha256:' + '1'.repeat(64),
+  main.write('tmp/api-reference-sync/gate-manifest-grouping-java-rev.json', {
+    gate: 'GROUPING', digest: 'sha256:' + '1'.repeat(64),
     title: 'java v3.0.x 修订战役 — 范围工件', run: 'run line',
     links: [{ label: 'scope', url: `file://${main.root}/tmp/api-reference-sync/x.json` }],
   });
   main.write('tmp/api-reference-sync/java-revision-worklist.json', worklistFixture({ language: 'java' }));
   main.write('tmp/api-reference-sync/run-manifest-revision-apply-review-java-v3-Alpha.json', { schemaVersion: 1 });
   // sdk-release-scout style (go flow) — awaiting, no session yet.
-  sib.write('tmp/sdk-release-scout/go-v30-campaign-gate-manifest.json', {
-    gate: 'APPROVE_CAMPAIGN', digest: 'sha256:' + '2'.repeat(64),
-    title: 'go v3.0.0 战役门 v2', run: 'go intake run',
+  sib.write('tmp/sdk-release-scout/go-v30-grouping-gate-manifest.json', {
+    gate: 'APPROVE_GROUPING', digest: 'sha256:' + '2'.repeat(64),
+    title: 'go v3.0.0 分组门 v2', run: 'go intake run',
   });
 
   const { buildIntakeCards, buildLedger } = require('../../scripts/dashboard/ledger.js');
@@ -196,7 +196,7 @@ test('intake cards surface campaign manifests with approval transitions', (t) =>
   // ledger allows 60s skew) so both stay in one frame regardless of the
   // wall clock.
   const pinnedGateAt = new Date('2026-10-06T09:00:00.000Z');
-  fs.utimesSync(path.join(sib.root, 'tmp/sdk-release-scout/go-v30-campaign-gate-manifest.json'), pinnedGateAt, pinnedGateAt);
+  fs.utimesSync(path.join(sib.root, 'tmp/sdk-release-scout/go-v30-grouping-gate-manifest.json'), pinnedGateAt, pinnedGateAt);
   const sessionAt = new Date(pinnedGateAt.getTime() + 5_000).toISOString();
   sib.write('tmp/sdk-release-scout/go-v30-session.json', {
     schemaVersion: 1, status: 'in_progress', language: 'go', track: 'v3.0.x',
@@ -207,18 +207,18 @@ test('intake cards surface campaign manifests with approval transitions', (t) =>
   assert.equal(ledger2.intakes.find((c) => c.language === 'go').approved, true, 'session built after the gate proves approval');
 });
 
-// ---------- durable campaign receipts ----------
+// ---------- durable grouping receipts (grouping-governance flow) ----------
 
 test('intake cards take the durable receipt keyed by the gate digest as direct approval evidence', (t) => {
   const main = makeFixtureTree('dash-receipt-');
   t.after(() => fs.rmSync(main.root, { recursive: true, force: true }));
   const digest = 'sha256:' + 'a'.repeat(64);
-  main.write('tmp/sdk-release-scout/go-v30-campaign-gate-manifest.json', {
-    gate: 'APPROVE_CAMPAIGN', digest, title: 'go v3.0.0 战役门 v3', run: 'go run',
+  main.write('tmp/sdk-release-scout/go-v30-grouping-gate-manifest.json', {
+    gate: 'APPROVE_GROUPING', digest, title: 'go v3.0.0 分组门 v3', run: 'go run',
   });
-  main.write(`tmp/api-reference-sync/campaign-approvals/${digest}.json`, {
-    schemaVersion: 1, gate: 'APPROVE_CAMPAIGN', campaignPlanDigest: digest,
-    approvalCommand: `APPROVE_CAMPAIGN ${digest}`,
+  main.write(`tmp/api-reference-sync/grouping-approvals/${digest}.json`, {
+    schemaVersion: 1, gate: 'APPROVE_GROUPING', proposalDigest: digest,
+    approvalCommand: `APPROVE_GROUPING ${digest}`,
     language: 'go', sdkName: 'milvus', track: 'v3.0.x',
     releaseRange: 'client/v3.0.0-beta..client/v3.0.0',
     lineage: { scopeDigest: 'sha256:' + 'b'.repeat(64), identityMapDigest: 'sha256:' + 'c'.repeat(64) },
@@ -226,25 +226,25 @@ test('intake cards take the durable receipt keyed by the gate digest as direct a
   });
   // A decoy receipt for a different digest must not approve anything.
   const other = 'sha256:' + 'f'.repeat(64);
-  main.write(`tmp/api-reference-sync/campaign-approvals/${other}.json`, {
-    schemaVersion: 1, gate: 'APPROVE_CAMPAIGN', campaignPlanDigest: other,
-    approvalCommand: `APPROVE_CAMPAIGN ${other}`,
+  main.write(`tmp/api-reference-sync/grouping-approvals/${other}.json`, {
+    schemaVersion: 1, gate: 'APPROVE_GROUPING', proposalDigest: other,
+    approvalCommand: `APPROVE_GROUPING ${other}`,
     language: 'java', sdkName: 'milvus', track: 'v3.0.x', releaseRange: 'r',
     lineage: { scopeDigest: 'sha256:' + 'e'.repeat(64) }, approvedAt: '2026-10-06T09:00:00.000Z',
   });
 
-  const { buildIntakeCards, buildLedger, readCampaignReceipts } = require('../../scripts/dashboard/ledger.js');
+  const { buildIntakeCards, buildLedger, readGroupingReceipts } = require('../../scripts/dashboard/ledger.js');
   const checkouts = [{ id: 'main', label: '主检出', root: main.root }];
-  const receipts = readCampaignReceipts(checkouts);
+  const receipts = readGroupingReceipts(checkouts);
   assert.equal(receipts.length, 2, 'receipts from every checkout are enumerated');
   const [card] = buildIntakeCards(checkouts, [], [], receipts);
   assert.equal(card.approved, true, 'the receipt keyed by the gate digest proves approval directly');
   assert.equal(card.approvalEvidence, 'receipt');
-  assert.equal(card.receipt.path, `tmp/api-reference-sync/campaign-approvals/${digest}.json`);
+  assert.equal(card.receipt.path, `tmp/api-reference-sync/grouping-approvals/${digest}.json`);
   assert.equal(card.receipt.scopeDigest, 'sha256:' + 'b'.repeat(64));
 
   const ledger = buildLedger({ repoRoot: main.root, checkouts });
-  assert.equal(ledger.campaignReceipts.length, 2);
+  assert.equal(ledger.groupingReceipts.length, 2);
   assert.equal(ledger.intakes[0].approved, true);
   assert.equal(ledger.intakes[0].approvalEvidence, 'receipt');
 });
@@ -258,24 +258,24 @@ test('a receipt is checkout-scoped: main\'s receipt never approves a sibling\'s 
   });
   const digest = 'sha256:' + '9'.repeat(64);
   for (const tree of [main, sib]) {
-    tree.write('tmp/sdk-release-scout/go-v30-campaign-gate-manifest.json', {
-      gate: 'APPROVE_CAMPAIGN', digest, title: 'same digest, two checkouts', run: 'r',
+    tree.write('tmp/sdk-release-scout/go-v30-grouping-gate-manifest.json', {
+      gate: 'APPROVE_GROUPING', digest, title: 'same digest, two checkouts', run: 'r',
     });
   }
   // Receipt recorded in MAIN only.
-  main.write(`tmp/api-reference-sync/campaign-approvals/${digest}.json`, {
-    schemaVersion: 1, gate: 'APPROVE_CAMPAIGN', campaignPlanDigest: digest,
-    approvalCommand: `APPROVE_CAMPAIGN ${digest}`,
+  main.write(`tmp/api-reference-sync/grouping-approvals/${digest}.json`, {
+    schemaVersion: 1, gate: 'APPROVE_GROUPING', proposalDigest: digest,
+    approvalCommand: `APPROVE_GROUPING ${digest}`,
     language: 'go', sdkName: 'milvus', track: 'v3.0.x', releaseRange: 'r',
     lineage: { scopeDigest: 'sha256:' + '8'.repeat(64) }, approvedAt: '2026-10-06T10:00:00.000Z',
   });
 
-  const { buildIntakeCards, readCampaignReceipts } = require('../../scripts/dashboard/ledger.js');
+  const { buildIntakeCards, readGroupingReceipts } = require('../../scripts/dashboard/ledger.js');
   const checkouts = [
     { id: 'main', label: '主检出', root: main.root },
     { id: 'sib', label: 'sib', root: sib.root },
   ];
-  const receipts = readCampaignReceipts(checkouts);
+  const receipts = readGroupingReceipts(checkouts);
   assert.equal(receipts.length, 1);
   assert.equal(receipts[0].checkout, 'main');
   const cards = buildIntakeCards(checkouts, [], [], receipts);
@@ -289,16 +289,16 @@ test('a session bound to the proposal digest is approval evidence even when crea
   const main = makeFixtureTree('dash-bind-');
   t.after(() => fs.rmSync(main.root, { recursive: true, force: true }));
   const digest = 'sha256:' + 'd'.repeat(64);
-  main.write('tmp/sdk-release-scout/go-v30-campaign-gate-manifest.json', {
-    gate: 'APPROVE_CAMPAIGN', digest, title: 'go 战役门', run: 'r',
+  main.write('tmp/sdk-release-scout/go-v30-grouping-gate-manifest.json', {
+    gate: 'APPROVE_GROUPING', digest, title: 'go 分组门', run: 'r',
   });
   // Created BEFORE the manifest's mtime (the legacy heuristic must miss),
-  // but its campaignApproval binding names the gate's exact digest.
+  // but its groupingApproval binding names the gate's exact digest.
   main.write('tmp/sdk-release-scout/go-v30-session.json', {
     schemaVersion: 1, status: 'in_progress', language: 'go', track: 'v3.0.x',
-    campaignApproval: {
-      schemaVersion: 1, gate: 'APPROVE_CAMPAIGN', campaignPlanDigest: digest,
-      approvalCommand: `APPROVE_CAMPAIGN ${digest}`,
+    groupingApproval: {
+      schemaVersion: 1, gate: 'APPROVE_GROUPING', proposalDigest: digest,
+      approvalCommand: `APPROVE_GROUPING ${digest}`,
       language: 'go', sdkName: 'milvus', track: 'v3.0.x', releaseRange: 'r',
       lineage: { scopeDigest: 'sha256:' + 'e'.repeat(64) }, approvedAt: '2026-10-06T09:30:00.000Z',
     },
@@ -309,7 +309,7 @@ test('a session bound to the proposal digest is approval evidence even when crea
   const { buildLedger } = require('../../scripts/dashboard/ledger.js');
   const checkouts = [{ id: 'main', label: '主检出', root: main.root }];
   const ledger = buildLedger({ repoRoot: main.root, checkouts });
-  assert.equal(ledger.campaigns[0].campaignApproval.campaignPlanDigest, digest, 'campaign card carries the binding');
+  assert.equal(ledger.campaigns[0].groupingApproval.proposalDigest, digest, 'campaign card carries the binding');
   assert.equal(ledger.intakes[0].approved, true);
   assert.equal(ledger.intakes[0].approvalEvidence, 'session-binding');
 });
@@ -350,8 +350,8 @@ function writeRevisionArtifacts(tree, worklistName = 'java-revision-worklist.jso
     schemaVersion: 1, generatedAt: '2026-10-05T12:00:00.000Z',
     summary: { pages: 204, byCode: { RETURNS_MIN_DEPTH: 178 } },
   });
-  tree.write('tmp/api-reference-sync/gate-manifest-campaign-java-v30-revision.json', {
-    gate: 'CAMPAIGN', digest: 'sha256:' + '3'.repeat(64), title: '范围工件',
+  tree.write('tmp/api-reference-sync/gate-manifest-grouping-java-v30-revision.json', {
+    gate: 'GROUPING', digest: 'sha256:' + '3'.repeat(64), title: '范围工件',
     links: [{ label: 'scope', url: 'tmp/api-reference-sync/revision-scope-java-v30.json' }],
   });
   tree.write('tmp/api-reference-sync/run-manifest-revision-apply-review-java-v3-Client.json', { schemaVersion: 1 });
@@ -372,7 +372,7 @@ test('a revision campaign with its own review session renders as ONE merged row'
   assert.equal(card.revisionFlow.worklistStem, 'java-revision-worklist');
   assert.equal(card.revisionFlow.writtenPages, 2, 'apply-review manifests reconcile under the merged card');
   assert.equal(card.revisionFlow.receiptGap, undefined, 'manifest-count gap retired — the alarm derives session-side (staleReceipts)');
-  assert.equal(card.revisionFlow.gateManifest.digest, 'sha256:' + '3'.repeat(64));
+  assert.equal(card.revisionFlow.groupingGate.digest, 'sha256:' + '3'.repeat(64));
   assert.equal(ledger.revisions.length, 0, 'no standalone revision row remains');
   assert.equal(card.changeRequests.entries, 3, 'append-only entry count');
   assert.deepEqual(card.changeRequests.openUnits, ['review:java:v3-Client'], 'already-accepted units leave the open set');

@@ -141,7 +141,7 @@
       "enforcement": [
         "pre-write"
       ],
-      "statementDigest": "sha256:89aed0be6a33e8a46b14e885436fd70615c39254308165496a409e2ed77340f6",
+      "statementDigest": "sha256:a34ad2ba038eb570c3ec86d66b8f2ab00db62f95a26815b7d961287021f31d42",
       "fixtureIds": [
         "grouping-proposal-staleness"
       ],
@@ -150,25 +150,30 @@
           "stage": "pre-write",
           "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/grouping-proposal.js",
           "codes": [
-            "GROUPING_STALE"
-          ]
-        },
-        {
-          "stage": "pre-write",
-          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/campaign-approval.js",
-          "codes": [
-            "GROUPING_STALE"
+            "GROUPING_STALE",
+            "GROUPING_APPROVAL_CHAIN_INVALID",
+            "GROUPING_APPROVAL_ALREADY_BOUND"
           ]
         },
         {
           "stage": "pre-write",
           "module": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
           "codes": [
-            "GROUPING_STALE"
+            "GROUPING_STALE",
+            "GROUPING_APPROVAL_CHAIN_INVALID"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/bin/sdk-review-session.js",
+          "codes": [
+            "GROUPING_STALE",
+            "GROUPING_APPROVAL_CHAIN_INVALID",
+            "GROUPING_APPROVAL_ALREADY_BOUND"
           ]
         }
       ],
-      "notes": "Runtime-enforced scope-staleness floor. History: upgraded to runtime-enforced on 2026-10-06 via a durable session-level scope bind; the 2026-10-23 redesign retired the operator receipt ceremony, and the 2026-10-24 single-gate ruling collapsed the approval surface to APPROVE_CAMPAIGN + APPROVE_ROLLBACK and deleted the legacy session-level bind entirely. Current semantics: the campaign approval (campaign-approval.js) envelopes the approved scopeDigest; every sdk-doc-sync entry that presents one chains the presented --release-scope semantic digest against it and refuses GROUPING_STALE on drift — a re-scoped or hand-swapped scope never executes. (The legacy approval-chain error codes served only the deleted bind and are gone with it; the GROUPING_STALE code name is retained with the campaign-approval-vs-scope drift semantics.) The pre-2026-10-06 form was declared-only prose: the 2026-10 go/java intakes hand-rolled grouping proposals whose staleness nothing checked. Trust boundary (disclosed): the receipt file itself carries no issuance signature — within the single-operator threat model the durable record and the chain checks prevent drift and accident, not a determined local forger.\n\nStatement pointerized 2026-10-15 (slice 3-2 thin-SKILL.md rewrite): the compressed statement above is the registry-bound wording; the pre-thin precedent narrative is archived at references/skill-history/2026-10-15-pre-thin.md. Enforcement semantics re-bound 2026-10-24 with the single-gate model."
+      "notes": "Upgraded to runtime-enforced (2026-10-06, grouping write binding): the durable APPROVE_GROUPING receipt (digest-keyed, carries the proposal lineage) binds into the campaign session at creation (--grouping-approval) or via sdk-review-session.js approve-grouping (one-shot; a different proposal refuses GROUPING_APPROVAL_ALREADY_BOUND). From that point every sdk-doc-sync entry — dry-run, resume, or live write — chains its --release-scope semantic digest against the approved scope and refuses typed on drift (GROUPING_STALE) or a missing/malformed binding (GROUPING_APPROVAL_CHAIN_INVALID, also at session load for corrupted receipts). The pre-2026-10-06 form was declared-only prose: the 2026-10 go/java intakes hand-rolled grouping proposals whose staleness nothing checked. Review round 1 fixes (2026-10-06): --finalize-acceptance refuses the --grouping-approval combination outright (finalization chains through acceptance receipts, never a fresh grouping receipt — the 'every entry' wording narrows to every SYNC entry: dry-run, resume, live write); the flag-vs-session disagreement refusal has a direct test; approve-grouping persists the session BEFORE the receipt file (the receiptless half-state is the safe one and converges idempotently on re-run); receipt creation is O_EXCL; the receipt builder runs once per command. Trust boundary (disclosed): the receipt file itself carries no issuance signature — within the single-operator threat model the durable record and the chain checks prevent drift and accident, not a determined local forger; approve-grouping (which rebuilds the receipt from the proposal artifact) is the hardened path.\n\nStatement pointerized 2026-10-15 (slice 3-2 thin-SKILL.md rewrite): the compressed statement above is the registry-bound wording; the pre-thin precedent narrative is archived at references/skill-history/2026-10-15-pre-thin.md. Enforcement semantics unchanged."
     },
     {
       "id": "api.grouping-proposal-governance",
@@ -180,11 +185,11 @@
         "evidence",
         "plan"
       ],
-      "statementDigest": "sha256:1706f0557fc40e37dd035b7b07329e33014196875c6288cda0320eb9a7ae3c37",
+      "statementDigest": "sha256:2faa6149119de040aebe773de57722449cd4d4896ddcdc4bcf73c593e242b70c",
       "fixtureIds": [
         "grouping-proposal-governance"
       ],
-      "notes": "Campaign-control hardening (2026-10-06): the 2026-10 go/java intakes hand-rolled grouping proposals in tmp scripts with no schema and no lineage, and the go v3.0.x scout crashed raw on a missing identity map. The grouping gate now has durable materials: the canonical builder binds scope/identity-map/snapshot as semantic digests and enforces the exact-partition contract (units + exclusions == scope actions — the 163=144+19 accounting as a machine check), the canonical builder refuses artifacts without valid lineage, and scout identity-map failures are typed blockers pointing at the identity-reconcile draft workflow. Execution-side binding (session receipt cross-check at the write boundary) is the next batch. Review round 1 fixes (2026-10-06): identity-map loader types null/EISDIR roots too; the IDENTITY_MAP_COVERAGE parenthetical is conditional (zero ambiguous = no map blocker on approvalGrade); validateGroupingProposal re-derives the identity accounting from the bound scope+map (hand-edited coverage counts are a schema violation); the recorder accepts optional --scope/--identity-map for issuance-time lineage cross-check; the builder self-verifies its output against the same inputs; receipt creation is O_EXCL.\n\nStatement pointerized 2026-10-15 (slice 3-2 thin-SKILL.md rewrite): the compressed statement above is the registry-bound wording; the pre-thin precedent narrative is archived at references/skill-history/2026-10-15-pre-thin.md. Enforcement semantics unchanged.\n\n2026-10-23 redesign: the record-grouping-approval receipt CLI retired with the operator ceremony; enforcers now bind the canonical builder and the grouping kernel. Statement re-bound.",
+      "notes": "Campaign-control hardening (2026-10-06): the 2026-10 go/java intakes hand-rolled grouping proposals in tmp scripts with no schema and no lineage, and the go v3.0.x scout crashed raw on a missing identity map. The grouping gate now has durable materials: the canonical builder binds scope/identity-map/snapshot as semantic digests and enforces the exact-partition contract (units + exclusions == scope actions — the 163=144+19 accounting as a machine check), the approval receipt CLI makes an APPROVE_GROUPING durable and refuses artifacts without valid lineage, and scout identity-map failures are typed blockers pointing at the identity-reconcile draft workflow. Execution-side binding (session receipt cross-check at the write boundary) is the next batch. Review round 1 fixes (2026-10-06): identity-map loader types null/EISDIR roots too; the IDENTITY_MAP_COVERAGE parenthetical is conditional (zero ambiguous = no map blocker on approvalGrade); validateGroupingProposal re-derives the identity accounting from the bound scope+map (hand-edited coverage counts are a schema violation); the recorder accepts optional --scope/--identity-map for issuance-time lineage cross-check; the builder self-verifies its output against the same inputs; receipt creation is O_EXCL.\n\nStatement pointerized 2026-10-15 (slice 3-2 thin-SKILL.md rewrite): the compressed statement above is the registry-bound wording; the pre-thin precedent narrative is archived at references/skill-history/2026-10-15-pre-thin.md. Enforcement semantics unchanged.\n\n2026-10-23 redesign: the record-grouping-approval receipt CLI retired with the operator ceremony; enforcers now bind the canonical builder and the grouping kernel. Statement re-bound.",
       "enforcers": [
         {
           "stage": "plan",
@@ -558,7 +563,7 @@
       "id": "api.process-learning-capture",
       "version": 1,
       "risk": "process-integrity",
-      "scope": "per-unit-review-sessions",
+      "scope": "two-gate-review-sessions",
       "status": "runtime-enforced",
       "enforcement": [
         "reconcile"

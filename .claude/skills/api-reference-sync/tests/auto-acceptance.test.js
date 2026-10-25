@@ -40,7 +40,7 @@ test('touchedRecordsFromJournal reads the record identity from the rollback caps
   ]);
 });
 
-test('buildAutoAcceptanceReceipt derives the per-unit receipt from the journal', () => {
+test('buildAutoAcceptanceReceipt derives the two-gate receipt from the journal', () => {
   const receipt = buildAutoAcceptanceReceipt({
     reviewUnitId: 'review:python:Collections:create',
     executionJournalPath: 'tmp/j.jsonl',
@@ -50,7 +50,7 @@ test('buildAutoAcceptanceReceipt derives the per-unit receipt from the journal',
     recordLinks: ['https://x/rec'],
   });
   assert.equal(receipt.status, 'document_accepted');
-  assert.equal(receipt.commentsResolved, true, 'the per-unit validator requires this field');
+  assert.equal(receipt.commentsResolved, true, 'the two-gate validator requires this field');
   assert.equal(receipt.reviewUnitId, 'review:python:Collections:create');
   assert.deepEqual(receipt.touchedRecords.map((r) => r.recordId), ['rec-a', 'rec-b']);
   assert.deepEqual(receipt.documentLinks, ['https://x/doc'], 'blank links are filtered');

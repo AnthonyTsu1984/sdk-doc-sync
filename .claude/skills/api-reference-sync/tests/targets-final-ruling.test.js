@@ -156,13 +156,13 @@ function journalEntries(directory) {
   return { journalPath, digest: digestSemantic(entries) };
 }
 
-function perUnitSessionFixture(directory) {
+function twoGateSessionFixture(directory) {
   const initial = createReviewSession({
     sessionId: 'sdk-doc-sync:node:v3.0.x:ruling',
     language: 'node',
     sdkName: 'node',
     track: 'v3.0.x',
-    acceptanceFlow: 'per-unit',
+    acceptanceFlow: 'two-gate',
     reviewUnitManifest: manifest(),
   });
   const { journalPath, digest } = journalEntries(directory);
@@ -206,7 +206,7 @@ function cleanupReceipt(journalDigest) {
 
 test('acceptExecutedUnit reads the A2 ruling from targets.json for the final Targets value', async () => {
   const directory = tempDir('wire');
-  const fixture = perUnitSessionFixture(directory);
+  const fixture = twoGateSessionFixture(directory);
   const targetsJsonPath = path.join(directory, 'targets.json');
   fs.writeFileSync(targetsJsonPath, JSON.stringify({
     entries: [
@@ -235,7 +235,7 @@ test('acceptExecutedUnit reads the A2 ruling from targets.json for the final Tar
 
 test('acceptExecutedUnit without targets.json keeps the category-table/default value', async () => {
   const directory = tempDir('fallback');
-  const fixture = perUnitSessionFixture(directory);
+  const fixture = twoGateSessionFixture(directory);
   // An explicit nonexistent path must behave exactly like no flag at all.
   const nextSession = await acceptExecutedUnit({
     session: fixture.session,
@@ -255,7 +255,7 @@ test('acceptExecutedUnit without targets.json keeps the category-table/default v
 
 test('a corrupt targets.json fails the acceptance closed instead of silently falling back', async () => {
   const directory = tempDir('corrupt');
-  const fixture = perUnitSessionFixture(directory);
+  const fixture = twoGateSessionFixture(directory);
   const targetsJsonPath = path.join(directory, 'targets.json');
   fs.writeFileSync(targetsJsonPath, '{ not json');
   await assert.rejects(

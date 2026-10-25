@@ -34,7 +34,7 @@ node .claude/skills/verified-doc-authoring/bin/verified-doc-authoring.js plan \
 
 node scripts/verified-doc-authoring/preflight-snapshot.js <plan.json>
 
-# user replies: APPROVE_PLAN verified-doc-authoring sha256:<batchDigest>
+# user replies: APPROVE_WRITES verified-doc-authoring sha256:<batchDigest>
 
 VERIFIED_DOC_DRAFT=<draft.md> node .claude/skills/verified-doc-authoring/bin/verified-doc-authoring.js execute \
   --plan <plan.json> --approval <approval.json> \
@@ -111,7 +111,7 @@ mode for any later write on such pages.
 
 1. **Approval binds the batch digest byte-exactly.** Any artifact regenerated
    after the approval request (draft fix, rebase onto user edits, revision
-   rebind) changes the digest and requires a fresh `APPROVE_PLAN` round; the
+   rebind) changes the digest and requires a fresh `APPROVE_WRITES` round; the
    executor mechanically rejects stale approvals.
 2. **Users edit the page mid-flight.** Before every plan, refetch and compare
    the live content digest; on drift, export, fold the edits into the draft,

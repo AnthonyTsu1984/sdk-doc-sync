@@ -104,7 +104,7 @@ function finalizeUnit(session, directory, unitId, sequence) {
     });
 }
 
-// A fully-finalized per-unit session with one changes-requested redo behind
+// A fully-finalized two-gate session with one changes-requested redo behind
 // unit A — exactly one learning event pending capture.
 function sessionWithChangeRequest(directory) {
     let session = createReviewSession({
@@ -113,7 +113,7 @@ function sessionWithChangeRequest(directory) {
         sdkName: 'sdk',
         track: 'v1',
         reviewUnitManifest: manifest(),
-        acceptanceFlow: 'per-unit',
+        acceptanceFlow: 'two-gate',
     });
     const first = journal(directory, 'pl-first.jsonl', 'node:Collections:pl-a', 'sha256:pl-batch-first');
     session = recordDocumentExecution(session, {
@@ -162,7 +162,7 @@ test('learning events derive from change requests and session-bound rejection de
         sdkName: 'sdk',
         track: 'v1',
         reviewUnitManifest: manifest(),
-        acceptanceFlow: 'per-unit',
+        acceptanceFlow: 'two-gate',
     });
     const decisionLedgerPath = path.join(directory, 'decisions.jsonl');
     recordReviewDecision(foreign, {
@@ -261,7 +261,7 @@ test('a zero-event session closes without a capture report and stamps the zero s
         sdkName: 'sdk',
         track: 'v1',
         reviewUnitManifest: manifest(),
-        acceptanceFlow: 'per-unit',
+        acceptanceFlow: 'two-gate',
     });
     session = finalizeUnit(session, directory, UNIT_A, 'a');
     session = finalizeUnit(session, directory, UNIT_B, 'b');

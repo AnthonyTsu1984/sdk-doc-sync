@@ -129,7 +129,7 @@ test('T8: the real c4 session accepts the real c4 journal through the full accep
     }]);
     assert.equal(receipt.commentsResolved, true);
 
-    // The per-unit pre-write validation against the REAL session: unit
+    // The two-gate pre-write validation against the REAL session: unit
     // membership, journal digest re-hash, touched→observed action binding,
     // non-empty links, pending-execution match — the acceptance layer the
     // review found reachable only live, replayed offline.

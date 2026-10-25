@@ -287,13 +287,13 @@ function appendRejectDirective(prompt, { sessionPath, mode, unitId, reason }) {
   ].join('\n');
 }
 
-// Intake variant: the worker is seeded with the daily-scout findings and
-// must stop at the campaign gate — the operator-approved boundary where
-// "开始处理" ends and governed writing begins.
+// Intake variant (batch 6): the worker is seeded with the daily-scout
+// findings and must stop at the grouping gate — the operator-approved
+// boundary where "开始处理" ends and governed writing (still gated) begins.
 function buildIntakeWorkerPrompt(briefText) {
   return [
     '你是本次每日扫描发现物的处理会话（由治理看板一键派出）。下面是确定性生成的处理简报——它是你的初始任务上下文；一切以盘上 durable 状态与 canonical CLI 输出为准。',
-    '按简报中的工作指令执行：只读 intake（证据核证 → 规划 dry-run → 战役计划落位）可立即进行；呈战役卡后必须停在 APPROVE_CAMPAIGN 门，等待操作员批准，未获批准前不进入任何写路径。',
+    '按简报中的工作指令执行：只读 intake（证据核证 → 规划 dry-run → 建评审会话）可立即进行；产出分组方案后必须停在 APPROVE_GROUPING 门，等待操作员批准，未获批准前不进入任何写路径。',
     '---',
     briefText,
   ].join('\n');
@@ -325,7 +325,7 @@ function harvestUsage() {
 }
 
 // The unit an APPROVE line targets is its optional second token
-// (APPROVE_ROLLBACK <review-unit-id> sha256:…).
+// (APPROVE_DOCUMENT <review-unit-id> sha256:…).
 function unitIdFromApproveLine(line) {
   const match = /^APPROVE_\S+(?: (\S+))? sha256:/.exec(String(line || '').trim());
   return match?.[1] ?? null;
@@ -909,9 +909,10 @@ function relayStatus() {
 
 // Outbox event records join back to the bound artifact so a reply can act
 // without trusting message text — one mapper shared by the doorbell sweep and
-// the relay's status snapshots. Campaign-gate events pass their full binding
-// through verbatim (index path, replyLine, digest, session, unit, bound
-// worker); anything else degrades to the bare {key, category} pointer.
+// the relay's status snapshots. 分组门 keeps the v1 intake join; slice-B
+// campaign-gate events pass their full binding through verbatim (index path,
+// replyLine, digest, session, unit, bound worker); anything else degrades to
+// the bare {key, category} pointer.
 const CAMPAIGN_EVENT_FIELDS = [
   'sessionPath', 'sessionKey', 'gate', 'reviewUnitId', 'replyLine',
   'digest', 'indexId', 'language', 'sessionId', 'line',
@@ -919,9 +920,9 @@ const CAMPAIGN_EVENT_FIELDS = [
 
 function outboxEventsFrom(events) {
   return (Array.isArray(events) ? events : []).map((event) => {
-    if (event.category === '战役门') {
+    if (event.category === '分组门') {
       const card = (currentPayload?.intakes || []).find(
-        (candidate) => `campaign:${candidate.manifestPath}` === event.key,
+        (candidate) => `grouping:${candidate.manifestPath}` === event.key,
       );
       return {
         key: event.key,
@@ -1462,7 +1463,7 @@ async function handler(req, res) {
       const running = runningWorkerFor(workerKey) || lastIntakeDispatch(workerKey);
       if (running) {
         sendJson(res, 409, {
-          error: `该 intake 会话已在后台运行（派出于 ${running.at ?? running.spawnedAt}）——等它停在战役门或结束后再操作；总览页「正在运行的会话」可跟进`,
+          error: `该 intake 会话已在后台运行（派出于 ${running.at ?? running.spawnedAt}）——等它停在分组门或结束后再操作；总览页「正在运行的会话」可跟进`,
         });
         return;
       }
@@ -1493,8 +1494,8 @@ async function handler(req, res) {
         ok: true,
         workerKey,
         note: brief.meta.mode === 'track'
-          ? `轨道工作会话已派出（后台只读运行 · ${brief.meta.language} ${brief.meta.trackKey}）——总览页「正在运行的会话」可跟进；有发现停在战役批准门（APPROVE_CAMPAIGN），无发现则明确报告后结束`
-          : `处理会话已派出（后台只读运行 · ${brief.meta.language} · ${brief.meta.actionCount} 项发现）——总览页「正在运行的会话」可跟进；停在战役批准门（APPROVE_CAMPAIGN）后本页会显示战役门卡片，批准战役计划后才进入写作`,
+          ? `轨道工作会话已派出（后台只读运行 · ${brief.meta.language} ${brief.meta.trackKey}）——总览页「正在运行的会话」可跟进；有发现停在分组批准门（APPROVE_GROUPING），无发现则明确报告后结束`
+          : `处理会话已派出（后台只读运行 · ${brief.meta.language} · ${brief.meta.actionCount} 项发现）——总览页「正在运行的会话」可跟进；停在分组批准门（APPROVE_GROUPING）后本页会显示分组门卡片，批准分组后才进入写作`,
       });
     });
     return;
@@ -1592,10 +1593,10 @@ async function handler(req, res) {
         sessionId: plan.action.sessionId,
         unitId: unitId ?? null,
         note: isCommentsReject
-          ? '打回已注入 worker 会话——它将读取该批文档的飞书评论并转成修改要求落账（评论 API 不可达时会向你索要原文），重建后重呈战役门'
+          ? '打回已注入 worker 会话——它将读取该批文档的飞书评论并转成修改要求落账（评论 API 不可达时会向你索要原文），重建后停在新写门'
           : isWriteReject
-            ? '战役门打回已注入 worker 会话——它将按你的意见调整规划并重跑 dry-run，重呈战役门后再通知你（本批不写入）'
-            : '修改要求已注入 worker 会话——它将用 canonical CLI 落账打回并重建该单元，重呈战役门时再通知你',
+            ? '写门打回已注入 worker 会话——它将按你的意见调整规划并重跑 dry-run，呈新写门后再通知你（本批不写入）'
+            : '修改要求已注入 worker 会话——它将用 canonical CLI 落账打回并重建该单元，停在新写门时再通知你',
       });
     });
     return;

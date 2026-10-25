@@ -97,7 +97,7 @@ sweep 覆盖 java 全语料（499 页实测），**修订战役范围按 2026-10
 
 ### 3.7 呈门物预检与批次齐平（第三挂载点 + 两条铁律，2026-10-03 报告三并入）
 
-- **第三挂载点**：战役门呈报物（`writeApprovalPresentation` 的 markdownPreview = 页面逐字内容）呈门前强制跑五条——不过不呈门。"预览即真相"成文（close 三缺陷全部在预览里肉眼/机器可判，却从未被呈门前检查过）。
+- **第三挂载点**：写门呈报物（`writeApprovalPresentation` 的 markdownPreview = 页面逐字内容）呈门前强制跑五条——不过不呈门。"预览即真相"成文（close 三缺陷全部在预览里肉眼/机器可判，却从未被呈门前检查过）。
 - **铁律一（打回即铸的强化形态）**：**操作员拒绝了一条机器可查的规则，就是流程事故**——当轮强制铸造 fixture 进写前离线校验，PR 不带不算清偿（并入 §3.5 执行）。
 - **铁律二（批次齐平）**：呈门前对全批所有单元跑同一套检查；任何单元不过 → **整批退回修齐再呈门，禁止把"先写后补"当作选项呈给操作员**（delete/getAsync/hybridSearchAsync 明知缺响应字段还呈批、随后评审门三连拒的教训——queryAsync/searchAsync 与另外三者的不一致根本不该作为一个决策上呈）。
 
@@ -131,7 +131,7 @@ sweep 覆盖 java 全语料（499 页实测），**修订战役范围按 2026-10
 
 - **镜像源白名单**（config registry）：镜像取材仅限用户钦定样板页（describeReplicas 等）；非白名单的"已接受页"作镜像源 → 拒，退人工加白。**"已接受≠正确模板"成文**——v3.0 compact 的病正是顺着镜像内部传播到 v2.6 的。角色二分（2026-10-03 裁定）：**web-content=语义参考源**（内容项不能少，语言修订以我方为准），**钦定样板页=文风模板源**——白名单管的是后者，语义完整性由 §3.1 附带裁定第 1 条的语义门看住。
 - 镜像产物过与首写同一套预检（批1 五条自动覆盖，无需新码）。
-- **saved workflow v2 intake 段**：现有 v26 intake（`.zcode/workflows/java-v26-sync-campaign.dwf.ts:374` 起）已有 session 探针/dry-run/轨道继承核对员/战役门；v2 增补：拓扑审计硬步（批2 产物）、决策表引用、镜像白名单校验、跨轨核对固定步（批4a）。同时补 changes-requested 重建段（批5 联动，清偿 java-v26 遗留）。
+- **saved workflow v2 intake 段**：现有 v26 intake（`.zcode/workflows/java-v26-sync-campaign.dwf.ts:374` 起）已有 session 探针/dry-run/轨道继承核对员/分组门；v2 增补：拓扑审计硬步（批2 产物）、决策表引用、镜像白名单校验、跨轨核对固定步（批4a）。同时补 changes-requested 重建段（批5 联动，清偿 java-v26 遗留）。
 - **呈门链接转换三件套（2026-10-03 用户新增）**：AskUserQuestion 卡片字段按纯文本渲染——markdown 链接与裸 URL 均不可点击，而呈门材料（`writeApprovalPresentation` 预览=页面逐字内容）恰是批准决定必看的东西。转换在 workflow 呈门序列**确定性实现**（脚本层做，不依赖执达员自觉）：
   1. **呈门自动开页**：gate ask 前对本批预览链接执行 `open <url>`（darwin；单元多时只开本地索引页，不开 N 个标签页）。
   2. **本地门呈报索引**：每次呈门生成/覆盖 `tmp/api-reference-sync/gate-presentation/latest.html`——本次门全部材料的编号链接表（各单元预览 docx、记录页、会话文件、worklist、journal），一条 `open tmp/.../latest.html` 命令全达；门卡片内只放 digest + 单元清单 + 索引路径。
@@ -146,7 +146,7 @@ sweep 覆盖 java 全语料（499 页实测），**修订战役范围按 2026-10
 
 ## 7. 批5：REBUILD 一等动作
 
-- **语义**：目标=本战役已建记录（复用 recordId），全量内容替换，走与 CREATE 相同的内容门（批1）+ 单次 `APPROVE_CAMPAIGN` 门；回执绑前一回执 digest，lineage 不断。
+- **语义**：目标=本战役已建记录（复用 recordId），全量内容替换，走与 CREATE 相同的内容门（批1）+ 单次 `APPROVE_WRITES` 门；回执绑前一回执 digest，lineage 不断。
 - **路由**：changes-requested → 默认 REBUILD（UNIT_MACHINE 的 `recordDocumentChangesRequested` executed→in_progress 已支持重执行，缺的是 executor 侧一等动作——现 `WRITE_ACTIONS={CREATE,UPDATE,BACKFILL}`，sync-planner.js:22-26）；CREATE 撞 `CREATE_RECORD_ALREADY_EXISTS`（planner:495-509）且记录属本战役 scope → 自动改路由 REBUILD；非本战役记录 → fail-closed 转人工。拦 J6（撞门卡死全 scope 规划）。
 - 回滚保留给结构性损伤；REBUILD 是内容级推翻重来的唯一路径。
 

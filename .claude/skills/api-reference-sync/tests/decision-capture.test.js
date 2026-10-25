@@ -125,7 +125,7 @@ test('decision capture rejects unknown units and incomplete result-bound outcome
   }), /resultDigest is required/);
 });
 
-test('capability declaration names separate feedback capture and promotion workflows', () => {
+test('capability and bot references declare separate feedback capture and promotion workflows', () => {
   const capabilities = JSON.parse(fs.readFileSync(path.join(SKILL_ROOT, 'capabilities.json'), 'utf8'));
   assert.deepEqual(capabilities.learningPolicy.captureOutcomes, [
     'approved',
@@ -138,8 +138,14 @@ test('capability declaration names separate feedback capture and promotion workf
   ]);
   assert.equal(capabilities.learningPolicy.feedbackEntrypoint, '.claude/skills/api-reference-sync/bin/sdk-review-session.js record-decision');
   assert.equal(capabilities.learningPolicy.promotionEntrypoint, '.claude/skills/doc-ops-core/bin/skill-feedback.js build-promotion');
-  // The bot reference documents were retired with the operator ceremony
-  // (2026-10-24): the capability declaration is the durable contract.
+
+  const integration = fs.readFileSync(path.join(SKILL_ROOT, 'references', 'bot-integration.md'), 'utf8');
+  const prompts = fs.readFileSync(path.join(SKILL_ROOT, 'references', 'bot-prompts.md'), 'utf8');
+  assert.match(integration, /record-decision/);
+  assert.match(integration, /skill-feedback\.js build-promotion/);
+  assert.match(integration, /after the gate decision/i);
+  assert.match(prompts, /record-decision/);
+  assert.doesNotMatch(prompts, /PROPOSE_RULE/);
 });
 
 test('learning corpus covers scoped API-reference organization and preservation rules', () => {

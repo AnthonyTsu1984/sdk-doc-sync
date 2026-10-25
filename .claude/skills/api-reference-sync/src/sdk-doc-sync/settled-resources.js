@@ -1,6 +1,6 @@
 'use strict';
 
-// Per-unit executed-resource settlement (node v3.0.6 wall, 2026-10-14).
+// Two-gate executed-resource settlement (node v3.0.6 wall, 2026-10-14).
 //
 // Batch resources (folders, virtual-node repoints) ride a unit's dependency
 // closure while that unit is a live plan. Once the consuming units settle to
@@ -101,7 +101,7 @@ function settledResourceIdentity({ reviewSession, actionStableId, resourceRef = 
 // Whether one execution journal carries a FAILED entry — an invariant that
 // reported ok:false (e.g. the tree-delta postcondition) or an observed action
 // failure. A pending session row pointing at such a journal is a FAILED
-// execution awaiting replay, not a settled unit: the per-unit pad condition
+// execution awaiting replay, not a settled unit: the two-gate pad condition
 // (executed row + journal digest) alone would wall the replay behind a
 // SETTLED_UNIT_NOOP pad while the unit never verified (2026-10-23
 // EmbeddingList:add replay wall). Best-effort: an unreadable journal

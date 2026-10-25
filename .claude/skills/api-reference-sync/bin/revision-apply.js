@@ -5,8 +5,8 @@
 // revision campaign's per-unit write step. The fix IS the write: the unit's
 // reviewed fixed canonical markdown lands through the same writer-governance
 // and pr-polish validation machinery the release pipeline uses, authorized
-// by the operator's APPROVE_CAMPAIGN receipt — which envelopes the batch
-// digest (slice 7, ruling (b)): the
+// by the operator's APPROVE_WRITES batch digest — or, in a batch-16
+// campaign, by the merged APPROVE_CAMPAIGN receipt (slice 7, ruling (b)): the
 // receipt binds the unit SET + the three chains (scope, reviewUnitManifest,
 // contexts), unit membership is checked by --review-unit-id, and a FRESH unit
 // digest inside the approved set is accepted as a content regeneration and
@@ -32,7 +32,7 @@
 //      recomputed polished content;
 //   6. journal the execution (prepared / observed{success,verified} /
 //      completion sentinel, digestSemantic digest) and record it on the
-//      session as the unit's pending execution for the per-unit acceptance.
+//      session as the unit's pending execution for the two-gate acceptance.
 //
 // Never resumes through sdk-doc-sync; session transitions go through the
 // store. All live calls are injectable for offline tests.
@@ -141,7 +141,7 @@ function fetchRecordState(baseToken, tableId, recordId) {
 }
 
 // Governed record re-open: revision rounds re-open records finalized by the
-// previous campaign (Progress Draft → WIP) so the per-unit acceptance
+// previous campaign (Progress Draft → WIP) so the two-gate acceptance
 // WIP→Draft transition is legal again. Goes through the same BitableWriter
 // governance the acceptance writes use.
 function reopenRecordWip({ baseToken, tableId, recordId }, governance) {
@@ -659,7 +659,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
         ok: true,
     });
     // Record re-open (governed): the record was finalized to Draft by the
-    // previous campaign; the per-unit acceptance transition (WIP→Draft +
+    // previous campaign; the two-gate acceptance transition (WIP→Draft +
     // Targets final value) requires it back at WIP. The full pre-mutation
     // state rides the rollback capsule above.
     try {
@@ -707,7 +707,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
 
     // Slice 7 / 2026-10-16 ruling: a verified, recorded execution finalizes
     // within the same approved write (--auto-accept). The record re-open
-    // already moved the record WIP; the per-unit acceptance writes the
+    // already moved the record WIP; the two-gate acceptance writes the
     // verified WIP→Draft transition, lands the digest-bound per-unit receipt,
     // and finalizes the unit — so close-session can advance the watermark.
     // The touchedRecords are derived from THIS journal (record-touching

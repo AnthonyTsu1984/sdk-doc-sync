@@ -9,10 +9,9 @@
 //   bounded summary  — createBoundedSummary: proposedBatchDigest
 //   gate manifest    — { gate, units[{reviewUnitId, journalPath/journal,
 //                       journalDigest, links}], digest? }
+//   session          — pendingExecutions rows {reviewUnitId,
+//                       executionJournalDigest} (review-session-store shape)
 // The presentation never computes a digest; every fixture carries one in.
-// 2026-10-24 single-gate ruling: the operator surface is APPROVE_CAMPAIGN
-// (the dry-run path) + APPROVE_ROLLBACK (manifest path); the retired
-// per-unit document/acceptance presentations are gone.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -24,10 +23,6 @@ const { spawnSync } = require('node:child_process');
 const presentation = require('../src/sdk-doc-sync/gate-presentation');
 const { checkPresentationIndex } = require('../src/sdk-doc-sync/gate-presentation-check');
 const { gateReplyLine } = require('../src/sdk-doc-sync/gate-registry');
-const {
-  WRITE_APPROVAL_BATCH_SIZE,
-  chunkWriteApprovalBatches,
-} = require('../src/sdk-doc-sync/presentation-batches');
 const gateWatch = require('../../../../scripts/dashboard/gate-watch');
 
 const SKILL_SCRIPTS = path.resolve(__dirname, '..', 'scripts');
@@ -67,12 +62,9 @@ function fullDryRunFixture() {
   };
 }
 
-// Digest-bound rollback manifest with per-unit context rows: the digest is
-// the binding, the units are presentation context only.
-function rollbackManifestFixture() {
+function documentManifestFixture() {
   return {
-    gate: 'APPROVE_ROLLBACK',
-    rollbackManifestDigest: hex('f'),
+    gate: 'APPROVE_DOCUMENT',
     units: [
       {
         reviewUnitId: 'review:python:Database:use_database',
@@ -88,6 +80,15 @@ function rollbackManifestFixture() {
         journalDigest: hex('a'),
         links: ['https://zilliverse.feishu.cn/docx/WytXd3BYFo2bY2xDrRIcCcoXnb0', 'https://zilliverse.feishu.cn/drive/folder/I983fITf9lnARnd7btcc3YFVnWg'],
       },
+    ],
+  };
+}
+
+function documentSessionFixture() {
+  return {
+    pendingExecutions: [
+      { reviewUnitId: 'review:python:Database:use_database', executionJournalDigest: hex('1'), executionJournalPath: journalName('1'), executedAt: STAMP },
+      { reviewUnitId: 'review:python:Highlighter:LexicalHighlighter', executionJournalDigest: hex('a'), executionJournalPath: journalName('a'), executedAt: STAMP },
     ],
   };
 }
@@ -112,15 +113,15 @@ test('sessionKeyOf is stable, filesystem-safe, and readability-preserving', () =
   assert.equal(presentation.sessionKeyOf(null), null);
 });
 
-test('APPROVE_CAMPAIGN builds from a full dry-run receipt and binds the execution batch digest', () => {
+test('APPROVE_WRITES builds from a full dry-run receipt and binds the execution batch digest', () => {
   const index = presentation.buildPresentationIndex(baseInput({ fromDryrun: fullDryRunFixture() }));
   assert.equal(index.schema, 2);
-  assert.equal(index.gate, 'APPROVE_CAMPAIGN');
+  assert.equal(index.gate, 'APPROVE_WRITES');
   assert.equal(index.digest, hex('a')); // carried, never computed
   assert.equal(index.sessionPath, SESSION_RELATIVE);
   assert.equal(index.sessionKey, presentation.sessionKeyOf(SESSION_RELATIVE));
-  assert.deepEqual(index.replyLines, [`APPROVE_CAMPAIGN ${hex('a')}`]);
-  assert.equal(gateReplyLine('APPROVE_CAMPAIGN', { digest: index.digest }), index.replyLines[0]);
+  assert.deepEqual(index.replyLines, [`APPROVE_WRITES ${hex('a')}`]);
+  assert.equal(gateReplyLine('APPROVE_WRITES', { digest: index.digest }), index.replyLines[0]);
   // batch-scoped units from writeApprovalPresentation, sorted by unit id
   assert.deepEqual(index.units.map((unit) => unit.reviewUnitId), ['review:go:A:one', 'review:go:B:two']);
   assert.deepEqual(index.units[0].links, [
@@ -131,19 +132,42 @@ test('APPROVE_CAMPAIGN builds from a full dry-run receipt and binds the executio
   assert.equal(checkPresentationIndex(index).valid, true);
 });
 
-test('APPROVE_CAMPAIGN also builds from the bounded summary shape (proposedBatchDigest)', () => {
+test('APPROVE_WRITES also builds from the bounded summary shape (proposedBatchDigest)', () => {
   const index = presentation.buildPresentationIndex(baseInput({
     fromDryrun: { proposedBatchDigest: hex('9'), reviewUnitCount: 7 },
   }));
   assert.equal(index.digest, hex('9'));
-  assert.deepEqual(index.replyLines, [`APPROVE_CAMPAIGN ${hex('9')}`]);
+  assert.deepEqual(index.replyLines, [`APPROVE_WRITES ${hex('9')}`]);
   assert.deepEqual(index.units, []); // digest-only card; digest remains the binding
   assert.equal(checkPresentationIndex(index).valid, true);
 });
 
-test('every registered gate builds from a manifest via its native receipt digest field', () => {
+test('APPROVE_DOCUMENT builds per-unit reply lines from a multi-unit manifest (sorted, journal names derived)', () => {
+  const index = presentation.buildPresentationIndex(baseInput({
+    manifest: documentManifestFixture(),
+    session: documentSessionFixture(),
+  }));
+  assert.equal(index.digest, null); // DOCUMENT binds per-unit digests only
+  assert.deepEqual(index.replyLines, [
+    `APPROVE_DOCUMENT review:python:Database:use_database ${hex('1')}`,
+    `APPROVE_DOCUMENT review:python:Highlighter:LexicalHighlighter ${hex('a')}`,
+  ]);
+  assert.deepEqual(index.units.map((unit) => unit.journal), [journalName('1'), journalName('a')]);
+  assert.deepEqual(index.units[1].links, [
+    'https://zilliverse.feishu.cn/docx/WytXd3BYFo2bY2xDrRIcCcoXnb0',
+    'https://zilliverse.feishu.cn/drive/folder/I983fITf9lnARnd7btcc3YFVnWg',
+  ]);
+  for (const line of index.replyLines) {
+    assert.equal(gateReplyLine('APPROVE_DOCUMENT', { replyLine: line }), line);
+  }
+  assert.equal(checkPresentationIndex(index).valid, true);
+});
+
+test('every remaining registered gate builds from a manifest via its native receipt digest field', () => {
   const cases = [
+    ['APPROVE_GROUPING', 'proposalDigest', 'e'],
     ['APPROVE_ROLLBACK', 'rollbackManifestDigest', 'f'],
+    ['APPROVE_ACCEPTANCE', 'acceptanceManifestDigest', '0'],
     ['APPROVE_CAMPAIGN', 'campaignPlanDigest', 'd'],
   ];
   for (const [gate, field, char] of cases) {
@@ -157,18 +181,13 @@ test('every registered gate builds from a manifest via its native receipt digest
   }
 });
 
-test('the registry carries exactly the single-gate ruling surface', () => {
-  // 2026-10-24: one campaign gate + the unit-level destructive confirmation.
-  assert.deepEqual(presentation.GATE_NAMES, ['APPROVE_CAMPAIGN', 'APPROVE_ROLLBACK']);
-});
-
 test('typed rejections: PRESENTATION_INPUT_INVALID for an unregistered gate', () => {
   assert.equal(rejectionCode(() => presentation.buildPresentationIndex(baseInput({
     manifest: { gate: 'APPROVE_EVERYTHING', digest: hex('e') },
   }))), 'PRESENTATION_INPUT_INVALID');
   assert.equal(rejectionCode(() => presentation.buildPresentationIndex(baseInput({
     fromDryrun: fullDryRunFixture(),
-    manifest: { gate: 'APPROVE_ROLLBACK', digest: hex('e') },
+    manifest: { gate: 'APPROVE_GROUPING', digest: hex('e') },
   }))), 'PRESENTATION_INPUT_INVALID'); // both sources at once
   assert.equal(rejectionCode(() => presentation.buildPresentationIndex(baseInput({
     fromDryrun: { proposedExecutionBatch: { batchDigest: 'deadbeef' } },
@@ -197,35 +216,55 @@ test('typed rejections: PRESENTATION_REPLY_LINE_MISMATCH on a tampered override'
       replyLines: [`APPROVE_CAMPAIGN ${hex('c')}`.toUpperCase()],
     },
   }))), 'PRESENTATION_REPLY_LINE_MISMATCH');
+  assert.equal(rejectionCode(() => presentation.buildPresentationIndex(baseInput({
+    manifest: {
+      gate: 'APPROVE_DOCUMENT',
+      replyLine: `APPROVE_DOCUMENT review:other ${hex('1')}`,
+      units: documentManifestFixture().units,
+    },
+    session: documentSessionFixture(),
+  }))), 'PRESENTATION_REPLY_LINE_MISMATCH');
 });
 
-test('typed rejections: PRESENTATION_SESSION_UNBOUND without a session', () => {
+test('typed rejections: PRESENTATION_SESSION_UNBOUND without a session or against foreign session state', () => {
   // no sessionPath at all
   assert.equal(rejectionCode(() => presentation.buildPresentationIndex({
     fromDryrun: fullDryRunFixture(),
     generatedAt: STAMP,
   })), 'PRESENTATION_SESSION_UNBOUND');
-  // a sessionPath that derives no filesystem-safe key
-  assert.equal(rejectionCode(() => presentation.buildPresentationIndex({
-    fromDryrun: fullDryRunFixture(),
-    generatedAt: STAMP,
-    sessionPath: '   ',
-  })), 'PRESENTATION_SESSION_UNBOUND');
+  // DOCUMENT units that the bound session does not hold as pending executions
+  const session = documentSessionFixture();
+  session.pendingExecutions = session.pendingExecutions.slice(0, 1);
+  assert.equal(rejectionCode(() => presentation.buildPresentationIndex(baseInput({
+    manifest: documentManifestFixture(),
+    session,
+  }))), 'PRESENTATION_SESSION_UNBOUND');
+  // a journal digest that does not bind the session's pending row
+  const drifted = documentManifestFixture();
+  drifted.units[0].journalDigest = hex('9');
+  assert.equal(rejectionCode(() => presentation.buildPresentationIndex(baseInput({
+    manifest: drifted,
+    session: documentSessionFixture(),
+  }))), 'PRESENTATION_SESSION_UNBOUND');
 });
 
-test('typed rejections: PRESENTATION_UNIT_INCOMPLETE for manifest units without a reviewUnitId', () => {
-  const manifest = rollbackManifestFixture();
-  delete manifest.units[1].reviewUnitId;
+test('typed rejections: PRESENTATION_UNIT_INCOMPLETE for DOCUMENT units without a binding journal digest', () => {
+  const manifest = documentManifestFixture();
+  delete manifest.units[1].journalDigest;
   assert.equal(rejectionCode(() => presentation.buildPresentationIndex(baseInput({
     manifest,
   }))), 'PRESENTATION_UNIT_INCOMPLETE');
+  // empty DOCUMENT units array
+  assert.equal(rejectionCode(() => presentation.buildPresentationIndex(baseInput({
+    manifest: { gate: 'APPROVE_DOCUMENT', units: [] },
+  }))), 'PRESENTATION_INPUT_INVALID');
 });
 
 test('validator catches a tampered index on every axis (fail-closed report, no throw)', () => {
-  const good = presentation.buildPresentationIndex(baseInput({ manifest: rollbackManifestFixture() }));
+  const good = presentation.buildPresentationIndex(baseInput({ manifest: documentManifestFixture() }));
 
   const tamperedReply = { ...good, replyLines: [...good.replyLines] };
-  tamperedReply.replyLines[0] = `APPROVE_ROLLBACK ${hex('8')}`;
+  tamperedReply.replyLines[0] = `APPROVE_DOCUMENT review:python:Database:use_database ${hex('f')}`;
   const replyReport = checkPresentationIndex(tamperedReply);
   assert.equal(replyReport.valid, false);
   assert.ok(replyReport.errors.some((error) => error.code === 'PRESENTATION_REPLY_LINE_MISMATCH'));
@@ -236,12 +275,12 @@ test('validator catches a tampered index on every axis (fail-closed report, no t
   const wrongKey = { ...good, sessionKey: 'not-the-canonical-key' };
   assert.ok(checkPresentationIndex(wrongKey).errors.some((error) => error.code === 'PRESENTATION_INPUT_INVALID'));
 
-  const missingDigest = { ...good, gate: 'APPROVE_CAMPAIGN', digest: null };
+  const missingDigest = { ...good, gate: 'APPROVE_ACCEPTANCE', digest: null };
   assert.ok(checkPresentationIndex(missingDigest).errors.some((error) => error.code === 'PRESENTATION_DIGEST_MISSING'));
 
-  const badLinks = JSON.parse(JSON.stringify(good));
-  badLinks.units[0].links = 'https://not-an-array';
-  assert.ok(checkPresentationIndex(badLinks).errors.some((error) => error.code === 'PRESENTATION_UNIT_INCOMPLETE'));
+  const badJournal = JSON.parse(JSON.stringify(good));
+  badJournal.units[0].journal = journalName('9'); // name encodes a different digest
+  assert.ok(checkPresentationIndex(badJournal).errors.some((error) => error.code === 'PRESENTATION_UNIT_INCOMPLETE'));
 
   const badSchema = { ...good, schema: 3 };
   assert.ok(checkPresentationIndex(badSchema).errors.some((error) => error.code === 'PRESENTATION_INPUT_INVALID'));
@@ -328,8 +367,8 @@ test('impact derivation: bounded summary 走 diff[].type；分组提案走 units
   // 经 --manifest 直接呈门：id 即呈现层单元
   const grouping = presentation.buildPresentationIndex(baseInput({
     manifest: {
-      gate: 'APPROVE_CAMPAIGN',
-      campaignPlanDigest: hex('e'),
+      gate: 'APPROVE_GROUPING',
+      proposalDigest: hex('e'),
       units: [
         { id: 'unit:create-collection', sourceStableId: 's1', actionIntent: 'CREATE', title: 'Collection（类页）' },
         { id: 'unit:update-flush', sourceStableId: 's2', actionIntent: 'UPDATE' },
@@ -345,18 +384,19 @@ test('impact derivation: bounded summary 走 diff[].type；分组提案走 units
 });
 
 test('impact honest degradation: 无分类数据如实为 null，卡片显示"待 dry-run 细化"，绝不编数', () => {
-  // rollback manifest 形态没有动作分类
-  const rollback = presentation.buildPresentationIndex(baseInput({
-    manifest: rollbackManifestFixture(),
+  // gate manifest（APPROVE_DOCUMENT 形态）没有动作分类
+  const doc = presentation.buildPresentationIndex(baseInput({
+    manifest: documentManifestFixture(),
+    session: documentSessionFixture(),
   }));
-  assert.equal(rollback.impact, null);
+  assert.equal(doc.impact, null);
   // actionIntent 全部无法映射（NO_ACTION）同样降级
   const noop = presentation.buildPresentationIndex(baseInput({
-    manifest: { gate: 'APPROVE_CAMPAIGN', campaignPlanDigest: hex('e'), units: [{ id: 'u1', sourceStableId: 's1', actionIntent: 'NO_ACTION' }] },
+    manifest: { gate: 'APPROVE_GROUPING', proposalDigest: hex('e'), units: [{ id: 'u1', sourceStableId: 's1', actionIntent: 'NO_ACTION' }] },
   }));
   assert.equal(noop.impact, null);
   // 卡片降级文案
-  assert.match(presentation.renderCardHtml(rollback), /动作面: 待 dry-run 细化/);
+  assert.match(presentation.renderCardHtml(doc), /动作面: 待 dry-run 细化/);
   // 有数据时卡片显示动作面行
   const withImpact = presentation.buildPresentationIndex(baseInput({ fromDryrun: fullDryRunFixture() }));
   assert.match(presentation.renderCardHtml(withImpact), /动作面: 文档 2 篇 · CREATE 0 · UPDATE 2/);
@@ -375,7 +415,8 @@ test('impact honest degradation: 无分类数据如实为 null，卡片显示"�
 
 test('schema 2 向后兼容：旧 schema-1 index（无 source/impact）仍通过 validator', () => {
   const modern = presentation.buildPresentationIndex(baseInput({
-    manifest: rollbackManifestFixture(),
+    manifest: documentManifestFixture(),
+    session: documentSessionFixture(),
     source: { origin: 'pr-intake', prs: [] },
   }));
   assert.equal(modern.schema, 2);
@@ -442,15 +483,24 @@ test('rendered card keeps the dark tone and stays parseable by the current board
   const index = presentation.buildPresentationIndex(baseInput({ fromDryrun: fullDryRunFixture() }));
   const html = presentation.renderCardHtml(index);
   assert.match(html, /background:#16181d/);
-  assert.match(html, /<code style="display:inline-block[^"]*">APPROVE_CAMPAIGN /); // copyable reply line
+  assert.match(html, /<code style="display:inline-block[^"]*">APPROVE_WRITES /); // copyable reply line
   const parsed = gateWatch.parseGatePresentation(html);
   assert.ok(parsed, 'gate-watch must parse the card');
-  assert.equal(parsed.gate, 'APPROVE_CAMPAIGN');
+  assert.equal(parsed.gate, 'APPROVE_WRITES');
   assert.equal(parsed.digest, hex('a'));
   assert.equal(parsed.sessionPath, index.sessionPath);
   assert.ok(parsed.links.length >= 3);
-  assert.equal(gateWatch.presentationMatchesCard(parsed, { nextGate: { gate: 'APPROVE_CAMPAIGN' }, sessionPath: index.sessionPath }), true);
-  assert.equal(gateWatch.presentationMatchesCard(parsed, { nextGate: { gate: 'CLOSE_SESSION' }, sessionPath: index.sessionPath }), false);
+  assert.equal(gateWatch.presentationMatchesCard(parsed, { nextGate: { gate: 'APPROVE_WRITE' }, sessionPath: index.sessionPath }), true);
+  assert.equal(gateWatch.presentationMatchesCard(parsed, { nextGate: { gate: 'APPROVE_DOCUMENT' }, sessionPath: index.sessionPath }), false);
+  // document card parses up to the digest line only when it carries none —
+  // the per-unit reply lines remain the binding (slice B consumes index.json)
+  const docIndex = presentation.buildPresentationIndex(baseInput({
+    manifest: documentManifestFixture(),
+    session: documentSessionFixture(),
+  }));
+  const docHtml = presentation.renderCardHtml(docIndex);
+  assert.match(docHtml, /APPROVE_DOCUMENT review:python:Database:use_database /);
+  assert.doesNotMatch(docHtml, /<code>sha256:[0-9a-f]{64}<\/code>/);
 });
 
 test('producer CLI writes the stamped pair plus atomic board mirrors; --check-only writes nothing', () => {
@@ -474,7 +524,7 @@ test('producer CLI writes the stamped pair plus atomic board mirrors; --check-on
 
   const checkOnly = spawnSync(process.execPath, [...baseArgs, '--check-only'], { encoding: 'utf8', cwd: repoRoot });
   assert.equal(checkOnly.status, 0, checkOnly.stderr);
-  assert.match(checkOnly.stdout, /reply line: APPROVE_CAMPAIGN sha256:/);
+  assert.match(checkOnly.stdout, /reply line: APPROVE_WRITES sha256:/);
   assert.equal(fs.existsSync(outDir), false, '--check-only must not write anything');
 
   const first = spawnSync(process.execPath, baseArgs, { encoding: 'utf8', cwd: repoRoot });
@@ -485,7 +535,7 @@ test('producer CLI writes the stamped pair plus atomic board mirrors; --check-on
   assert.deepEqual(entries.filter((name) => name !== 'latest.html' && name !== 'latest-index.json').length, 1);
   const stampedDir = path.join(outDir, entries.find((name) => name !== 'latest.html' && name !== 'latest-index.json'));
   const [cardName] = fs.readdirSync(stampedDir);
-  assert.match(cardName, /^\d{8}-\d{6}-APPROVE_CAMPAIGN\.html$/);
+  assert.match(cardName, /^\d{8}-\d{6}-APPROVE_WRITES\.html$/);
   const cardPath = path.join(stampedDir, cardName);
   const indexPath = path.join(stampedDir, `${cardName.replace(/\.html$/, '')}.index.json`);
 
@@ -544,7 +594,7 @@ test('validator CLI validates a good index and rejects a tampered one', () => {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-presentation-check-'));
   const goodPath = path.join(work, 'good.index.json');
   fs.writeFileSync(goodPath, JSON.stringify(presentation.buildPresentationIndex(baseInput({
-    manifest: rollbackManifestFixture(),
+    manifest: documentManifestFixture(),
   }))));
 
   const ok = spawnSync(process.execPath, [
@@ -555,7 +605,7 @@ test('validator CLI validates a good index and rejects a tampered one', () => {
   assert.deepEqual(JSON.parse(ok.stdout), { valid: true, errors: [] });
 
   const tampered = JSON.parse(fs.readFileSync(goodPath, 'utf8'));
-  tampered.replyLines[0] = `APPROVE_ROLLBACK ${hex('8')}`;
+  tampered.replyLines[0] = `APPROVE_DOCUMENT review:python:Database:use_database ${hex('8')}`;
   const badPath = path.join(work, 'bad.index.json');
   fs.writeFileSync(badPath, JSON.stringify(tampered));
   const bad = spawnSync(process.execPath, [
@@ -569,23 +619,4 @@ test('validator CLI validates a good index and rejects a tampered one', () => {
     path.join(SKILL_SCRIPTS, 'gate-presentation-check.js'),
   ], { encoding: 'utf8', cwd: repoRoot });
   assert.equal(usage.status, 64);
-});
-
-// Migrated from the retired legacy-flow test file (2026-10-24 single-gate
-// cleanup): the batching pure function is gate-free and stays covered here.
-test('campaign batches: fewer than 20 units are one batch; 20+ chunk in order', () => {
-  assert.equal(WRITE_APPROVAL_BATCH_SIZE, 20);
-  const nineteen = Array.from({ length: 19 }, (_, index) => `unit-${index}`);
-  assert.deepEqual(chunkWriteApprovalBatches(nineteen).map((batch) => batch.unitIds.length), [19]);
-  const twenty = Array.from({ length: 20 }, (_, index) => `unit-${index}`);
-  assert.deepEqual(chunkWriteApprovalBatches(twenty).map((batch) => batch.unitIds.length), [20]);
-  const fortyFive = Array.from({ length: 45 }, (_, index) => `unit-${index}`);
-  const batches = chunkWriteApprovalBatches(fortyFive);
-  assert.deepEqual(batches.map((batch) => batch.unitIds.length), [20, 20, 5]);
-  assert.deepEqual(batches.map((batch) => batch.batchIndex), [0, 1, 2]);
-  assert.deepEqual(batches.map((batch) => batch.batchCount), [3, 3, 3]);
-  // Ordering and coverage: chunking never reorders, drops, or duplicates.
-  assert.deepEqual(batches.flatMap((batch) => batch.unitIds), fortyFive);
-  assert.deepEqual(chunkWriteApprovalBatches([]), []);
-  assert.throws(() => chunkWriteApprovalBatches(['a'], { batchSize: 0 }), /positive integer/);
 });

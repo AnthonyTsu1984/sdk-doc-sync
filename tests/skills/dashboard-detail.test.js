@@ -41,7 +41,7 @@ function detailSessionFixture() {
     language: 'java',
     sdkName: 'milvus-sdk-java',
     track: 'v2.6.x',
-    acceptanceFlow: 'campaign',
+    acceptanceFlow: 'two-gate',
     status: 'in_progress',
     scanStateKey: 'java-v26',
     reviewUnitManifest: {

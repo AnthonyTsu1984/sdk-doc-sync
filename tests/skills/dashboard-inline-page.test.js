@@ -76,7 +76,7 @@ function revisionPayload() {
       language: 'java',
       ruling: 'ruling text',
       scope: { pages: 204, findings: 294, uniquePages: 153, summary: {}, generatedAt: '2026-10-05T12:00:00.000Z' },
-      gateManifest: { digest: 'sha256:' + 'a'.repeat(64), title: 'gate', manifest: 'm' },
+      groupingGate: { digest: 'sha256:' + 'a'.repeat(64), title: 'gate', manifest: 'm' },
       pages: [{ page: 'LexicalHighlighter', documentToken: 'TOK1', codes: ['RETURNS_MIN_DEPTH'] }],
       written: [{ flow: 'revision', unit: 'java-v3-LexicalHighlighter', manifest: 'tmp/api-reference-sync/run-manifest-revision-apply-review-java-v3-LexicalHighlighter.json', writtenAt: '2026-10-05T13:41:00.000Z' }],
       writtenPages: 1,
@@ -155,15 +155,15 @@ function intakePayload({ approved = false, evidence = null, withJavaRevision = f
       checkout: 'go-scan',
       checkoutLabel: 'go-scan',
       checkoutRoot: '/x/go-scan',
-      manifestPath: 'tmp/sdk-release-scout/go-v30-campaign-gate-manifest-v3.json',
-      title: 'go v3.0.0 战役门 v3-r2',
+      manifestPath: 'tmp/sdk-release-scout/go-v30-grouping-gate-manifest-v3.json',
+      title: 'go v3.0.0 分组门 v3-r2',
       run: 'go run',
       digest: 'sha256:' + '6'.repeat(64),
       language: 'go',
       presentedAt: '2026-10-06T11:00:00.000Z',
       approved,
       approvalEvidence: evidence ?? (approved ? 'receipt' : null),
-      receipt: approved ? { checkoutRoot: '/x/go-scan', path: 'tmp/api-reference-sync/campaign-approvals/x.json', campaignPlanDigest: 'sha256:' + '6'.repeat(64), approvedAt: '2026-10-06T12:00:00.000Z' } : null,
+      receipt: approved ? { checkoutRoot: '/x/go-scan', path: 'tmp/api-reference-sync/grouping-approvals/x.json', proposalDigest: 'sha256:' + '6'.repeat(64), approvedAt: '2026-10-06T12:00:00.000Z' } : null,
       links: [],
     }],
     groupingReceipts: [],
@@ -175,7 +175,7 @@ function intakePayload({ approved = false, evidence = null, withJavaRevision = f
   if (withJavaRevision) {
     payload.intakes.push({
       kind: 'intake', checkout: 'java-v30', checkoutLabel: 'java-v30', checkoutRoot: '/x/java',
-      manifestPath: 'tmp/api-reference-sync/gate-manifest-campaign-java-rev.json',
+      manifestPath: 'tmp/api-reference-sync/gate-manifest-grouping-java-rev.json',
       title: 'java v3.0.x 修订战役 — 范围工件', run: 'r', digest: 'sha256:' + '7'.repeat(64),
       language: 'java', presentedAt: '2026-10-05T10:00:00.000Z', approved: true,
       approvalEvidence: 'written', receipt: null, links: [],
@@ -190,17 +190,17 @@ async function renderRoute(api, hash) {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-test('a pending campaign gate is an in-progress campaign row (single-gate vocabulary)', async () => {
+test('a pending grouping gate is an in-progress campaign row (three-gate vocabulary)', async () => {
   const { api, elements } = loadPageScript();
   api.setPage(intakePayload());
   await renderRoute(api, '#/skill/api');
   const page = elements.page.innerHTML;
   assert.ok(!page.includes('战役筹备'), 'the preparation section is gone');
   assert.ok(page.includes('战役进行中 1'), 'the gate counts as campaign activity from the scan request');
-  assert.ok(page.includes('战役门待批 1'), 'the pending-gate alert chip stays');
+  assert.ok(page.includes('分组门待批 1'), 'the pending-gate alert chip stays');
   assert.ok(!page.includes('<span class="badge finalized">无进行中战役</span>'), 'no idle badge while a gate is pending');
-  assert.ok(page.includes('APPROVE_CAMPAIGN'), 'the gate row carries the approval line gate');
-  assert.ok(page.includes('campaign'), 'the flow badge speaks the single-gate vocabulary');
+  assert.ok(page.includes('APPROVE_GROUPING'), 'the gate row carries the approval line gate');
+  assert.ok(page.includes('three-gate'), 'the flow badge speaks the three-gate vocabulary');
   assert.ok(!page.includes('>grouping<'), 'grouping is a phase, never a type badge');
 });
 
@@ -210,14 +210,14 @@ test('language page and track page list the gate as a campaign row', async () =>
   await renderRoute(api, '#/skill/api/lang/go');
   const langPage = elements.page.innerHTML;
   assert.ok(!langPage.includes('战役筹备'), 'no preparation section on the language page');
-  assert.ok(langPage.includes('APPROVE_CAMPAIGN'), 'gate row present in the language campaign table');
+  assert.ok(langPage.includes('APPROVE_GROUPING'), 'gate row present in the language campaign table');
 
   api.setPage(intakePayload());
   await renderRoute(api, '#/skill/api/track/go-v30');
   const trackPage = elements.page.innerHTML;
   assert.ok(!trackPage.includes('战役筹备'), 'no preparation section on the track page');
-  assert.ok(trackPage.includes('APPROVE_CAMPAIGN'), 'gate row present in the track campaign table');
-  assert.ok(trackPage.includes('含战役门阶段 1'), 'track kv counts the gate-phase campaign');
+  assert.ok(trackPage.includes('APPROVE_GROUPING'), 'gate row present in the track campaign table');
+  assert.ok(trackPage.includes('含分组门阶段 1'), 'track kv counts the gate-phase campaign');
 });
 
 test('an approved-receipt gate stays a row (preparing); its detail page shows the digest', async () => {
@@ -227,15 +227,15 @@ test('an approved-receipt gate stays a row (preparing); its detail page shows th
   assert.ok(elements.page.innerHTML.includes('已批 · 筹备中'), 'receipt-evidence gate still renders as its own row');
 
   api.setPage(intakePayload());
-  await renderRoute(api, '#/campaign/' + encodeURIComponent('go-scan::tmp/sdk-release-scout/go-v30-campaign-gate-manifest-v3.json'));
+  await renderRoute(api, '#/campaign/' + encodeURIComponent('go-scan::tmp/sdk-release-scout/go-v30-grouping-gate-manifest-v3.json'));
   const pendingDetail = elements.page.innerHTML;
-  assert.ok(pendingDetail.includes('战役门'), 'gate detail page renders');
+  assert.ok(pendingDetail.includes('分组门战役'), 'gate detail page renders');
   assert.ok(pendingDetail.includes('sha256:' + '6'.repeat(64)), 'full digest visible');
-  assert.ok(pendingDetail.includes('APPROVE_CAMPAIGN sha256:'), 'approval line preview present on the pending gate');
-  assert.ok(pendingDetail.includes('战役门（APPROVE_CAMPAIGN）'), 'single-gate strip present');
+  assert.ok(pendingDetail.includes('APPROVE_GROUPING sha256:'), 'approval line preview present on the pending gate');
+  assert.ok(pendingDetail.includes('① 分组门'), 'three-gate step strip present');
 
   api.setPage(intakePayload({ approved: true }));
-  await renderRoute(api, '#/campaign/' + encodeURIComponent('go-scan::tmp/sdk-release-scout/go-v30-campaign-gate-manifest-v3.json'));
+  await renderRoute(api, '#/campaign/' + encodeURIComponent('go-scan::tmp/sdk-release-scout/go-v30-grouping-gate-manifest-v3.json'));
   const approvedDetail = elements.page.innerHTML;
   assert.ok(approvedDetail.includes('已批 · 筹备中'), 'approved status stated');
   assert.ok(approvedDetail.includes('回执文件'), 'receipt link present once approved');
@@ -249,7 +249,7 @@ test('a gate whose campaign row already exists never double-renders (java lesson
     sessionKey: 'java-v30::tmp/api-reference-sync/java-revision-worklist.json',
     worklistPath: 'tmp/api-reference-sync/java-revision-worklist.json', worklistStem: 'java-revision-worklist',
     language: 'java', ruling: 'r', scope: { pages: 204, findings: 3, uniquePages: 2, summary: {}, generatedAt: null },
-    gateManifest: { digest: 'sha256:' + '7'.repeat(64), title: 't', manifest: 'm' },
+    groupingGate: { digest: 'sha256:' + '7'.repeat(64), title: 't', manifest: 'm' },
     pages: [{ page: 'Vector', documentToken: 'T', codes: ['X'] }],
     written: [], writtenPages: 0, remainingPages: 204, status: 'in_progress', updatedAt: '2026-10-06T10:00:00.000Z',
   });
@@ -268,12 +268,12 @@ test('a receipt-evidence gate whose session landed never double-renders (go futu
     checkout: 'go-scan', checkoutLabel: 'go-scan',
     sessionPath: 'tmp/sdk-release-scout/go-v30-session.json', sessionKey: 'go-scan::tmp/sdk-release-scout/go-v30-session.json',
     sessionId: 'sdk-doc-sync:go:milvus:v3.0.x', language: 'go', sdkName: 'milvus', track: 'v3.0.x',
-    acceptanceFlow: 'campaign', status: 'in_progress', health: 'active', units: 167, accepted: 0, pending: 0,
+    acceptanceFlow: 'two-gate', status: 'in_progress', health: 'active', units: 167, accepted: 0, pending: 0,
     hasActiveExecution: false, hasActiveRollback: false, rollbacks: 0, createdAt: '2026-10-06T13:00:00.000Z',
     updatedAt: '2026-10-06T13:00:00.000Z', closedAt: null,
     scanState: { key: 'go-v3', lastScannedTag: 'client/v3.0.0-beta', targetTag: 'client/v3.0.0', advancedPast: null },
     artifacts: {}, documentLinks: [], recordLinks: [], journalPaths: [], pendingUnits: [],
-    campaignApproval: { campaignPlanDigest: 'sha256:' + '6'.repeat(64), releaseRange: 'r', approvedAt: '2026-10-06T12:30:00.000Z', scopeDigest: 'sha256:' + '8'.repeat(64) },
+    groupingApproval: { proposalDigest: 'sha256:' + '6'.repeat(64), releaseRange: 'r', approvedAt: '2026-10-06T12:30:00.000Z', scopeDigest: 'sha256:' + '8'.repeat(64) },
     lastActivityAt: null, activityCount: 0,
   });
   // Mirror the ledger contract: skillTracks campaign counts derive from the
@@ -283,7 +283,7 @@ test('a receipt-evidence gate whose session landed never double-renders (go futu
   await renderRoute(api, '#/skill/api');
   const page = elements.page.innerHTML;
   assert.equal((page.match(/<tr class="rowlink"/g) || []).length, 1, 'one row: the session campaign carries the work');
-  assert.ok(page.includes('已绑战役'), 'the session row shows the campaign binding');
+  assert.ok(page.includes('已绑分组'), 'the session row shows the grouping binding');
   assert.ok(page.includes('战役进行中 1'), 'the language card counts one campaign, not two');
   assert.ok(!page.includes('已批 · 筹备中'), 'the gate-phase row is gone once the session landed');
 });
@@ -297,12 +297,12 @@ test('checkout scoping: a sibling checkout presenting the same digest keeps its 
     checkout: 'go-scan', checkoutLabel: 'go-scan',
     sessionPath: 'tmp/sdk-release-scout/go-v30-session.json', sessionKey: 'go-scan::tmp/sdk-release-scout/go-v30-session.json',
     sessionId: 'sdk-doc-sync:go:milvus:v3.0.x', language: 'go', sdkName: 'milvus', track: 'v3.0.x',
-    acceptanceFlow: 'campaign', status: 'in_progress', health: 'active', units: 167, accepted: 0, pending: 0,
+    acceptanceFlow: 'two-gate', status: 'in_progress', health: 'active', units: 167, accepted: 0, pending: 0,
     hasActiveExecution: false, hasActiveRollback: false, rollbacks: 0, createdAt: '2026-10-06T13:00:00.000Z',
     updatedAt: '2026-10-06T13:00:00.000Z', closedAt: null,
     scanState: { key: 'go-v3', lastScannedTag: 'client/v3.0.0-beta', targetTag: 'client/v3.0.0', advancedPast: null },
     artifacts: {}, documentLinks: [], recordLinks: [], journalPaths: [], pendingUnits: [],
-    campaignApproval: { campaignPlanDigest: 'sha256:' + '6'.repeat(64), releaseRange: 'r', approvedAt: '2026-10-06T12:30:00.000Z', scopeDigest: 'sha256:' + '8'.repeat(64) },
+    groupingApproval: { proposalDigest: 'sha256:' + '6'.repeat(64), releaseRange: 'r', approvedAt: '2026-10-06T12:30:00.000Z', scopeDigest: 'sha256:' + '8'.repeat(64) },
     lastActivityAt: null, activityCount: 0,
   });
   payload.skillTracks.languages[0].tracks[0].campaigns = { total: 1, active: 1, finalized: 0, sessionPaths: ['tmp/sdk-release-scout/go-v30-session.json'] };
@@ -328,7 +328,7 @@ test('an unapproved gate already carried by a revision renders once', async () =
     sessionKey: 'go-scan::tmp/api-reference-sync/go-revision-worklist.json',
     worklistPath: 'tmp/api-reference-sync/go-revision-worklist.json', worklistStem: 'go-revision-worklist',
     language: 'go', ruling: 'r', scope: { pages: 10, findings: 1, uniquePages: 1, summary: {}, generatedAt: null },
-    gateManifest: { digest: 'sha256:' + '7'.repeat(64), title: 't', manifest: 'm' },
+    groupingGate: { digest: 'sha256:' + '7'.repeat(64), title: 't', manifest: 'm' },
     pages: [{ page: 'Vector', documentToken: 'T', codes: ['X'] }],
     written: [], writtenPages: 0, remainingPages: 10, status: 'in_progress', updatedAt: '2026-10-06T10:00:00.000Z',
   });

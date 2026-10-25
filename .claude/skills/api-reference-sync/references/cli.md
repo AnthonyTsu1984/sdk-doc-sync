@@ -63,9 +63,9 @@ node .claude/skills/api-reference-sync/scripts/review-artifact-digest.js \
   tmp/sdk-release-scout/<language>-<track>-grouping-proposal.json
 ```
 
-The prompt must show the returned full digest in one copy-ready reply, for example `APPROVE_CAMPAIGN sha256:<campaign-plan-digest>`. Recompute it whenever the artifact changes.
+The prompt must show the returned full digest in one copy-ready reply, for example `APPROVE_GROUPING sha256:<proposal-digest>`. Recompute it whenever the artifact changes.
 
-If a dry-run summary has `planCount: 0` or nonzero `planningErrorCount`, report it as blocked generation and do not proceed to the campaign gate.
+If a dry-run summary has `planCount: 0` or nonzero `planningErrorCount`, report it as blocked generation and do not request Feishu write approval.
 
 When a release contains one or more documents, create a persistent review session from the complete initial dry-run. The session is the only source of accepted-unit state across processes or chat sessions:
 
@@ -93,9 +93,9 @@ node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js \
   --json
 ```
 
-The selected unit's batch includes the document and all required resource operations. Execute only its `proposedExecutionBatch.batchDigest`, again with `--resume-session "$SESSION"`. After execution each verified unit finalizes automatically (`--auto-accept`, journal-derived); if comments change any artifact or plan, rerun the same unit and obtain a new digest.
+The selected unit's batch includes the document and all required resource operations. Approve and execute only its `proposedExecutionBatch.batchDigest`, again with `--resume-session "$SESSION"`. After execution each verified unit finalizes automatically (`--auto-accept`: the write approval authorizes acceptance, 2026-10-16 ruling); if comments change any artifact or plan, rerun the same unit and obtain a new digest.
 
-The auto path derives it from the verified execution journal; the touched-record inventory is written as JSON — every entry binds a live record to a successful action in the execution journal:
+Under the legacy manual path this ran after the exact `APPROVE_DOCUMENT` reply; the auto path derives it from the journal. Either way the verified touched-record inventory is written as JSON — every entry binds a live record to a successful action in the execution journal:
 
 ```json
 [
@@ -130,7 +130,7 @@ node .claude/skills/api-reference-sync/bin/sdk-review-session.js build-acceptanc
   --session "$SESSION"
 ```
 
-Acceptance finalization is journal-derived: pass the acceptance-manifest digest to `AcceptanceFinalizer`. After finalization writes its successful JSON journal, bind it back to the session:
+The `APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>` gate is RETIRED (2026-10-16: the write approval authorizes acceptance; each unit finalizes as it runs). This legacy closure remains for older sessions: pass the acceptance-manifest digest to `AcceptanceFinalizer`. After finalization writes its successful JSON journal, bind it back to the session:
 
 ```bash
 node .claude/skills/api-reference-sync/scripts/review-artifact-digest.js <acceptance-journal.json>

@@ -587,7 +587,11 @@
     },
     "assertions": {
       "chainOk": true,
-      "staleCode": "GROUPING_STALE"
+      "staleCode": "GROUPING_STALE",
+      "sessionBound": true,
+      "conflictCode": "GROUPING_APPROVAL_ALREADY_BOUND",
+      "cliBound": true,
+      "cliConflictRefused": true
     }
   },
   {

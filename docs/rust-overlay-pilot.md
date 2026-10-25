@@ -206,10 +206,10 @@ anchor × pageKind 合法矩阵（schema 强制，矩阵外组合 = 非法）：
     - `base-loader`：`git show <sha>:<path>` 钉 SHA 读 web-content（绝不读工作树）；**变更识别 = pin SHA 间 git diff**（rust 页无 category 脚注，实测见 §2.1）；
     - `rules-applier`：URL / 术语批量改写（必须覆盖同目录相对 `.md` 链接）；
     - `overlay-applier`：锚点补丁应用，锚点引擎复用 smart-patch 的 LCS 匹配；失配 → `OVERLAY_ANCHOR_MISS`（带 entry id / anchor / base sha）进异常队列；base 页换型 → `OVERLAY_PAGE_KIND_DRIFT`；
-    - `targets-gate`：编译发现新导出符号/新参数且 targets.json 无记录 → 工件标"必答项"，战役门呈报时强制问；
-    - `diff-producer`：编译产物 vs 飞书当前态的逐页 diff（战役门评审材料）。
+    - `targets-gate`：编译发现新导出符号/新参数且 targets.json 无记录 → 工件标"必答项"，写门呈报时强制问；
+    - `diff-producer`：编译产物 vs 飞书当前态的逐页 diff（写门评审材料）。
 15. `bin/sdk-derive.js`：`--language rust --track v3.0.x --base-sha <sha> --dry-run / --emit-artifact`。**derive 只读只产工件，不写飞书**——写路径仍只走 canonical CLI（铁律不变）。
-16. 工件形态 = **release-scope 工件**（与 PR intake 同级的生产者）：下游 candidate → 战役门 → 规划 → 战役门管线原样复用，零改动。成稿转换走现成 `markdown-to-feishu.js`（不走 IR 渲染）。
+16. 工件形态 = **release-scope 工件**（与 PR intake 同级的生产者）：下游 candidate → 分组门 → 规划 → 写门管线原样复用，零改动。成稿转换走现成 `markdown-to-feishu.js`（不走 IR 渲染）。
 
 ### 批 4 — 成稿能力（原批 3，降级）
 16. **必做**：`sdk-layout-profiles.js` 加 `rust` profile（version 1）——**GLOBAL_LAYOUT_RULES v4 全量继承**（五条内容规则 + 结构三规则 + descriptionTypeLinksRequired 及 denylist），外加两条语言声明：`builderSignature.prefixForbidden`（仿 cpp 裸签名槽位，regex 基线从真实 rust 页定）与 `returnSections: {split: true}` + `returnsProseRequired`（采纳 java 2026-10-01 两段式规则——源码注释预言的"其它 track repolish 时采纳"第一例）。编译产物的 layout 校验是语言感知的，没有 profile 编译页过不了门。

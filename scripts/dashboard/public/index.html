@@ -181,12 +181,21 @@ const UNIT_STATUS_LABEL = {
   ungrouped: '未入组',
 };
 const GATE_LABEL = {
-  APPROVE_CAMPAIGN: '批准战役计划',
+  APPROVE_GROUPING: '批准分组方案',
+  APPROVE_WRITES: '批准批次写入',
+  APPROVE_DOCUMENT: '批准单篇写入',
   APPROVE_ROLLBACK: '批准回滚',
+  APPROVE_ACCEPTANCE: '批准终局验收',
   CLOSE_SESSION: '收口（机械）',
 };
-const GATE_TO_LINE = {};
-const APPROVE_LINE_RE = /^APPROVE_(CAMPAIGN|ROLLBACK)(?: \S+)? sha256:[a-f0-9]{64}$/;
+const GATE_TO_LINE = {
+  APPROVE_WRITE: 'APPROVE_WRITES',
+  APPROVE_DOCUMENT: 'APPROVE_DOCUMENT',
+  APPROVE_ROLLBACK: 'APPROVE_ROLLBACK',
+  APPROVE_ACCEPTANCE: 'APPROVE_ACCEPTANCE',
+  APPROVE_GROUPING: 'APPROVE_GROUPING',
+};
+const APPROVE_LINE_RE = /^APPROVE_(GROUPING|WRITES|DOCUMENT|ROLLBACK|ACCEPTANCE)(?: \S+)? sha256:[a-f0-9]{64}$/;
 
 function copyText(t) { navigator.clipboard?.writeText(t); }
 function attachKey(c) { return c.scanState.key || c.sessionPath; }
@@ -284,7 +293,7 @@ function gateSummary(c) {
   const gate = c.nextGate?.gate;
   if (!gate) return null;
   if (gate === 'CLOSE_SESSION') return { title: '待收口', detail: '全部单元已接受，差机械收口（close-session）' };
-  if (c.rejectInFlight) return { title: '打回处理中', detail: '新会话按打回意见调整规划，将重呈战役门' };
+  if (c.rejectInFlight) return { title: '打回处理中', detail: '新会话按打回意见调整规划，将重呈写门' };
   const label = GATE_LABEL[GATE_TO_LINE[gate] || gate] || gate;
   const unit = c.nextGate?.reviewUnitId;
   return { title: label, detail: unit ? `《${humanUnit(unit)}》` : (c.pending ? `${c.pending} 篇挂起` : '') };
@@ -316,7 +325,7 @@ function renderInbox(d) {
   }
   for (const i of (d.intakes || []).filter((x) => !x.approved)) {
     items.push({
-      t: `战役门待批：${i.title}`,
+      t: `分组门待批：${i.title}`,
       d2: `${i.checkoutLabel} · ${rel(i.presentedAt)} 呈门 · digest ${i.digest.slice(7, 19)}…——批准后战役进入筹备（dry-run/建会话）`,
       href: (i.links || []).map((l) => intakeLinkHref(l, d)).find(Boolean) || '#/skill/api',
       external: Boolean((i.links || []).map((l) => intakeLinkHref(l, d)).find(Boolean)),
@@ -403,7 +412,7 @@ const USAGE_GUIDE = `
 <details class="fold"><summary>这块看板怎么用（流程与按钮说明）</summary>
   <div>
     <p><b>整体节奏</b>：每日哨兵扫描只发现变化 → 你决定立项后，战役按「分组批准 → 逐篇写入批准 → 验收 → 收口」推进；每个需要你决定的时刻都会出现在总览的「待你决定」里。</p>
-    <p><b>「开始处理」</b>（语种页·今日发现）：对当日扫描发现一键派出只读处理会话——它做证据核证与规划后<b>停在战役批准门</b>，你在界面批准战役计划后它才进入写作。</p>
+    <p><b>「开始处理」</b>（语种页·今日发现）：对当日扫描发现一键派出只读处理会话——它做证据核证与规划后<b>停在分组批准门</b>，你在界面批准分组方案后它才进入写作；写作的每个写门照常停下等你。</p>
     <p><b>「复制挂载命令」</b>：把 <code>/attach &lt;战役键&gt;</code> 放进剪贴板。粘到一个新开的 ZCode 会话里，该会话即接手这个战役（拿到确定性简报，不靠聊天记忆续接）。</p>
     <p><b>「一键派出执行会话」</b>：免终端——直接在 ZCode 桌面端生成一个带战役简报的新会话并自动开工；遇到任何 APPROVE_* 门禁会停下等你，不会先斩后奏。需要在启动看板时开启（<code>--allow-spawn</code>）。</p>
     <p><b>「批准并继续」</b>（战役详情页）：对看板派出的会话，把批准行原文注入它并继续执行；批准什么、绑定什么摘要，全部摊开在「技术详情」里，语义校验仍由治理 CLI 把关。需要 <code>--allow-approve</code>。</p>
@@ -462,14 +471,14 @@ function findingsBannerFor(scout, language) {
 }
 
 async function spawnIntake(language, scoutPath) {
-  if (!confirm(`派只读处理会话处理 ${language} 的当日发现？\n\n它会做证据核证与规划，然后停在战役批准门（APPROVE_CAMPAIGN）等你；批准战役计划后才进入写作。`)) return;
+  if (!confirm(`派只读处理会话处理 ${language} 的当日发现？\n\n它会做证据核证与规划，然后停在分组批准门（APPROVE_GROUPING）等你；批准分组后才进入写作。`)) return;
   await postSpawnIntake({ language, scoutPath });
 }
 
 async function spawnTrackIntake(language, trackKey) {
   const checkoutSel = document.getElementById('tkCheckout');
   const checkout = checkoutSel ? checkoutSel.value : 'main';
-  if (!confirm(`启动 ${trackKey} 轨道工作（在 ${checkout === 'main' ? '主检出' : checkout} 检出）？\n\n派出只读侦察会话：对照最新版本/tag 找变更——有发现则落战役计划并停在战役批准门（APPROVE_CAMPAIGN）等你；无发现则明确报告后结束。`)) return;
+  if (!confirm(`启动 ${trackKey} 轨道工作（在 ${checkout === 'main' ? '主检出' : checkout} 检出）？\n\n派出只读侦察会话：对照最新版本/tag 找变更——有发现则建评审会话并停在分组批准门（APPROVE_GROUPING）等你；无发现则明确报告后结束。`)) return;
   await postSpawnIntake({ mode: 'track', language, trackKey, checkout });
 }
 
@@ -515,7 +524,7 @@ function renderFindingsSection(d, language, scout) {
     if (a.dispatch && a.dispatch.campaignCard) {
       control = `<a class="badge finalized" style="text-decoration:none" href="#/campaign/${encodeURIComponent(a.dispatch.campaignCard.key)}" title="该轨道已建评审会话——到战役卡片续接">⛩ 已建评审会话 → 战役卡片</a>`;
     } else if (a.dispatch && a.dispatch.runningSpawnedAt) {
-      control = `<span class="badge active" title="intake 会话后台只读运行中：证据核证 → 规划 dry-run → 建会话；停在战役门后此处变为战役门卡片">⚙ 处理中（派出 ${rel(a.dispatch.runningSpawnedAt)}）</span>`;
+      control = `<span class="badge active" title="intake 会话后台只读运行中：证据核证 → 规划 dry-run → 建会话；停在分组门后此处变为分组门卡片">⚙ 处理中（派出 ${rel(a.dispatch.runningSpawnedAt)}）</span>`;
     } else if (spawnOn) {
       control = `<button class="act danger" title="派只读处理会话：停在分组批准门，批准分组后才写作" onclick="spawnIntake('${esc(language)}', ${JSON.stringify(a.path).replace(/"/g, '&quot;')})">开始处理</button>`;
     }
@@ -532,12 +541,12 @@ function renderFindingsSection(d, language, scout) {
         <thead><tr><th>方法</th><th>类型</th><th>原因</th><th>证据</th><th>轨道</th></tr></thead>
         <tbody>${items}</tbody>
       </table>
-      <div class="note">扫描器原文透传；「开始处理」= 派只读 intake 会话（每轨一个；已派出或已建评审会话后按钮自动退位），战役门是开工门，未批准不写。</div>
+      <div class="note">扫描器原文透传；「开始处理」= 派只读 intake 会话（每轨一个；已派出或已建评审会话后按钮自动退位），分组门是开工门，未批准不写。</div>
     </div>`;
 }
 
 
-// Context chip thresholds mirror gate-watch.js: the 2026-10-01 session-rotation
+// Context chip thresholds mirror gate-watch.js: the 2026-10-01 two-gate
 // ruling rotates conversations at 42% of an assumed 1M window.
 const CONTEXT_LIMIT_TOKENS = 1_000_000;
 const CONTEXT_ROTATION_FRACTION = 0.42;
@@ -615,7 +624,7 @@ function renderRevisions(d, list) {
     return `<div class="card" style="cursor:default">
       <div class="row1" style="flex-wrap:wrap;gap:8px">
         <span class="title">${esc(r.language ?? '?')} 修订战役 <span class="dim" style="font-weight:400">· ${esc(r.worklistStem)}</span></span>
-        <span style="display:flex;gap:6px;flex-wrap:wrap">${r.status === 'finalized' ? '<span class="badge finalized">已收官</span>' : '<span class="badge active">进行中</span>'}${checkoutChip(r)}${r.gateManifest ? `<span class="badge gate" title="${esc(r.gateManifest.digest)}">战役门已呈</span>` : '<span class="badge">未见战役门</span>'}</span>
+        <span style="display:flex;gap:6px;flex-wrap:wrap">${r.status === 'finalized' ? '<span class="badge finalized">已收官</span>' : '<span class="badge active">进行中</span>'}${checkoutChip(r)}${r.groupingGate ? `<span class="badge gate" title="${esc(r.groupingGate.digest)}">分组门已呈</span>` : '<span class="badge">未见分组门</span>'}</span>
       </div>
       <div class="bar"><i style="width:${pct}%"></i></div>
       <div class="meta">
@@ -629,7 +638,7 @@ function renderRevisions(d, list) {
         ${spawnOn ? `<button class="act" title="在该工作树派带简报的新会话，逐页 governed 写入" onclick="spawnSession(${JSON.stringify('rev:' + r.worklistStem).replace(/"/g, '&quot;')})">一键派出执行会话</button>` : ''}
       </div>
       ${writtenList ? `<details class="fold" style="margin:8px 0 0"><summary>已写页面（run-manifest 对账，${r.writtenPages}）</summary><ul style="margin:4px 0;padding-left:18px">${writtenList}</ul></details>` : ''}
-      <div class="note">数据派生自该工作树的工作单/呈门 manifest/apply-review manifest——修订流不走评审会话，交接以 /attach 简报为准。</div>
+      <div class="note">数据派生自该工作树的工作单/分组门/apply-review manifest——修订流不走评审会话，交接以 /attach 简报为准。</div>
     </div>`;
   }).join('');
   return `<div class="grid" style="margin-top:2px">${cards}</div>`;
@@ -665,8 +674,8 @@ async function pageSkillApi(d) {
     return `<div class="card langcard clickable" onclick="location.hash='#/skill/api/lang/${esc(lang.name)}'">
       <div class="row1">
         <span class="title">${esc(lang.name)} <span style="color:var(--dim);font-weight:400;font-size:12.5px">${esc(lang.sdkName ?? '')}</span></span>
-        ${active > 0 ? `<span class="badge active" title="${gatePhase > 0 ? `含战役门阶段 ${gatePhase}` : ''}">战役进行中 ${active}</span>` : '<span class="badge finalized">无进行中战役</span>'}
-        ${pendingGates > 0 ? `<span class="badge gate">战役门待批 ${pendingGates}</span>` : ''}
+        ${active > 0 ? `<span class="badge active" title="${gatePhase > 0 ? `含分组门阶段 ${gatePhase}` : ''}">战役进行中 ${active}</span>` : '<span class="badge finalized">无进行中战役</span>'}
+        ${pendingGates > 0 ? `<span class="badge gate">分组门待批 ${pendingGates}</span>` : ''}
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px">
         ${liveChipFor(live, lang.name)}
@@ -691,27 +700,27 @@ async function pageSkillApi(d) {
     <h2>语种 × 版本（版本轨道来自受治注册表；新版本需登记后纳入治理；战役发现覆盖主检出与各工作树，非主检出的战役带工作树标签）</h2>
     <div class="grid">${cards || '<div class="empty">release-tracks.json 未读到</div>'}</div>
     ${outsideNote}
-    <h2>进行中的战役（战役门单门；筹备/修订/会话流共用此表）</h2>
+    <h2>进行中的战役（三门：分组门 → 写门 → 验收门；分组门阶段即战役，筹备/修订/会话流共用此表）</h2>
     ${campaignTable([
       ...gatePhaseIntakes(d.intakes, d),
       ...(d.campaigns || []).filter((c) => c.health !== 'finalized'),
       ...(d.revisions || []).filter((r) => r.status !== 'finalized'),
-    ], d, { empty: '无进行中战役（新战役从扫描请求起算：先侦察后呈战役门，或轨道页「启动该轨道工作」）' })}`;
+    ], d, { empty: '无进行中战役（新战役从扫描请求起算：先侦察后分组门，或轨道页「启动该轨道工作」）' })}`;
 }
 
 // ---------- campaign table (language page / track page / skill page) ----------
 
 let tableShowFinalized = false;
 
-// Gate-phase campaigns enter the table (2026-10-06 ruling): a
+// Gate-phase campaigns enter the table (three-gate ruling, 2026-10-06): a
 // campaign counts from the operator's scan request, and the grouping gate is
 // its first gate.
 // A gate leaves the gate phase the moment its work is carried by another
 // card — decided by DIGEST, not evidence kind: a session campaign bound to
-// the campaign approval (campaignApproval.campaignPlanDigest) or a revision
-// campaign linked to the gate manifest (gateManifest.digest) supersedes the
-// gate row. Receipts are durable, so evidence alone ('receipt' survives
-// session binding forever) would double-render the standard governed flow.
+// the proposal (groupingApproval.proposalDigest) or a revision campaign
+// linked to the gate manifest (groupingGate.digest) supersedes the gate row.
+// Receipts are durable, so evidence alone ('receipt' survives session
+// binding forever) would double-render the standard governed flow.
 function gatePhaseIntakes(intakes, d) {
   // Checkout-scoped like the ledger's own evidence derivation: a sibling
   // worktree presenting the same digest is a different campaign and must
@@ -719,39 +728,39 @@ function gatePhaseIntakes(intakes, d) {
   // campaign, one row, full stop (closes the pre-first-write window too).
   const carried = new Set();
   for (const c of (d?.campaigns || [])) {
-    if (c.campaignApproval?.campaignPlanDigest) carried.add(`${c.checkout}::${c.campaignApproval.campaignPlanDigest}`);
+    if (c.groupingApproval?.proposalDigest) carried.add(`${c.checkout}::${c.groupingApproval.proposalDigest}`);
     // Merged revision flows carry their gate inside the campaign card.
-    if (c.revisionFlow?.gateManifest?.digest) carried.add(`${c.checkout}::${c.revisionFlow.gateManifest.digest}`);
+    if (c.revisionFlow?.groupingGate?.digest) carried.add(`${c.checkout}::${c.revisionFlow.groupingGate.digest}`);
   }
   for (const r of (d?.revisions || [])) {
-    if (r.gateManifest?.digest) carried.add(`${r.checkout}::${r.gateManifest.digest}`);
+    if (r.groupingGate?.digest) carried.add(`${r.checkout}::${r.groupingGate.digest}`);
   }
   return (intakes || []).filter((i) => !carried.has(`${i.checkout}::${i.digest}`)
     && (!i.approved || i.approvalEvidence === 'receipt'));
 }
 
 function flowBadge(c) {
-  // The board speaks the single-gate vocabulary; stored acceptanceFlow values
-  // from old sessions are normalized away.
-  const flow = 'campaign';
-  return `<span class="badge" title="战役门单门${c.kind === 'intake' ? '；当前处于呈门阶段' : '；战役门已批，会话内推进'}">${esc(flow ?? '?')}</span>`;
+  // Stored acceptanceFlow keeps its historical value; the board speaks the
+  // three-gate vocabulary — grouping → write → accept.
+  const flow = c.acceptanceFlow === 'two-gate' ? 'three-gate' : c.acceptanceFlow;
+  return `<span class="badge ${c.acceptanceFlow === 'two-gate' ? 'active' : ''}" title="三门：分组门 → 写门 → 验收门${c.kind === 'intake' ? '；当前处于分组门阶段' : '；分组门已过，写门/验收门在会话内'}">${esc(flow ?? '?')}</span>`;
 }
 
 function intakeRow(i) {
   const statusBadge = !i.approved
-    ? `<span class="badge gate" title="待你批准：${esc(i.digest)}">战役门待批</span>`
+    ? `<span class="badge gate" title="待你批准：${esc(i.digest)}">分组门待批</span>`
     : '<span class="badge active" title="批准已铸回执——会话/dry-run/context 生成中，下一持久化事件=评审会话落盘">已批 · 筹备中</span>';
   return `<tr class="rowlink" onclick="location.hash='${campaignHref(i).replace(/'/g, '')}'">
     <td><span class="fname">${esc(i.language ?? '?')}</span> ${checkoutChip(i)}</td>
-    <td>${flowBadge({ ...i, acceptanceFlow: 'campaign', kind: 'intake' })}</td>
+    <td>${flowBadge({ ...i, acceptanceFlow: 'two-gate', kind: 'intake' })}</td>
     <td>${statusBadge}</td>
-    <td class="num" style="min-width:90px"><span class="dim">呈门阶段</span></td>
+    <td class="num" style="min-width:90px"><span class="dim">分组阶段</span></td>
     <td>${!i.approved
-      ? `<span class="badge gate" title="${esc(i.digest)}">APPROVE_CAMPAIGN</span>`
-      : '<span class="dim">会话内推进</span>'}</td>
+      ? `<span class="badge gate" title="${esc(i.digest)}">APPROVE_GROUPING</span>`
+      : '<span class="dim">写门/验收门在会话内呈</span>'}</td>
     <td class="dim">${rel(i.presentedAt)}</td>
     <td onclick="event.stopPropagation()">${!i.approved
-      ? `<button class="act" title="把 APPROVE_CAMPAIGN 批准行放进剪贴板；粘到战役会话即为批复（digest 绑定由治理 CLI 执法）" onclick="copyText(${JSON.stringify(`APPROVE_CAMPAIGN ${i.digest}`).replace(/"/g, '&quot;')})">复制批准行</button>`
+      ? `<button class="act" title="把 APPROVE_GROUPING 批准行放进剪贴板；粘到战役会话即为批复（digest 绑定由治理 CLI 执法）" onclick="copyText(${JSON.stringify(`APPROVE_GROUPING ${i.digest}`).replace(/"/g, '&quot;')})">复制批准行</button>`
       : `<button class="act" title="查看呈门材料索引" onclick="location.hash='${campaignHref(i).replace(/'/g, '')}'">详情</button>`}</td>
   </tr>`;
 }
@@ -774,10 +783,10 @@ function campaignRows(list, d) {
     const gateCell = g
       ? `<span class="badge gate" title="${esc(c.nextGate?.reviewUnitId || '')}">${esc(g.title)}</span>`
       : rf && rf.groupingGate
-        ? `<span class="badge gate" title="${esc(rf.gateManifest.digest)}">战役门已呈（修订流）</span>`
+        ? `<span class="badge gate" title="${esc(rf.groupingGate.digest)}">分组门已呈（修订流）</span>`
         : '<span class="dim">—</span>';
     return `<tr class="rowlink" onclick="location.hash='${campaignHref(c).replace(/'/g, '')}'">
-      <td><span class="fname">${esc(c.track ?? '?')}</span> ${checkoutChip(c)}${c.campaignApproval ? `<span class="badge" title="APPROVE_CAMPAIGN 已绑入会话（${esc(c.campaignApproval.campaignPlanDigest)}）——此后入口 release-scope 摘要对照已批 scope 校验，漂移即拒">已绑战役</span>` : ''}</td>
+      <td><span class="fname">${esc(c.track ?? '?')}</span> ${checkoutChip(c)}${c.groupingApproval ? `<span class="badge" title="APPROVE_GROUPING 已绑入会话（${esc(c.groupingApproval.proposalDigest)}）——此后入口 release-scope 摘要对照已批 scope 校验，漂移即拒">已绑分组</span>` : ''}</td>
       <td>${flowBadge(c)}</td>
       <td><span class="badge ${c.health}">${HEALTH_LABEL[c.health] ?? esc(c.status)}</span></td>
       <td class="num" style="min-width:120px">${progressCell}</td>
@@ -801,9 +810,9 @@ function revisionRow(r) {
     <td>${r.status === 'finalized'
       ? '<span class="dim">—</span>'
       : r.groupingApproved
-        ? `<span class="badge gate" title="逐页呈门由执行会话内呈（digest 见会话/呈门材料）">批准批次写入</span>`
+        ? `<span class="badge gate" title="逐页写门由执行会话内呈（digest 见会话/呈门材料）；与三门流程的 APPROVE_WRITES 同一批准形态">批准批次写入</span>`
         : r.groupingGate
-          ? `<span class="badge gate" title="待你批准：${esc(r.gateManifest.digest)}">战役门待批</span>`
+          ? `<span class="badge gate" title="待你批准：${esc(r.groupingGate.digest)}">分组门待批</span>`
           : '<span class="dim">—</span>'}</td>
     <td class="dim">${rel(r.updatedAt)}</td>
     <td onclick="event.stopPropagation()"><button class="act" title="把 /attach 工作单键放进剪贴板；粘到新 ZCode 会话即接手本修订战役" onclick="copyText('/attach ${esc(r.worklistStem)}')">复制挂载命令</button></td>
@@ -877,7 +886,7 @@ async function pageTrack(d, key) {
     <div class="card" style="margin-bottom:12px;cursor:default">
       <div class="kv" style="margin-top:0">
         <b>scan-state 基线</b><span>${baseline ? `已扫描到 ${esc(baseline)}` : '<span style="color:var(--dim)">该轨尚无推进记录</span>'}</span>
-        <b>战役</b><span>${list.length + preparingGates + trackRevisions.length} 个（${list.filter((c) => c.health !== 'finalized').length + preparingGates + trackRevisions.filter((r) => r.status !== 'finalized').length} 进行中，含战役门阶段 ${preparingGates}）</span>
+        <b>战役</b><span>${list.length + preparingGates + trackRevisions.length} 个（${list.filter((c) => c.health !== 'finalized').length + preparingGates + trackRevisions.filter((r) => r.status !== 'finalized').length} 进行中，含分组门阶段 ${preparingGates}）</span>
         ${liveEntry ? `<b>飞书实时</b><span>记录 ${liveEntry.recordTotal ?? '—'} 行${liveEntry.docs != null ? ` · 文档 ${liveEntry.docs}${liveEntry.folders != null ? ` · 目录 ${liveEntry.folders}` : ''}` : ''}${liveEntry.error ? ` · <span style="color:var(--red)">${esc(liveEntry.error)}</span>` : ''}</span>` : ''}
       </div>
     </div>
@@ -1013,7 +1022,7 @@ function rotateToggleChecked() {
 // REJECT on a write gate: batch not yet written — the operator types the
 // feedback, the worker replans from it and re-presents a new write gate.
 async function rejectWriteGate(target) {
-  const reason = await boardPrompt('打回（填写意见）', '批次不会写入；worker 将按此意见调整规划、必要时重跑 dry-run，重呈战役门后再停');
+  const reason = await boardPrompt('打回写门（填写意见）', '批次不会写入；worker 将按此意见调整规划、必要时重跑 dry-run，呈新写门后再停');
   if (reason === null) return;
   if (!reason) { boardAlert('打回意见不能为空', '写明要调整什么，worker 才能据此重规划。'); return; }
   if (rotateToggleChecked()) {
@@ -1063,7 +1072,7 @@ function advancedApproveForm(c) {
   const enabled = Boolean(latest && latest.features && latest.features.approveEnabled);
   const workers = (c.workers || []).filter((w) => w.sessionId);
   if (!enabled || !workers.length) return '';
-  const gate = GATE_TO_LINE[c.nextGate?.gate] || 'APPROVE_CAMPAIGN';
+  const gate = GATE_TO_LINE[c.nextGate?.gate] || 'APPROVE_WRITES';
   const unit = c.nextGate?.reviewUnitId || '';
   const digest = approveDigestOf(c, unit);
   const lastIdle = [...workers].reverse().find((w) => w.status === 'idle');
@@ -1072,7 +1081,7 @@ function advancedApproveForm(c) {
     <div class="approve">
       <div class="frow">
         <select id="apGate" onchange="approveLinePreview()">
-          ${['APPROVE_CAMPAIGN', 'APPROVE_ROLLBACK'].map((g) => `<option ${g === gate ? 'selected' : ''}>${g}</option>`).join('')}
+          ${['APPROVE_GROUPING', 'APPROVE_WRITES', 'APPROVE_DOCUMENT', 'APPROVE_ROLLBACK', 'APPROVE_ACCEPTANCE'].map((g) => `<option ${g === gate ? 'selected' : ''}>${g}</option>`).join('')}
         </select>
         <select id="apWorker">${workerSel}</select>
       </div>
@@ -1116,7 +1125,7 @@ function approveDigestOf(c, unit) {
 }
 
 function approveUnitToken(lineGate, unit) {
-  return lineGate === 'APPROVE_ROLLBACK' && unit ? unit : '';
+  return (lineGate === 'APPROVE_DOCUMENT' || lineGate === 'APPROVE_ROLLBACK') && unit ? unit : '';
 }
 
 function oneClickApproveCard(c, detail) {
@@ -1129,14 +1138,14 @@ function oneClickApproveCard(c, detail) {
   // dead the moment the re-presented gate binds a new one).
   if (c.rejectInFlight) {
     return `<div class="approve"><div class="t">⛩ 打回处理中</div>
-      <div class="sum">打回意见已交新会话执行（派出于 ${c.rejectDispatchedAt ? fmt(c.rejectDispatchedAt) : '—'}）——它正按意见调整规划，完成后重呈战役门（新 digest）在此处等批。</div>
+      <div class="sum">打回意见已交新会话执行（派出于 ${c.rejectDispatchedAt ? fmt(c.rejectDispatchedAt) : '—'}）——它正按意见调整规划，完成后重呈新写门（新 digest）在此处等批。</div>
       ${gatePresentationLinks(c)}
       <div class="hint">旧呈门已作废，批准入口已关——等新门呈报；总览页「正在运行的会话」可围观进度。</div></div>`;
   }
   const workers = (c.workers || []).filter((w) => w.sessionId);
   if (!workers.length) {
     const g0 = gateSummary(c);
-    const lineGate0 = GATE_TO_LINE[c.nextGate?.gate] || 'APPROVE_CAMPAIGN';
+    const lineGate0 = GATE_TO_LINE[c.nextGate?.gate] || 'APPROVE_WRITES';
     const unit0 = c.nextGate?.reviewUnitId || '';
     const digest0 = approveDigestOf(c, unit0) || null;
     const line0 = digest0 ? `${lineGate0}${approveUnitToken(lineGate0, unit0) ? ' ' + approveUnitToken(lineGate0, unit0) : ''} ${digest0}`.trim() : null;
@@ -1145,7 +1154,7 @@ function oneClickApproveCard(c, detail) {
       ${line0 && APPROVE_LINE_RE.test(line0)
         ? `<div class="frow"><code>${esc(line0)}</code><button class="act primary" onclick="copyText(${JSON.stringify(line0).replace(/"/g, '&quot;')})">复制批准行</button></div>`
         : `<div class="hint">当前门或 digest 尚不可自动组装（约 1 分钟刷新；或从<a href="/api/file?path=${encodeURIComponent('tmp/api-reference-sync/gate-presentation/latest.html')}" target="_blank">呈门材料</a>取精确行）。</div>`}
-      ${line0 && APPROVE_LINE_RE.test(line0) && (lineGate0 === 'APPROVE_CAMPAIGN') && latest?.features?.spawnEnabled
+      ${line0 && APPROVE_LINE_RE.test(line0) && (lineGate0 === 'APPROVE_WRITES' || lineGate0 === 'APPROVE_DOCUMENT') && latest?.features?.spawnEnabled
         ? `<button class="act" title="42% 轮换：新开会话携带简报+批复执行本门（digest 仍由 canonical CLI 执法）" onclick="approveInNewSession(${JSON.stringify(cardKey(c)).replace(/"/g, '&quot;')}, ${JSON.stringify(line0).replace(/"/g, '&quot;')})">在新会话中执行</button>`
         : ''}
       <div class="hint">无看板 worker：界面注入仅限看板派出的会话（防并发写）。手开的会话把上面的批准行原文粘进去即为批复；或用「一键派出执行会话」派一个可注入的 worker。</div></div>`;
@@ -1175,11 +1184,11 @@ function oneClickApproveCard(c, detail) {
   const fileRow = unit && detail
     ? (detail.files || []).find((f) => f.unitId === unit || f.unitId === `review:${unit}` || f.stableId === unit)
     : null;
-  const summary = lineGate === 'APPROVE_ROLLBACK'
+  const summary = lineGate === 'APPROVE_DOCUMENT'
     ? `批准《${humanUnit(unit)}》写入落盘${fileRow?.fileName ? `（${esc(fileRow.fileName)}）` : ''}`
-    : lineGate === 'APPROVE_CAMPAIGN'
+    : lineGate === 'APPROVE_WRITES'
       ? `批准批次写入${c.gatePresentation?.links?.length ? `（呈门 ${c.gatePresentation.links.length} 篇）` : (c.pending ? `（挂起 ${c.pending} 篇）` : '')}`
-      : false
+      : lineGate === 'APPROVE_GROUPING'
         ? `批准分组方案（共 ${c.units} 个写作单元）`
         : lineGate === 'APPROVE_ROLLBACK'
           ? `批准回滚 ${esc(unit || '（填单元 id）')}`
@@ -1202,10 +1211,10 @@ function oneClickApproveCard(c, detail) {
     ${gatePresentationLinks(c)}
     <details class="fold" style="margin:6px 0"><summary>技术详情（批准行与绑定摘要）</summary><code>${esc(line)}</code><div class="hint">worker：${esc(idle.sessionId)} · 注入方式 --resume 原文转发，语义校验在治理 CLI。</div></details>
     <button class="act primary" onclick="submitApprove(${JSON.stringify(cardKey(c)).replace(/"/g, '&quot;')}, ${JSON.stringify(idle.sessionId).replace(/"/g, '&quot;')}, ${JSON.stringify(line).replace(/"/g, '&quot;')})">批准并继续</button>
-    ${lineGate === 'APPROVE_ROLLBACK'
+    ${lineGate === 'APPROVE_DOCUMENT'
       ? `<button class="act danger" title="打回：worker 读取该批页面的飞书评论并转成修改要求" onclick="rejectWithComments(${JSON.stringify(cardKey(c)).replace(/"/g, '&quot;')})">打回（读飞书评论）</button>`
-      : lineGate === 'APPROVE_CAMPAIGN'
-        ? `<button class="act danger" title="打回：弹框填写意见——本批不写入，worker 按意见调整规划后重呈战役门" onclick="rejectWriteGate(${JSON.stringify(cardKey(c)).replace(/"/g, '&quot;')})">打回（写意见）</button>`
+      : lineGate === 'APPROVE_WRITES'
+        ? `<button class="act danger" title="打回：弹框填写意见——本批不写入，worker 按意见调整规划后重呈新写门" onclick="rejectWriteGate(${JSON.stringify(cardKey(c)).replace(/"/g, '&quot;')})">打回（写意见）</button>`
         : ''}
     ${latest?.features?.spawnEnabled
       ? `<label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12.5px;color:var(--dim);cursor:pointer" title="42% 轮换：勾选后「批准并继续」与「打回」都改为派新会话执行（批复/打回意见随确定性简报交给新会话，digest 仍由 canonical CLI 执法）；旧会话保持停门可归档"><input type="checkbox" id="rotateToggle" style="accent-color:var(--blue)">在新会话中执行（不注入当前 worker）</label>`
@@ -1279,7 +1288,7 @@ const boardConfirm = (title, message) => boardDialog({ title, message, confirmTe
 const boardPrompt = (title, placeholder) => boardDialog({ title, placeholder, input: true });
 
 async function rejectWithComments(target) {
-  if (!await boardConfirm('打回已写页面？', 'worker 将读取该批页面的飞书评论并转成修改要求（评论 API 不可达时会向你索要原文），重建受影响单元后重呈战役门。')) return;
+  if (!await boardConfirm('打回本轮文档验收？', 'worker 将读取该批页面的飞书评论并转成修改要求（评论 API 不可达时会向你索要原文），重建受影响单元后呈新写门。')) return;
   if (rotateToggleChecked()) {
     if (!await boardConfirm('在新会话中执行打回？', '读评论与打回落账将随战役简报派新会话执行（旧会话保持停门，可归档）。')) return;
     await rejectInNewSession(target, { mode: 'comments' });
@@ -1337,7 +1346,7 @@ function filesTable(detail, c) {
   const rows = files.map((f) => `<tr>
       <td class="fname" title="${esc(f.filePath ?? '')}">${esc(f.fileName ?? f.symbol ?? humanUnit(f.unitId))}${(!f.filePath && anyPrFile) ? ' <span class="dim">（无 PR 文件，源码证据）</span>' : ''}</td>
       <td>${f.unitId ? `<span class="iconlink" title="${esc(f.unitId)}">${esc(humanUnit(f.unitId))}</span>` : '<span class="dim">—</span>'}</td>
-      <td>${f.status === 'accepted' ? '<span class="badge finalized">已写入·验收</span>' : f.status === 'pending-approval' ? '<span class="badge gate" title="已执行写入，待自动终化/验收">已写入·待验收</span>' : f.status === 'ungrouped' ? '<span class="badge">未入组</span>' : `<span class="badge active">${esc(UNIT_STATUS_LABEL[f.status] ?? f.status)}</span>`}</td>
+      <td>${f.status === 'accepted' ? '<span class="badge finalized">已写入·验收</span>' : f.status === 'pending-approval' ? '<span class="badge gate" title="已执行写入，停在该单元的文档验收门（APPROVE_DOCUMENT）">已写入·待验收</span>' : f.status === 'ungrouped' ? '<span class="badge">未入组</span>' : `<span class="badge active">${esc(UNIT_STATUS_LABEL[f.status] ?? f.status)}</span>`}</td>
       <td class="dim">${esc(f.reason ?? '—')}</td>
       <td class="dim num" title="${esc(f.sourceLocator ?? '')}">${f.sourcePr ? `PR #${f.sourcePr}` : (f.sourceLocator ?? f.changeType ?? '—')}</td>
       <td class="iconlink">${f.documentLinks?.length ? `<a href="${esc(f.documentLinks[0])}" target="_blank" title="${esc(f.documentLinks[0])}">文档</a>` : ''}${f.recordLinks?.length ? ` <a href="${esc(f.recordLinks[0])}" target="_blank" title="${esc(f.recordLinks[0])}">记录</a>` : ''}${(f.documentLinks?.length || f.recordLinks?.length) ? '' : (f.status === 'accepted' || f.status === 'ungrouped' ? '<span class="dim">—</span>' : (f.status === 'pending-approval' ? '<span class="dim" title="已执行写入；文档/记录链接随该单元的验收回执落账">已写入（链接随验收回执）</span>' : '<span class="dim" title="文档/记录链接由该单元的验收回执携带">待写入后生成</span>'))}${f.status === 'accepted' && c ? ` <a href="javascript:void(0)" title="对该单元提出修改要求——注入 worker 会话按 canonical 打回流程重建" onclick="requestChanges(${JSON.stringify(cardKey(c)).replace(/"/g, '&quot;')}, ${JSON.stringify(f.unitId).replace(/"/g, '&quot;')})">修改</a>` : ''}</td>
@@ -1488,7 +1497,7 @@ function pageRevisionDetail(d, r) {
     <div class="card" style="cursor:default;margin-bottom:12px">
       <div class="row1">
         <span class="title">${esc(r.language ?? '?')} · 修订战役 <span class="dim" style="font-weight:400">· ${esc(r.worklistStem)}</span></span>
-        <span style="display:flex;gap:6px">${r.status !== 'finalized' && r.gateApproved ? '<span class="badge gate" title="逐页呈门由执行会话内呈（digest 见会话/呈门材料）">批准批次写入</span>' : ''}${r.gateManifest && !r.gateApproved ? `<span class="badge gate" title="待你批准：${esc(r.gateManifest.digest)}">战役门待批</span>` : ''}${checkoutChip(r)}<span class="badge ${r.status === 'finalized' ? 'finalized' : 'active'}">${r.status === 'finalized' ? '已收官' : '进行中'}</span></span>
+        <span style="display:flex;gap:6px">${r.status !== 'finalized' && r.groupingApproved ? '<span class="badge gate" title="逐页写门由执行会话内呈（digest 见会话/呈门材料）">批准批次写入</span>' : ''}${r.groupingGate && !r.groupingApproved ? `<span class="badge gate" title="待你批准：${esc(r.groupingGate.digest)}">分组门待批</span>` : ''}${checkoutChip(r)}<span class="badge ${r.status === 'finalized' ? 'finalized' : 'active'}">${r.status === 'finalized' ? '已收官' : '进行中'}</span></span>
       </div>
       <div class="bar"><i style="width:${pct}%"></i></div>
       <div class="meta">
@@ -1505,7 +1514,7 @@ function pageRevisionDetail(d, r) {
     <h2>规模</h2>
     <div class="card" style="cursor:default"><div class="kv" style="margin-top:0">
       <b>范围</b><span>发现 ${r.scope.findings} 项 · 唯一页 ${r.scope.uniquePages} · 活体 scope ${r.scope.pages} 页（生成 ${fmt(r.scope.generatedAt)}）</span>
-      <b>战役门</b><span>${r.gateManifest ? esc(r.gateManifest.digest) + (r.gateManifest.title ? ' · ' + esc(r.gateManifest.title) : '') : '未见呈门 manifest'}</span>
+      <b>分组门</b><span>${r.groupingGate ? esc(r.groupingGate.digest) + (r.groupingGate.title ? ' · ' + esc(r.groupingGate.title) : '') : '未见分组门 manifest'}</span>
     </div></div>
     <h2>页面清单（按页分组）</h2>
     <table class="tbl">
@@ -1523,19 +1532,19 @@ function pageRevisionDetail(d, r) {
   renderUsagePanel({ sessionPath: r.worklistPath, sessionKey: cardKey(r), language: r.language, updatedAt: r.updatedAt });
 }
 
-// Gate-phase campaign detail (2026-10-06 ruling): the presented gate IS the
+// Gate-phase campaign detail (three-gate ruling): the grouping gate IS the
 // campaign's first gate — this page carries the exact approval line, the
 // receipt state once approved, and the gate materials. The write/accept
 // gates move into the review-session campaign card once the session lands.
 function pageIntakeDetail(d, i) {
   const host = document.getElementById('page');
-  const line = `APPROVE_CAMPAIGN ${i.digest}`;
+  const line = `APPROVE_GROUPING ${i.digest}`;
   const statusBadge = !i.approved
-    ? '<span class="badge gate">战役门待批</span>'
+    ? '<span class="badge gate">分组门待批</span>'
     : i.approvalEvidence === 'receipt'
       ? '<span class="badge active">已批 · 筹备中（回执在册，会话/dry-run/context 生成中）</span>'
       : i.approvalEvidence === 'session-binding'
-        ? '<span class="badge finalized">已批 · 已绑会话（会话卡承接后续）</span>'
+        ? '<span class="badge finalized">已批 · 已绑会话（写门/验收门见该战役会话卡）</span>'
         : '<span class="badge finalized">已批</span>';
   const links = (i.links || []).map((l) => {
     const href = intakeLinkHref(l, d);
@@ -1547,11 +1556,11 @@ function pageIntakeDetail(d, i) {
     ${crumbs([
       { label: 'API 参考', href: '#/skill/api' },
       { label: i.language ?? '?', href: `#/skill/api/lang/${esc(i.language ?? '')}` },
-      { label: '战役', href: campaignHref(i) },
+      { label: '分组门战役', href: campaignHref(i) },
     ])}
     <div class="card" style="cursor:default;margin-bottom:12px">
       <div class="row1" style="flex-wrap:wrap;gap:8px">
-        <span class="title">${esc(i.title ?? '战役门')}</span>
+        <span class="title">${esc(i.title ?? '分组门')}</span>
         <span style="display:flex;gap:6px;flex-wrap:wrap">${statusBadge}${checkoutChip(i)}</span>
       </div>
       ${i.run ? `<div class="sub">${esc(i.run)}</div>` : ''}
@@ -1561,17 +1570,17 @@ function pageIntakeDetail(d, i) {
         ${i.receipt ? `<span><a href="/api/file?path=${encodeURIComponent(`${i.receipt.checkoutRoot}/${i.receipt.path}`)}" target="_blank" title="${esc(i.receipt.path)}">回执文件</a> · 批准于 ${rel(i.receipt.approvedAt)}</span>` : ''}
       </div>
       <div class="kv" style="margin-top:8px">
-        <b>门</b><span>战役门（APPROVE_CAMPAIGN）${i.approved ? '已批' : '<b style="color:var(--red)">待批</b>'}——批准后 runner 会话内逐单元推进</span>
+        <b>三门</b><span>① 分组门 ${i.approved ? '已过' : '<b style="color:var(--red)">待批</b>'} → ② 写门（APPROVE_WRITES/APPROVE_DOCUMENT，会话内逐单元呈）→ ③ 验收门（APPROVE_ACCEPTANCE）</span>
         <b>提案 digest</b><span style="word-break:break-all">${esc(i.digest)} <button class="copy" onclick="copyText(${JSON.stringify(i.digest).replace(/"/g, '&quot;')})">复制</button></span>
       </div>
       ${!i.approved ? `
       <div class="approve" style="margin-top:10px">
-        <div class="t">⛩ 战役门 — 等你一句话</div>
-        <div class="sum">批准战役计划后由战役会话铸回执并绑定，随后进入执行。</div>
+        <div class="t">⛩ 分组门 — 等你一句话</div>
+        <div class="sum">批准分组方案后由战役会话铸回执（record-grouping-approval）并绑定，随后进入写门。</div>
         <div class="frow"><code>${esc(line)}</code><button class="act primary" onclick="copyText(${JSON.stringify(line).replace(/"/g, '&quot;')})">复制批准行</button></div>
         <div class="hint">把批准行原文回复给战役会话（或看板注入）即为批复——digest 绑定与 GROUPING_STALE 链校验由治理 CLI 执法。</div>
       </div>` : `
-      <div class="note" style="border:0;padding:0;margin-top:10px">战役门已批。后续由评审会话战役卡承接——会话落盘后此表上方会出现对应战役行（其详情页可见各单元进度）。</div>`}
+      <div class="note" style="border:0;padding:0;margin-top:10px">分组已批。写门与验收门由评审会话战役卡承接——会话落盘后此表上方会出现对应战役行（其详情页可见各单元写门）。</div>`}
     </div>
     ${links ? `<h2>呈门材料</h2><div class="card" style="cursor:default"><ul style="margin:6px 0;padding-left:18px">${links}</ul>
       <div class="note" style="border:0;padding:0">本机索引页：<a href="/api/file?path=${encodeURIComponent('/tmp/api-reference-sync/gate-presentation/latest.html')}" target="_blank">gate-presentation/latest.html</a>（每检出各自维护）。</div></div>` : ''}
@@ -1625,7 +1634,7 @@ async function pageCampaign(d, path) {
     ])}
     <div class="card" style="cursor:default;margin-bottom:12px">
       <div class="row1">
-        <span class="title">${esc(c.language ?? '?')} · ${esc(c.track ?? '?')}${c.acceptanceFlow ? ` <span class="dim" style="font-weight:400">· campaign</span>` : ''}</span>
+        <span class="title">${esc(c.language ?? '?')} · ${esc(c.track ?? '?')}${c.acceptanceFlow ? ` <span class="dim" style="font-weight:400">· ${esc(c.acceptanceFlow === 'two-gate' ? 'three-gate' : c.acceptanceFlow)}</span>` : ''}</span>
         <span style="display:flex;gap:6px">${c.nextGate && c.nextGate.gate !== 'CLOSE_SESSION' ? `<span class="badge gate" title="${esc(c.nextGate.reviewUnitId || '')}">${esc(gateSummary(c)?.title ?? '')}</span>` : ''}${checkoutChip(c)}<span class="badge ${c.health}">${HEALTH_LABEL[c.health] ?? esc(c.status)}</span></span>
       </div>
       <div class="sub">${esc(c.sessionId ?? c.sessionPath)} <button class="copy" onclick="copyText(${JSON.stringify(c.sessionPath).replace(/"/g, '&quot;')})">复制会话路径</button></div>
@@ -1651,14 +1660,14 @@ async function pageCampaign(d, path) {
     <div class="card" style="cursor:default"><div class="kv" id="scaleKv" style="margin-top:0">
       <b>写作单元</b><span>${c.accepted}/${c.units} 已接受 · 挂起 ${c.pending}${c.changeRequests?.entries ? ` · 打回记录 ${c.changeRequests.entries} 条（未收 ${c.changeRequests.units} 单元）` : ''}</span>
       <b>scan-state</b><span>${esc(c.scanState.key ?? '—')}${c.scanState.lastScannedTag ? ` @ ${esc(c.scanState.lastScannedTag)}` : ''}（会话目标 ${esc(c.scanState.targetTag ?? '—')}）</span>
-      ${c.campaignApproval?.campaignPlanDigest ? `<b>战役绑定</b><span class="badge finalized" title="计划 ${esc(c.campaignApproval.campaignPlanDigest)} · 已批 scope ${esc(c.campaignApproval.scopeDigest ?? '—')} · 批准于 ${esc(c.campaignApproval.approvedAt ?? '—')}——入口 release-scope 漂移即拒（GROUPING_STALE）">APPROVE_CAMPAIGN 已绑 · ${esc(c.campaignApproval.campaignPlanDigest.slice(7, 19))}…</span>` : '<b>战役绑定</b><span class="dim">未绑定</span>'}
+      ${c.groupingApproval?.proposalDigest ? `<b>分组绑定</b><span class="badge finalized" title="提案 ${esc(c.groupingApproval.proposalDigest)} · 已批 scope ${esc(c.groupingApproval.scopeDigest ?? '—')} · 批准于 ${esc(c.groupingApproval.approvedAt ?? '—')}——入口 release-scope 漂移即拒（GROUPING_STALE）">APPROVE_GROUPING 已绑 · ${esc(c.groupingApproval.proposalDigest.slice(7, 19))}…</span>` : '<b>分组绑定</b><span class="dim">未绑定（旧流程会话或分组门未走回执）</span>'}
     </div></div>
-    ${c.revisionFlow ? `<h2>修订流（呈门物证）</h2>
+    ${c.revisionFlow ? `<h2>修订流（写门物证）</h2>
     <div class="card" style="cursor:default"><div class="kv" style="margin-top:0">
       <b>工作单</b><span>${viewLink(c.revisionFlow.worklistPath, c.revisionFlow.worklistPath)}（${esc(c.revisionFlow.scope.findings)} 项发现 / 唯一页 ${c.revisionFlow.scope.uniquePages}）</span>
       <b>范围</b><span>${c.revisionFlow.scope.pages} 页 · scope 工件 ${c.revisionFlow.scopePath ? viewLink(c.revisionFlow.scopePath, c.revisionFlow.scopePath.split('/').pop()) : '未链接'}</span>
       <b>已写</b><span>${c.revisionFlow.writtenPages} 页 · 剩约 ${c.revisionFlow.remainingPages}</span>
-      <b>战役门</b><span>${c.revisionFlow.gateManifest ? `${esc(c.revisionFlow.gateManifest.digest)} · ${viewLink(c.revisionFlow.gateManifest.manifest, 'manifest')}` : '未见呈门 manifest'}</span>
+      <b>分组门</b><span>${c.revisionFlow.groupingGate ? `${esc(c.revisionFlow.groupingGate.digest)} · ${viewLink(c.revisionFlow.groupingGate.manifest, 'manifest')}` : '未见分组门 manifest'}</span>
       ${c.revisionFlow.written.length ? `<details class="fold" style="grid-column:1/-1"><summary>已写页面（run-manifest 对账，${c.revisionFlow.writtenPages}）</summary><ul style="margin:4px 0;padding-left:18px">${c.revisionFlow.written.map((w) => `<li>${esc(w.unit)}（${esc(w.flow)}）· ${viewLink(w.manifest, 'manifest')}</li>`).join('')}</ul></details>` : ''}
     </div></div>` : ''}
     <h2>文件清单（按单元分组，文件名为主）</h2>

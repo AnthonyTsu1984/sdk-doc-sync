@@ -395,7 +395,7 @@ function reconcileUnit(config, unit, { attemptLog }) {
     if (exec.exitCode === 0 && status !== 'BLOCKED' && status !== 'PARTIAL') {
       return { ok: true };
     }
-    // digest 漂移（战役门自洽供应）→ 重取 fresh digest 再试。这是旧编排里
+    // digest 漂移（写门自洽供应）→ 重取 fresh digest 再试。这是旧编排里
     // c9/c10/c11 三轮才追出来的缝，在这里是普通内部重试。
     if (flat.includes('APPROVED_BATCH_DIGEST_MISMATCH')) {
       const again = scopedDry();

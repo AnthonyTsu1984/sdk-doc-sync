@@ -28,3 +28,6 @@ tmp/
 repos/*
 !repos/.gitkeep
 .playwright-cli/
+
+# gen-worker-deployment.sh 的本地输出（kubectl apply 用，不入库）
+deploy/out/

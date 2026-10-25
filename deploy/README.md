@@ -206,6 +206,32 @@ node .claude/skills/api-reference-sync/scripts/daily-scan.js --language python \
 `--mark-ignored --reason-code FEISHU_ROUNDTRIP|OPERATOR_RULING` 同理。scan-state 不走
 这里——见红线第 3 条。
 
+### 证据收割（pod → 主树；teardown 硬闸配套，2026-10-25 裁定）
+
+PVC 上的证据（journal/manifest/回执/账本/值班日志）随拆集群全灭。收割把「拆前留证」
+从 README 人肉纪律变成机器闸：指纹 marker 记住「已拷回什么」，`teardown-check`
+对不上就拒绝放行（闸不依赖 campaign_terminal 启发式——supervisor 自认会把死亡
+误判终态）。
+
+```bash
+node scripts/harvest/pod-evidence.js harvest          # 收割全部 worker（幂等，终态后随时跑）
+node scripts/harvest/pod-evidence.js status [--json]  # 只看 delta（teardown-check 内部同款）
+node scripts/harvest/pod-evidence.js fingerprint      # 调试：打印 pod 侧工件指纹
+node scripts/harvest/scan-state-merge.js [--apply]    # pod 副本 scan-state 键归并（轨键所有权）
+node scripts/harvest/findings-ledger-merge.js [--apply]  # 多 pod 账本按内容去重+时间序重排 seq
+```
+
+* **落点**：canonical 工件（manifest/回执/journal/close-entries/plans/处置与修复
+  journal/corrective）直接进主树 `tmp/api-reference-sync/` 规范位，同名不同字节=
+  硬冲突拒收绝不覆盖；pod 私有快照（scan-state 副本/账本副本/events.jsonl/
+  supervisor.log/卡状态）落 `tmp/api-reference-sync/harvest/<pod>/`，marker 在
+  `harvest/markers/<pod>.json`（每工件 sha256+size）。
+* **闸语义**：append-only 文件尾部新增=先收割再拆；已收割前缀被改写=人工排查；
+  无 worker pod 时视为通过。
+* **scan-state/账本合并不自动**：harvest 只落快照并提示合并命令；`--apply` 写回后
+  scan-state 是 tracked 文件，按准入纪律由操作员提交。
+* opencode 会话转录不在收割清单（体积大、审计价值中等）——需要时人工 `kubectl cp`。
+
 ## 3. 红线（照抄仓库治理语汇）
 
 1. **执行中绝不删除 journal 重放；写路径只走 canonical CLI；scan-state 只由
@@ -221,12 +247,15 @@ node .claude/skills/api-reference-sync/scripts/daily-scan.js --language python \
 ## 4. teardown
 
 ```bash
-bash deploy/milvus-cell-ops.sh teardown-check   # 先盘点：PVC/pods/COS 各会失去什么
+bash deploy/milvus-cell-ops.sh teardown-check   # 盘点 + 证据硬闸：未收割 delta 即拒放行
+node scripts/harvest/pod-evidence.js harvest    # 硬闸拦下时的解法（幂等；先并快照后拆）
+bash deploy/milvus-cell-ops.sh teardown-check   # 复跑至证据闸通过
 export KUBECONFIG=~/.milvus-cell/kubeconfig
 kubectl delete namespace sdk-doc-sync   # 连带全部 per-track PVC/ConfigMap/Secret
 bash deploy/milvus-cell-ops.sh sleep-on  # 战役毕复原定时休眠
-# 注意：PVC 删除即停止 CBS 计费（≈¥0.35/GB/月）；workspace 内未收官的战役
-# run/journal 会随之消失——teardown 前先把要留证的 tmp 产物拷回主树归档。
+# PVC 删除即停止 CBS 计费（≈¥0.35/GB/月）。证据硬闸只拦「pod 侧有未收割/被改写
+# delta」；拆前记得 scan-state-merge / findings-ledger-merge --apply 把快照并进主树
+# （闸验的是收割，不验合并——合并属操作员节奏）。
 # milvus-cell delete --confirm 不删 COS bucket——退役时用 milvus-cell storage rm
 # 单独清，或留生命周期 14 天自然过期。
 ```

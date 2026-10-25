@@ -9,6 +9,7 @@ const suites = [
     args: ['.claude/skills/api-reference-sync/tests/run-all.js'],
   },
   { name: 'test:skills', command: 'npm', args: ['run', 'test:skills'] },
+  { name: 'test:harvest', command: 'npm', args: ['run', 'test:harvest'] },
   { name: 'test:doc-ops-core', command: 'npm', args: ['run', 'test:doc-ops-core'] },
   { name: 'test:patch-code-blocks', command: 'npm', args: ['run', 'test:patch-code-blocks'] },
   { name: 'test:verifier', command: 'npm', args: ['run', 'test:verifier'] },

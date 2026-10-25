@@ -7,6 +7,13 @@
       "reason": "2026-10-23 straight-line redesign (operator ruling): the record-grouping-approval receipt CLI retires with the operator digest ceremony. The invariant's enforcement narrows to the canonical builder (scripts/build-grouping-proposal.js) and the grouping kernel (src/sdk-doc-sync/grouping-proposal.js); the retired enforcer only covered receipt issuance, which no longer exists as an operator surface. The guarantee that grouping proposals come only from the canonical builder is unchanged.",
       "approvedBy": "operator (2026-10-23 redesign ruling: remove the orchestration ceremony)",
       "expiresAt": "2027-01-23T00:00:00.000Z"
+    },
+    {
+      "invariantId": "api.grouping-proposal-staleness",
+      "transition": "weakened-coverage",
+      "reason": "2026-10-25 single-gate redesign (operator ruling): the per-unit approve/chain surfaces retire (sdk-review-session approve-grouping command and the GROUPING_APPROVAL_CHAIN_INVALID / GROUPING_APPROVAL_ALREADY_BOUND codes existed only for the retired grouping-receipt chain). The scope-staleness floor is unchanged: GROUPING_STALE stays enforced at the same three choke points (grouping-proposal kernel, campaign-approval chain, sdk-doc-sync entry); the lost enforcer entry covered a deleted command, and the lost codes guarded a receipt chain that no longer exists as an operator surface.",
+      "approvedBy": "operator (2026-10-25 single-gate ruling: one APPROVE_CAMPAIGN card per campaign)",
+      "expiresAt": "2027-01-25T00:00:00.000Z"
     }
   ]
 }
